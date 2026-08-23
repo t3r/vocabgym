@@ -1,0 +1,223 @@
+"""Tests for the upload handler Lambda function."""
+
+import json
+import os
+import sys
+import pytest
+
+import boto3
+from moto import mock_aws
+
+# Add function and layer to path
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'functions', 'upload_handler'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'layers', 'shared', 'python'))
+
+
+# Set environment variables before importing handler
+os.environ['IMAGES_BUCKET'] = 'test-images-bucket'
+os.environ['VOCABSETS_TABLE'] = 'test-vocabsets-table'
+os.environ['VOCABITEMS_TABLE'] = 'test-vocabitems-table'
+os.environ['SESSIONS_TABLE'] = 'test-sessions-table'
+os.environ['PROGRESS_TABLE'] = 'test-progress-table'
+os.environ['REGION'] = 'eu-central-1'
+os.environ['ENVIRONMENT'] = 'test'
+os.environ['AWS_DEFAULT_REGION'] = 'eu-central-1'
+os.environ['AWS_ACCESS_KEY_ID'] = 'testing'
+os.environ['AWS_SECRET_ACCESS_KEY'] = 'testing'
+
+
+def create_api_gateway_event(body=None, path_params=None, method='POST', user_id='test-user-123'):
+    """Helper to create a mock API Gateway event."""
+    event = {
+        'httpMethod': method,
+        'path': '/vocab/upload',
+        'pathParameters': path_params or {},
+        'queryStringParameters': {},
+        'headers': {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer test-token',
+        },
+        'requestContext': {
+            'authorizer': {
+                'claims': {
+                    'sub': user_id,
+                    'email': 'test@example.com',
+                }
+            }
+        },
+        'body': json.dumps(body) if body else None,
+    }
+    return event
+
+
+@pytest.fixture
+def aws_resources():
+    """Create mock AWS resources for testing."""
+    with mock_aws():
+        # Create mock S3 bucket
+        s3 = boto3.client('s3', region_name='eu-central-1')
+        s3.create_bucket(
+            Bucket='test-images-bucket',
+            CreateBucketConfiguration={'LocationConstraint': 'eu-central-1'}
+        )
+
+        # Create mock DynamoDB table
+        dynamodb = boto3.resource('dynamodb', region_name='eu-central-1')
+        table = dynamodb.create_table(
+            TableName='test-vocabsets-table',
+            KeySchema=[
+                {'AttributeName': 'vocabSetId', 'KeyType': 'HASH'},
+                {'AttributeName': 'userId', 'KeyType': 'RANGE'},
+            ],
+            AttributeDefinitions=[
+                {'AttributeName': 'vocabSetId', 'AttributeType': 'S'},
+                {'AttributeName': 'userId', 'AttributeType': 'S'},
+            ],
+            BillingMode='PAY_PER_REQUEST',
+        )
+
+        yield {'s3': s3, 'dynamodb': dynamodb, 'table': table}
+
+
+def test_successful_upload_request(aws_resources):
+    """Test a successful upload request generates presigned URL."""
+    # Must import inside test to use mocked AWS
+    import importlib
+    import app
+    importlib.reload(app)
+
+    event = create_api_gateway_event(
+        body={
+            'fileName': 'workbook_page.jpg',
+            'contentType': 'image/jpeg',
+        }
+    )
+
+    response = app.lambda_handler(event, None)
+
+    assert response['statusCode'] == 200
+
+    body = json.loads(response['body'])
+    assert 'vocabSetId' in body
+    assert 'uploadUrl' in body
+    assert 'imageKey' in body
+    assert body['expiresIn'] == 300
+    assert 'test-user-123' in body['imageKey']
+
+
+def test_upload_missing_file_name(aws_resources):
+    """Test upload request without fileName returns 400."""
+    import importlib
+    import app
+    importlib.reload(app)
+
+    event = create_api_gateway_event(
+        body={
+            'contentType': 'image/jpeg',
+        }
+    )
+
+    response = app.lambda_handler(event, None)
+    assert response['statusCode'] == 400
+
+
+def test_upload_invalid_content_type(aws_resources):
+    """Test upload with invalid content type returns 400."""
+    import importlib
+    import app
+    importlib.reload(app)
+
+    event = create_api_gateway_event(
+        body={
+            'fileName': 'document.pdf',
+            'contentType': 'application/pdf',
+        }
+    )
+
+    response = app.lambda_handler(event, None)
+    assert response['statusCode'] == 400
+
+    body = json.loads(response['body'])
+    assert 'Unsupported file type' in body['error']
+
+
+def test_upload_missing_body(aws_resources):
+    """Test upload request without body returns 400."""
+    import importlib
+    import app
+    importlib.reload(app)
+
+    event = create_api_gateway_event(body=None)
+    event['body'] = None
+
+    response = app.lambda_handler(event, None)
+    assert response['statusCode'] == 400
+
+
+def test_upload_creates_dynamodb_record(aws_resources):
+    """Test that upload creates initial VocabSet record in DynamoDB."""
+    import importlib
+    import app
+    importlib.reload(app)
+
+    event = create_api_gateway_event(
+        body={
+            'fileName': 'page1.png',
+            'contentType': 'image/png',
+        }
+    )
+
+    response = app.lambda_handler(event, None)
+    assert response['statusCode'] == 200
+
+    body = json.loads(response['body'])
+    vocab_set_id = body['vocabSetId']
+
+    # Verify DynamoDB record was created
+    table = aws_resources['dynamodb'].Table('test-vocabsets-table')
+    db_response = table.get_item(
+        Key={'vocabSetId': vocab_set_id, 'userId': 'test-user-123'}
+    )
+
+    item = db_response.get('Item')
+    assert item is not None
+    assert item['extractionStatus'] == 'pending'
+    assert item['sourceImageKey'] == body['imageKey']
+
+
+def test_upload_cors_headers(aws_resources):
+    """Test that response includes CORS headers."""
+    import importlib
+    import app
+    importlib.reload(app)
+
+    event = create_api_gateway_event(
+        body={
+            'fileName': 'test.jpg',
+            'contentType': 'image/jpeg',
+        }
+    )
+
+    response = app.lambda_handler(event, None)
+
+    assert 'Access-Control-Allow-Origin' in response['headers']
+    assert 'Access-Control-Allow-Methods' in response['headers']
+
+
+def test_upload_no_auth(aws_resources):
+    """Test that request without auth returns 400."""
+    import importlib
+    import app
+    importlib.reload(app)
+
+    event = create_api_gateway_event(
+        body={
+            'fileName': 'test.jpg',
+            'contentType': 'image/jpeg',
+        }
+    )
+    # Remove authorizer claims
+    event['requestContext'] = {}
+
+    response = app.lambda_handler(event, None)
+    assert response['statusCode'] == 400

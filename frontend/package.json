@@ -1,0 +1,36 @@
+{
+  "name": "vocabtrainer-frontend",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test": "vitest",
+    "test:run": "vitest run",
+    "lint": "eslint . --ext .vue,.js,.jsx,.cjs,.mjs --fix",
+    "format": "prettier --write src/"
+  },
+  "dependencies": {
+    "vue": "^3.4.0",
+    "vue-router": "^4.3.0",
+    "pinia": "^2.1.0",
+    "axios": "^1.6.0",
+    "chart.js": "^4.4.0",
+    "vue-chartjs": "^5.3.0"
+  },
+  "devDependencies": {
+    "vite": "^5.4.0",
+    "@vitejs/plugin-vue": "^5.1.0",
+    "tailwindcss": "^3.4.0",
+    "postcss": "^8.4.0",
+    "autoprefixer": "^10.4.0",
+    "@tailwindcss/forms": "^0.5.0",
+    "vitest": "^2.0.0",
+    "@vue/test-utils": "^2.4.0",
+    "jsdom": "^24.0.0",
+    "eslint": "^8.57.0",
+    "prettier": "^3.2.0"
+  }
+}

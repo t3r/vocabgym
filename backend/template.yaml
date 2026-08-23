@@ -1,0 +1,543 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: VocabTrainer Backend - French vocabulary training app for German students
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues:
+      - dev
+      - prod
+    Description: Deployment environment
+
+Globals:
+  Function:
+    Runtime: python3.11
+    Architectures:
+      - arm64
+    Timeout: 30
+    MemorySize: 512
+    Environment:
+      Variables:
+        ENVIRONMENT: !Ref Environment
+        USERS_TABLE: !Ref UsersTable
+        VOCABSETS_TABLE: !Ref VocabSetsTable
+        VOCABITEMS_TABLE: !Ref VocabItemsTable
+        SESSIONS_TABLE: !Ref PracticeSessionsTable
+        PROGRESS_TABLE: !Ref ProgressTable
+        IMAGES_BUCKET: !Ref ImagesBucket
+        REGION: !Ref AWS::Region
+    Layers:
+      - !Ref SharedLayer
+
+Resources:
+  # ============================================================
+  # Cognito Authentication
+  # ============================================================
+  CognitoUserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      UserPoolName: !Sub vocabtrainer-users-${Environment}
+      AutoVerifiedAttributes:
+        - email
+      UsernameAttributes:
+        - email
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 8
+          RequireUppercase: true
+          RequireLowercase: true
+          RequireNumbers: true
+          RequireSymbols: false
+      AccountRecoverySetting:
+        RecoveryMechanisms:
+          - Name: verified_email
+            Priority: 1
+
+  CognitoUserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      ClientName: !Sub vocabtrainer-web-client-${Environment}
+      UserPoolId: !Ref CognitoUserPool
+      GenerateSecret: false
+      ExplicitAuthFlows:
+        - ALLOW_USER_PASSWORD_AUTH
+        - ALLOW_REFRESH_TOKEN_AUTH
+        - ALLOW_USER_SRP_AUTH
+      AllowedOAuthFlows:
+        - code
+      AllowedOAuthFlowsUserPoolClient: true
+      AllowedOAuthScopes:
+        - openid
+        - email
+        - profile
+      CallbackURLs:
+        - http://localhost:5173/callback
+        - !Sub https://${FrontendDistribution.DomainName}/callback
+      LogoutURLs:
+        - http://localhost:5173
+        - !Sub https://${FrontendDistribution.DomainName}
+      SupportedIdentityProviders:
+        - COGNITO
+
+  CognitoUserPoolDomain:
+    Type: AWS::Cognito::UserPoolDomain
+    Properties:
+      Domain: !Sub vocabtrainer-${Environment}-${AWS::AccountId}
+      UserPoolId: !Ref CognitoUserPool
+
+  # ============================================================
+  # S3 Storage
+  # ============================================================
+  ImagesBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub vocabtrainer-images-${Environment}-${AWS::AccountId}
+      CorsConfiguration:
+        CorsRules:
+          - AllowedHeaders:
+              - '*'
+            AllowedMethods:
+              - PUT
+              - POST
+              - GET
+            AllowedOrigins:
+              - '*'
+            MaxAge: 3600
+      LifecycleConfiguration:
+        Rules:
+          - Id: DeleteAfter90Days
+            Status: Enabled
+            ExpirationInDays: 90
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+
+  # ============================================================
+  # DynamoDB Tables
+  # ============================================================
+  UsersTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub vocabtrainer-users-${Environment}
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: userId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: userId
+          KeyType: HASH
+
+  VocabSetsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub vocabtrainer-vocabsets-${Environment}
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: vocabSetId
+          AttributeType: S
+        - AttributeName: userId
+          AttributeType: S
+        - AttributeName: createdAt
+          AttributeType: N
+      KeySchema:
+        - AttributeName: vocabSetId
+          KeyType: HASH
+        - AttributeName: userId
+          KeyType: RANGE
+      GlobalSecondaryIndexes:
+        - IndexName: userId-createdAt-index
+          KeySchema:
+            - AttributeName: userId
+              KeyType: HASH
+            - AttributeName: createdAt
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+
+  VocabItemsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub vocabtrainer-vocabitems-${Environment}
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: vocabSetId
+          AttributeType: S
+        - AttributeName: itemId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: vocabSetId
+          KeyType: HASH
+        - AttributeName: itemId
+          KeyType: RANGE
+
+  PracticeSessionsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub vocabtrainer-sessions-${Environment}
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: userId
+          AttributeType: S
+        - AttributeName: sessionId
+          AttributeType: S
+        - AttributeName: vocabSetId
+          AttributeType: S
+        - AttributeName: completedAt
+          AttributeType: N
+      KeySchema:
+        - AttributeName: userId
+          KeyType: HASH
+        - AttributeName: sessionId
+          KeyType: RANGE
+      GlobalSecondaryIndexes:
+        - IndexName: vocabSetId-completedAt-index
+          KeySchema:
+            - AttributeName: vocabSetId
+              KeyType: HASH
+            - AttributeName: completedAt
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      TimeToLiveSpecification:
+        AttributeName: expiresAt
+        Enabled: true
+
+  ProgressTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub vocabtrainer-progress-${Environment}
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: progressKey
+          AttributeType: S
+        - AttributeName: itemId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: progressKey
+          KeyType: HASH
+        - AttributeName: itemId
+          KeyType: RANGE
+
+  # ============================================================
+  # API Gateway
+  # ============================================================
+  VocabTrainerApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      Name: !Sub vocabtrainer-api-${Environment}
+      StageName: !Ref Environment
+      Auth:
+        DefaultAuthorizer: CognitoAuthorizer
+        Authorizers:
+          CognitoAuthorizer:
+            UserPoolArn: !GetAtt CognitoUserPool.Arn
+        AddDefaultAuthorizerToCorsPreflight: false
+      Cors:
+        AllowMethods: "'GET,POST,PUT,DELETE,OPTIONS'"
+        AllowHeaders: "'Content-Type,Authorization'"
+        AllowOrigin: "'*'"
+
+  # ============================================================
+  # Shared Lambda Layer
+  # ============================================================
+  SharedLayer:
+    Type: AWS::Serverless::LayerVersion
+    Properties:
+      LayerName: !Sub vocabtrainer-shared-${Environment}
+      Description: Shared utilities for VocabTrainer Lambda functions
+      ContentUri: layers/shared/
+      CompatibleRuntimes:
+        - python3.11
+      CompatibleArchitectures:
+        - arm64
+
+  # ============================================================
+  # Lambda Functions
+  # ============================================================
+  UploadHandlerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub vocabtrainer-upload-handler-${Environment}
+      CodeUri: functions/upload_handler/
+      Handler: app.lambda_handler
+      Policies:
+        - S3CrudPolicy:
+            BucketName: !Ref ImagesBucket
+        - DynamoDBCrudPolicy:
+            TableName: !Ref VocabSetsTable
+      Events:
+        UploadVocab:
+          Type: Api
+          Properties:
+            RestApiId: !Ref VocabTrainerApi
+            Path: /vocab/upload
+            Method: POST
+
+  ExtractionHandlerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub vocabtrainer-extraction-handler-${Environment}
+      CodeUri: functions/extraction_handler/
+      Handler: app.lambda_handler
+      MemorySize: 1024
+      Timeout: 300
+      Policies:
+        - S3ReadPolicy:
+            BucketName: !Ref ImagesBucket
+        - DynamoDBCrudPolicy:
+            TableName: !Ref VocabSetsTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref VocabItemsTable
+        - Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action:
+                - textract:AnalyzeDocument
+                - textract:DetectDocumentText
+              Resource: '*'
+      Events:
+        ProcessVocab:
+          Type: Api
+          Properties:
+            RestApiId: !Ref VocabTrainerApi
+            Path: /vocab/process
+            Method: POST
+        GetExtraction:
+          Type: Api
+          Properties:
+            RestApiId: !Ref VocabTrainerApi
+            Path: /vocab/extraction/{vocabSetId}
+            Method: GET
+
+  VocabCrudHandlerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub vocabtrainer-vocab-crud-handler-${Environment}
+      CodeUri: functions/vocab_crud_handler/
+      Handler: app.lambda_handler
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref VocabSetsTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref VocabItemsTable
+        - DynamoDBReadPolicy:
+            TableName: !Ref ProgressTable
+        - S3CrudPolicy:
+            BucketName: !Ref ImagesBucket
+      Events:
+        ListVocabSets:
+          Type: Api
+          Properties:
+            RestApiId: !Ref VocabTrainerApi
+            Path: /vocab
+            Method: GET
+        GetVocabSet:
+          Type: Api
+          Properties:
+            RestApiId: !Ref VocabTrainerApi
+            Path: /vocab/{vocabSetId}
+            Method: GET
+        UpdateVocabSet:
+          Type: Api
+          Properties:
+            RestApiId: !Ref VocabTrainerApi
+            Path: /vocab/{vocabSetId}
+            Method: PUT
+        DeleteVocabSet:
+          Type: Api
+          Properties:
+            RestApiId: !Ref VocabTrainerApi
+            Path: /vocab/{vocabSetId}
+            Method: DELETE
+
+  PracticeHandlerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub vocabtrainer-practice-handler-${Environment}
+      CodeUri: functions/practice_handler/
+      Handler: app.lambda_handler
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref VocabItemsTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref PracticeSessionsTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref ProgressTable
+      Events:
+        StartPractice:
+          Type: Api
+          Properties:
+            RestApiId: !Ref VocabTrainerApi
+            Path: /practice/start
+            Method: POST
+        SubmitAnswer:
+          Type: Api
+          Properties:
+            RestApiId: !Ref VocabTrainerApi
+            Path: /practice/submit
+            Method: POST
+        CompletePractice:
+          Type: Api
+          Properties:
+            RestApiId: !Ref VocabTrainerApi
+            Path: /practice/complete
+            Method: POST
+
+  ProgressHandlerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub vocabtrainer-progress-handler-${Environment}
+      CodeUri: functions/progress_handler/
+      Handler: app.lambda_handler
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref ProgressTable
+        - DynamoDBReadPolicy:
+            TableName: !Ref PracticeSessionsTable
+        - DynamoDBReadPolicy:
+            TableName: !Ref VocabSetsTable
+        - DynamoDBReadPolicy:
+            TableName: !Ref VocabItemsTable
+      Events:
+        GetOverview:
+          Type: Api
+          Properties:
+            RestApiId: !Ref VocabTrainerApi
+            Path: /progress/overview
+            Method: GET
+        GetVocabSetProgress:
+          Type: Api
+          Properties:
+            RestApiId: !Ref VocabTrainerApi
+            Path: /progress/{vocabSetId}
+            Method: GET
+
+  InviteHandlerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub vocabtrainer-invite-handler-${Environment}
+      CodeUri: functions/invite_handler/
+      Handler: app.lambda_handler
+      Environment:
+        Variables:
+          INVITE_SECRET: !Sub vocabgym-invite-${AWS::AccountId}-s3cr3t
+          FRONTEND_URL: !Sub https://${FrontendDistribution.DomainName}
+      Events:
+        CreateInvite:
+          Type: Api
+          Properties:
+            RestApiId: !Ref VocabTrainerApi
+            Path: /invite
+            Method: POST
+        ValidateInvite:
+          Type: Api
+          Properties:
+            RestApiId: !Ref VocabTrainerApi
+            Path: /invite/{token}
+            Method: GET
+            Auth:
+              Authorizer: NONE
+
+  # ============================================================
+  # Frontend Hosting
+  # ============================================================
+  FrontendBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub vocabtrainer-frontend-${Environment}-${AWS::AccountId}
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+
+  FrontendBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref FrontendBucket
+      PolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: cloudfront.amazonaws.com
+            Action: s3:GetObject
+            Resource: !Sub arn:aws:s3:::${FrontendBucket}/*
+            Condition:
+              StringEquals:
+                AWS:SourceArn: !Sub arn:aws:cloudfront::${AWS::AccountId}:distribution/${FrontendDistribution}
+
+  FrontendOriginAccessControl:
+    Type: AWS::CloudFront::OriginAccessControl
+    Properties:
+      OriginAccessControlConfig:
+        Name: !Sub vocabtrainer-frontend-oac-${Environment}
+        OriginAccessControlOriginType: s3
+        SigningBehavior: always
+        SigningProtocol: sigv4
+
+  FrontendDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Enabled: true
+        DefaultRootObject: index.html
+        Origins:
+          - Id: S3Origin
+            DomainName: !GetAtt FrontendBucket.RegionalDomainName
+            OriginAccessControlId: !Ref FrontendOriginAccessControl
+            S3OriginConfig:
+              OriginAccessIdentity: ''
+        DefaultCacheBehavior:
+          TargetOriginId: S3Origin
+          ViewerProtocolPolicy: redirect-to-https
+          AllowedMethods:
+            - GET
+            - HEAD
+            - OPTIONS
+          CachedMethods:
+            - GET
+            - HEAD
+          ForwardedValues:
+            QueryString: false
+            Cookies:
+              Forward: none
+          Compress: true
+        CustomErrorResponses:
+          - ErrorCode: 403
+            ResponseCode: 200
+            ResponsePagePath: /index.html
+          - ErrorCode: 404
+            ResponseCode: 200
+            ResponsePagePath: /index.html
+        PriceClass: PriceClass_100
+        Comment: !Sub VocabTrainer Frontend (${Environment})
+
+Outputs:
+  ApiEndpoint:
+    Description: API Gateway endpoint URL
+    Value: !Sub https://${VocabTrainerApi}.execute-api.${AWS::Region}.amazonaws.com/${Environment}
+  UserPoolId:
+    Description: Cognito User Pool ID
+    Value: !Ref CognitoUserPool
+  UserPoolClientId:
+    Description: Cognito User Pool Client ID
+    Value: !Ref CognitoUserPoolClient
+  UserPoolDomain:
+    Description: Cognito User Pool Domain
+    Value: !Sub vocabtrainer-${Environment}-${AWS::AccountId}.auth.${AWS::Region}.amazoncognito.com
+  ImagesBucketName:
+    Description: S3 Images Bucket Name
+    Value: !Ref ImagesBucket
+  FrontendBucketName:
+    Description: Frontend S3 Bucket Name
+    Value: !Ref FrontendBucket
+  FrontendUrl:
+    Description: Frontend CloudFront URL
+    Value: !Sub https://${FrontendDistribution.DomainName}
+  CloudFrontDistributionId:
+    Description: CloudFront Distribution ID
+    Value: !Ref FrontendDistribution
