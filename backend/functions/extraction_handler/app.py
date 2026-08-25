@@ -372,12 +372,13 @@ def handle_process(event, user_id):
         item_count = 0
         status = 'failed'
 
-    # Update VocabSet record
+    # Update VocabSet record - use ADD for itemCount to support multiple pages
     vocabsets_table.update_item(
         Key={'vocabSetId': vocab_set_id, 'userId': user_id},
         UpdateExpression=(
             'SET extractionStatus = :status, updatedAt = :ts, '
-            'itemCount = :count, extractionMethod = :method'
+            'extractionMethod = :method '
+            'ADD itemCount :count'
         ),
         ExpressionAttributeValues={
             ':status': status,

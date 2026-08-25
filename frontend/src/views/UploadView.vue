@@ -1,37 +1,58 @@
 <template>
-  <!-- Upload view: Image dropzone, upload progress, extraction status -->
   <div class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
     <div class="mb-8">
-      <h1 class="text-2xl font-bold text-gray-900">Arbeitsbuchseite hochladen</h1>
-      <p class="mt-1 text-gray-600">
-        Fotografiere die Vokabeltabelle und lade das Bild hier hoch.
+      <h1 class="text-2xl font-bold text-gray-900 dark:text-white">Arbeitsbuchseiten hochladen</h1>
+      <p class="mt-1 text-gray-600 dark:text-gray-400 dark:text-gray-500">
+        Fotografiere eine oder mehrere Vokabeltabellen und lade die Bilder hier hoch.
       </p>
     </div>
 
     <!-- Upload Phase -->
-    <div v-if="!vocabSetId" class="card">
+    <div v-if="phase === 'select'" class="card">
       <ImageDropzone
-        @upload-success="handleUploadSuccess"
+        @upload-success="handleStartUpload"
         @upload-error="handleUploadError"
-      />
-      <UploadProgress
-        v-if="upload.isUploading.value"
-        :progress="upload.uploadProgress.value"
       />
     </div>
 
-    <!-- Extraction Phase -->
-    <div v-else class="card">
-      <ExtractionStatus
-        :status="upload.extractionStatus.value"
-        :vocab-set-id="vocabSetId"
-        @complete="handleExtractionComplete"
-        @error="handleExtractionError"
-      />
+    <!-- Processing Phase -->
+    <div v-else-if="phase === 'processing'" class="card">
+      <h2 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+        Verarbeite {{ totalFiles }} {{ totalFiles === 1 ? 'Bild' : 'Bilder' }}...
+      </h2>
+
+      <!-- Per-file progress -->
+      <div class="space-y-3">
+        <div v-for="(fp, i) in upload.filesProgress.value" :key="i" class="flex items-center gap-3">
+          <span class="text-sm text-gray-600 dark:text-gray-300 truncate w-40">{{ fp.name }}</span>
+          <div class="flex-1 bg-gray-200 dark:bg-gray-700 rounded-full h-2">
+            <div
+              class="h-2 rounded-full transition-all duration-300"
+              :class="fp.status === 'error' ? 'bg-error' : 'bg-primary-500'"
+              :style="{ width: `${fp.progress}%` }"
+            ></div>
+          </div>
+          <span class="text-xs w-16 text-right">
+            <span v-if="fp.status === 'done'" class="text-success">✓</span>
+            <span v-else-if="fp.status === 'error'" class="text-error">✗</span>
+            <span v-else-if="fp.status === 'uploading'" class="text-primary-600">{{ upload.uploadProgress.value }}%</span>
+            <span v-else class="text-gray-400 dark:text-gray-500">Warten...</span>
+          </span>
+        </div>
+      </div>
+
+      <!-- Extraction status -->
+      <div v-if="extractionPhase" class="mt-6 flex items-center gap-3">
+        <svg class="animate-spin w-5 h-5 text-primary-600" viewBox="0 0 24 24" fill="none">
+          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path>
+        </svg>
+        <span class="text-sm text-gray-600 dark:text-gray-300">Vokabeln werden extrahiert...</span>
+      </div>
     </div>
 
     <!-- Error Display -->
-    <div v-if="error" class="mt-4 p-4 bg-red-50 border border-red-200 rounded-md">
+    <div v-if="error" class="mt-4 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-md">
       <p class="text-error text-sm">{{ error }}</p>
       <button @click="reset" class="mt-2 text-sm text-primary-600 hover:text-primary-700">
         Erneut versuchen
@@ -46,30 +67,38 @@ import { useRouter } from 'vue-router'
 import { useUpload } from '@/composables/useUpload'
 import { useToast } from '@/composables/useToast'
 import ImageDropzone from '@/components/upload/ImageDropzone.vue'
-import UploadProgress from '@/components/upload/UploadProgress.vue'
-import ExtractionStatus from '@/components/upload/ExtractionStatus.vue'
 
 const router = useRouter()
 const upload = useUpload()
 const { showSuccess, showError } = useToast()
 
-const vocabSetId = ref(null)
+const phase = ref('select') // 'select' | 'processing'
 const error = ref(null)
+const totalFiles = ref(0)
+const extractionPhase = ref(false)
 
-async function handleUploadSuccess({ vocabSetId: id, imageKey }) {
-  vocabSetId.value = id
+async function handleStartUpload({ files, vocabSetId }) {
+  phase.value = 'processing'
+  totalFiles.value = files.length
   error.value = null
+  extractionPhase.value = false
 
   try {
-    await upload.triggerExtraction(id, imageKey)
-    const result = await upload.pollExtractionStatus(id)
+    // Upload all files (first creates set, rest add to it)
+    const { vocabSetId: setId, imageKeys } = await upload.uploadMultipleImages(files)
 
-    if (result.status === 'review') {
-      showSuccess('Vokabeln wurden erfolgreich extrahiert!')
-      router.push({ name: 'Review', params: { vocabSetId: id } })
+    // Now extract each image sequentially
+    extractionPhase.value = true
+    for (const imageKey of imageKeys) {
+      await upload.triggerExtraction(setId, imageKey)
+      await upload.pollExtractionStatus(setId)
     }
+
+    showSuccess(`${files.length} ${files.length === 1 ? 'Seite' : 'Seiten'} erfolgreich verarbeitet!`)
+    router.push({ name: 'Review', params: { vocabSetId: setId } })
   } catch (err) {
     error.value = err.message
+    showError(err.message || 'Verarbeitung fehlgeschlagen')
   }
 }
 
@@ -78,18 +107,11 @@ function handleUploadError(message) {
   showError(message)
 }
 
-function handleExtractionComplete(result) {
-  showSuccess('Extraktion abgeschlossen!')
-  router.push({ name: 'Review', params: { vocabSetId: vocabSetId.value } })
-}
-
-function handleExtractionError(message) {
-  error.value = message
-}
-
 function reset() {
-  vocabSetId.value = null
+  phase.value = 'select'
   error.value = null
+  totalFiles.value = 0
+  extractionPhase.value = false
   upload.reset()
 }
 </script>

@@ -3,30 +3,38 @@ import api from '@/services/api'
 
 /**
  * Composable for handling image upload with S3 presigned URLs.
+ * Supports multiple files and adding pages to existing sets.
  */
 export function useUpload() {
   const uploadProgress = ref(0)
   const isUploading = ref(false)
   const error = ref(null)
   const extractionStatus = ref(null)
+  const filesProgress = ref([]) // Per-file progress for multi-upload
 
   /**
-   * Upload an image file to S3 via presigned URL
-   * Returns the vocabSetId and imageKey
+   * Upload a single image file to S3 via presigned URL.
+   * @param {File} file - The file to upload
+   * @param {string|null} vocabSetId - Optional existing set ID to add to
+   * @returns {{ vocabSetId, imageKey }}
    */
-  async function uploadImage(file) {
+  async function uploadImage(file, vocabSetId = null) {
     isUploading.value = true
     uploadProgress.value = 0
     error.value = null
 
     try {
       // Step 1: Request presigned URL from backend
-      const presignResponse = await api.post('/vocab/upload', {
+      const payload = {
         fileName: file.name,
         contentType: file.type
-      })
+      }
+      if (vocabSetId) {
+        payload.vocabSetId = vocabSetId
+      }
 
-      const { uploadUrl, vocabSetId, imageKey } = presignResponse.data
+      const presignResponse = await api.post('/vocab/upload', payload)
+      const { uploadUrl, vocabSetId: returnedId, imageKey } = presignResponse.data
 
       // Step 2: Upload file directly to S3
       await new Promise((resolve, reject) => {
@@ -54,9 +62,51 @@ export function useUpload() {
       })
 
       uploadProgress.value = 100
-      return { vocabSetId, imageKey }
+      return { vocabSetId: returnedId, imageKey }
     } catch (err) {
       error.value = err.message || 'Upload fehlgeschlagen'
+      throw err
+    } finally {
+      isUploading.value = false
+    }
+  }
+
+  /**
+   * Upload multiple files, creating one vocab set and adding all pages to it.
+   * First file creates the set, subsequent files add to it.
+   * @param {File[]} files - Array of files to upload
+   * @returns {{ vocabSetId, imageKeys: string[] }}
+   */
+  async function uploadMultipleImages(files) {
+    isUploading.value = true
+    error.value = null
+    filesProgress.value = files.map((f) => ({ name: f.name, progress: 0, status: 'pending' }))
+
+    let vocabSetId = null
+    const imageKeys = []
+
+    try {
+      for (let i = 0; i < files.length; i++) {
+        filesProgress.value[i].status = 'uploading'
+
+        const result = await uploadImage(files[i], vocabSetId)
+
+        // First file creates the set, subsequent files reuse the ID
+        if (!vocabSetId) {
+          vocabSetId = result.vocabSetId
+        }
+
+        imageKeys.push(result.imageKey)
+        filesProgress.value[i].progress = 100
+        filesProgress.value[i].status = 'done'
+      }
+
+      return { vocabSetId, imageKeys }
+    } catch (err) {
+      const failedIndex = filesProgress.value.findIndex((f) => f.status === 'uploading')
+      if (failedIndex >= 0) {
+        filesProgress.value[failedIndex].status = 'error'
+      }
       throw err
     } finally {
       isUploading.value = false
@@ -76,6 +126,24 @@ export function useUpload() {
       error.value = err.message || 'Extraktion fehlgeschlagen'
       throw err
     }
+  }
+
+  /**
+   * Upload multiple files and trigger extraction for each sequentially.
+   * @param {File[]} files
+   * @returns {{ vocabSetId }}
+   */
+  async function uploadAndExtractMultiple(files) {
+    const { vocabSetId, imageKeys } = await uploadMultipleImages(files)
+
+    // Trigger extraction for each image
+    extractionStatus.value = 'processing'
+    for (const imageKey of imageKeys) {
+      await triggerExtraction(vocabSetId, imageKey)
+      await pollExtractionStatus(vocabSetId)
+    }
+
+    return { vocabSetId }
   }
 
   /**
@@ -118,6 +186,7 @@ export function useUpload() {
     isUploading.value = false
     error.value = null
     extractionStatus.value = null
+    filesProgress.value = []
   }
 
   return {
@@ -125,7 +194,10 @@ export function useUpload() {
     isUploading,
     error,
     extractionStatus,
+    filesProgress,
     uploadImage,
+    uploadMultipleImages,
+    uploadAndExtractMultiple,
     triggerExtraction,
     pollExtractionStatus,
     reset

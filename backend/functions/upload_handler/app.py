@@ -41,7 +41,8 @@ def lambda_handler(event, context):
     Expected request body:
     {
         "fileName": "workbook_page.jpg",
-        "contentType": "image/jpeg"
+        "contentType": "image/jpeg",
+        "vocabSetId": "uuid" (optional - if provided, adds to existing set)
     }
 
     Returns:
@@ -66,13 +67,25 @@ def lambda_handler(event, context):
         body = parse_body(event)
         file_name = body.get('fileName', '')
         content_type = body.get('contentType', '')
+        existing_vocab_set_id = body.get('vocabSetId')
 
         is_valid, error_msg = validate_file_upload(file_name, content_type)
         if not is_valid:
             return build_response(400, {'error': error_msg})
 
-        # Generate IDs and S3 key
-        vocab_set_id = generate_uuid()
+        # Use existing vocabSetId or generate new one
+        if existing_vocab_set_id:
+            # Verify the set exists and belongs to this user
+            table = dynamodb.Table(VOCABSETS_TABLE)
+            response = table.get_item(
+                Key={'vocabSetId': existing_vocab_set_id, 'userId': user_id}
+            )
+            if not response.get('Item'):
+                return build_response(404, {'error': 'Vocabulary set not found'})
+            vocab_set_id = existing_vocab_set_id
+        else:
+            vocab_set_id = generate_uuid()
+
         timestamp = get_timestamp()
         extension = file_name.rsplit('.', 1)[-1].lower() if '.' in file_name else 'jpg'
         image_key = f"images/{user_id}/{vocab_set_id}/{timestamp}-original.{extension}"
@@ -87,21 +100,22 @@ def lambda_handler(event, context):
             ExpiresIn=300,  # 5 minutes
         )
 
-        # Create initial VocabSet record in DynamoDB
-        table = dynamodb.Table(VOCABSETS_TABLE)
-        table.put_item(
-            Item={
-                'vocabSetId': vocab_set_id,
-                'userId': user_id,
-                'title': '',
-                'sourceImageKey': image_key,
-                'extractionStatus': 'pending',
-                'metadata': {},
-                'createdAt': timestamp,
-                'updatedAt': timestamp,
-                'itemCount': 0,
-            }
-        )
+        # Create initial VocabSet record only if new
+        if not existing_vocab_set_id:
+            table = dynamodb.Table(VOCABSETS_TABLE)
+            table.put_item(
+                Item={
+                    'vocabSetId': vocab_set_id,
+                    'userId': user_id,
+                    'title': '',
+                    'sourceImageKey': image_key,
+                    'extractionStatus': 'pending',
+                    'metadata': {},
+                    'createdAt': timestamp,
+                    'updatedAt': timestamp,
+                    'itemCount': 0,
+                }
+            )
 
         logger.info(json.dumps({
             'event': 'upload_created',
