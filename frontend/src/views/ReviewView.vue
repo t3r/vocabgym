@@ -33,6 +33,7 @@
 
         <VocabTable
           :items="items"
+          :target-language="vocabSet?.targetLanguage || 'fr'"
           @update="handleItemUpdate"
           @delete="handleItemDelete"
           @add="handleItemAdd"
@@ -98,8 +99,8 @@ function handleItemDelete(index) {
 function handleItemAdd() {
   items.value.push({
     itemId: `new-${Date.now()}`,
-    german: '',
-    french: '',
+    source: '',
+    target: '',
     notes: '',
     order: items.value.length + 1
   })
@@ -107,9 +108,9 @@ function handleItemAdd() {
 
 async function handleSave() {
   // Validate: no empty pairs
-  const invalidItems = items.value.filter((item) => !item.german.trim() || !item.french.trim())
+  const invalidItems = items.value.filter((item) => !(item.source || item.german)?.trim() || !(item.target || item.french)?.trim())
   if (invalidItems.length > 0) {
-    showError('Bitte fülle alle Deutsch- und Französisch-Felder aus.')
+    showError('Bitte fülle alle Quell- und Zielsprachfelder aus.')
     return
   }
 

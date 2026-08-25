@@ -63,13 +63,15 @@
 <script setup>
 import { ref, computed } from 'vue'
 import api from '@/services/api'
+import { getAllArticleGenders } from '@/utils/languages'
 
 const props = defineProps({
   correct: { type: Boolean, required: true },
   correctAnswer: { type: String, default: '' },
   userAnswer: { type: String, default: '' },
   itemId: { type: String, default: '' },
-  vocabSetId: { type: String, default: '' }
+  vocabSetId: { type: String, default: '' },
+  targetLanguage: { type: String, default: 'fr' }
 })
 
 const showNoteInput = ref(false)
@@ -90,22 +92,7 @@ async function saveNote() {
   }
 }
 
-const frenchArticlePairs = {
-  'un': 'männlich (masculin)',
-  'une': 'weiblich (féminin)',
-  'le': 'männlich (masculin)',
-  'la': 'weiblich (féminin)',
-  'les': 'Plural',
-  'des': 'Plural (unbestimmt)',
-}
-
-const germanArticlePairs = {
-  'der': 'männlich (Maskulinum)',
-  'die': 'weiblich (Femininum) / Plural',
-  'das': 'sächlich (Neutrum)',
-  'ein': 'männlich/sächlich',
-  'eine': 'weiblich',
-}
+const allArticleGenders = computed(() => getAllArticleGenders(props.targetLanguage))
 
 const genderError = computed(() => {
   if (props.correct || !props.userAnswer || !props.correctAnswer) return null
@@ -120,7 +107,7 @@ const genderError = computed(() => {
 
   if (userArticle === correctArticle) return null
 
-  const allArticles = { ...frenchArticlePairs, ...germanArticlePairs }
+  const allArticles = allArticleGenders.value
 
   if (!(userArticle in allArticles) || !(correctArticle in allArticles)) return null
 

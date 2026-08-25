@@ -5,7 +5,7 @@
         <tr class="border-b border-gray-200 dark:border-gray-700">
           <th class="pb-2 text-left text-sm font-medium text-gray-500 w-8">#</th>
           <th class="pb-2 text-left text-sm font-medium text-gray-500 dark:text-gray-400 dark:text-gray-500">Deutsch</th>
-          <th class="pb-2 text-left text-sm font-medium text-gray-500 dark:text-gray-400 dark:text-gray-500">Französisch</th>
+          <th class="pb-2 text-left text-sm font-medium text-gray-500 dark:text-gray-400 dark:text-gray-500">{{ getLanguageName(targetLanguage) }}</th>
           <th class="pb-2 w-10"></th>
         </tr>
       </thead>
@@ -15,6 +15,7 @@
           :key="item.itemId"
           :item="item"
           :index="index"
+          :target-language="targetLanguage"
           @update="(field, value) => $emit('update', index, field, value)"
           @delete="$emit('delete', index)"
         />
@@ -33,9 +34,11 @@
 
 <script setup>
 import VocabTableRow from './VocabTableRow.vue'
+import { getLanguageName } from '@/utils/languages'
 
 defineProps({
-  items: { type: Array, required: true }
+  items: { type: Array, required: true },
+  targetLanguage: { type: String, default: 'fr' }
 })
 
 defineEmits(['update', 'delete', 'add'])

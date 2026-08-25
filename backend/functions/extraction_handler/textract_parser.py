@@ -30,7 +30,7 @@ class TextractParser:
         """Extract vocabulary pairs from all tables in the document.
 
         Returns:
-            List of dicts with keys: german, french, confidence, notes
+            List of dicts with keys: source, target, confidence, notes
         """
         tables = self._get_tables()
 
@@ -168,8 +168,8 @@ class TextractParser:
             ) / 2.0
 
             pairs.append({
-                'german': german_text,
-                'french': french_text,
+                'source': german_text,
+                'target': french_text,
                 'confidence': round(confidence, 2),
                 'notes': '',
             })
@@ -325,8 +325,8 @@ class TextractParser:
                         confidence = line_block.get('Confidence', 0) / 100.0
 
                         pairs.append({
-                            'german': left,
-                            'french': right,
+                            'source': left,
+                            'target': right,
                             'confidence': round(confidence, 2),
                             'notes': '',
                         })

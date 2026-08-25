@@ -10,10 +10,10 @@
     <!-- Question Display -->
     <div class="text-center mb-8">
       <p class="text-sm text-gray-500 dark:text-gray-400 mb-2">
-        {{ direction === 'de-fr' ? 'Übersetze ins Französische:' : 'Übersetze ins Deutsche:' }}
+        {{ (direction === 'de-fr' || direction === 'source-target') ? `Übersetze ins ${getLanguageName(targetLanguage)}:` : 'Übersetze ins Deutsche:' }}
       </p>
       <p class="text-3xl font-bold text-gray-900 dark:text-white">
-        {{ question.question || (direction === 'de-fr' ? question.german : question.french) }}
+        {{ question.question || ((direction === 'de-fr' || direction === 'source-target') ? (question.source || question.german) : (question.target || question.french)) }}
       </p>
     </div>
 
@@ -21,7 +21,7 @@
     <AnswerInput
       v-if="!feedback"
       @submit="$emit('submit', $event)"
-      :placeholder="direction === 'de-fr' ? 'Französisch eingeben...' : 'Deutsch eingeben...'"
+      :placeholder="(direction === 'de-fr' || direction === 'source-target') ? `${getLanguageName(targetLanguage)} eingeben...` : 'Deutsch eingeben...'"
     />
 
     <!-- Almost Correct - Let User Decide -->
@@ -56,6 +56,7 @@
       :user-answer="feedback.userAnswer"
       :item-id="question.itemId"
       :vocab-set-id="question.vocabSetId || ''"
+      :target-language="targetLanguage"
     />
 
     <!-- Actions -->
@@ -111,13 +112,15 @@
 import { ref, computed } from 'vue'
 import AnswerInput from './AnswerInput.vue'
 import FeedbackDisplay from './FeedbackDisplay.vue'
+import { getLanguageName, getAllArticleGenders } from '@/utils/languages'
 
 const props = defineProps({
   question: { type: Object, required: true },
   direction: { type: String, default: 'de-fr' },
   feedback: { type: Object, default: null },
   streak: { type: Number, default: 0 },
-  hintEnabled: { type: Boolean, default: false }
+  hintEnabled: { type: Boolean, default: false },
+  targetLanguage: { type: String, default: 'fr' }
 })
 
 defineEmits(['submit', 'skip', 'next', 'accept-close', 'reject-close'])
@@ -127,7 +130,7 @@ let hintTimeout = null
 
 const correctAnswerText = computed(() => {
   return props.question.correctAnswer
-    || (props.direction === 'de-fr' ? props.question.french : props.question.german)
+    || ((props.direction === 'de-fr' || props.direction === 'source-target') ? (props.question.target || props.question.french) : (props.question.source || props.question.german))
     || ''
 })
 
@@ -145,19 +148,7 @@ const genderError = computed(() => {
 
   if (userArticle === correctArticle) return null
 
-  const articleGenders = {
-    'un': 'männlich (masculin)',
-    'une': 'weiblich (féminin)',
-    'le': 'männlich (masculin)',
-    'la': 'weiblich (féminin)',
-    'les': 'Plural',
-    'des': 'Plural (unbestimmt)',
-    'der': 'männlich (Maskulinum)',
-    'die': 'weiblich (Femininum) / Plural',
-    'das': 'sächlich (Neutrum)',
-    'ein': 'männlich/sächlich',
-    'eine': 'weiblich',
-  }
+  const articleGenders = getAllArticleGenders(props.targetLanguage)
 
   if (!(userArticle in articleGenders) || !(correctArticle in articleGenders)) return null
 

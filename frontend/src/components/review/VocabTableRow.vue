@@ -3,20 +3,20 @@
     <td class="py-2 text-sm text-gray-400 align-middle">{{ index + 1 }}</td>
     <td class="py-2 pr-2">
       <input
-        :value="item.german"
-        @input="$emit('update', 'german', $event.target.value)"
+        :value="item.source || item.german"
+        @input="$emit('update', 'source', $event.target.value)"
         class="input-field text-sm"
-        :class="{ 'border-error': !item.german?.trim() }"
+        :class="{ 'border-error': !(item.source || item.german)?.trim() }"
         placeholder="Deutsch"
       />
     </td>
     <td class="py-2 pr-2">
       <input
-        :value="item.french"
-        @input="$emit('update', 'french', $event.target.value)"
+        :value="item.target || item.french"
+        @input="$emit('update', 'target', $event.target.value)"
         class="input-field text-sm"
-        :class="{ 'border-error': !item.french?.trim() }"
-        placeholder="Französisch"
+        :class="{ 'border-error': !(item.target || item.french)?.trim() }"
+        :placeholder="getLanguageName(targetLanguage)"
       />
     </td>
     <td class="py-2 text-center">
@@ -34,9 +34,12 @@
 </template>
 
 <script setup>
+import { getLanguageName } from '@/utils/languages'
+
 defineProps({
   item: { type: Object, required: true },
-  index: { type: Number, required: true }
+  index: { type: Number, required: true },
+  targetLanguage: { type: String, default: 'fr' }
 })
 
 defineEmits(['update', 'delete'])

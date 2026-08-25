@@ -96,6 +96,15 @@ def handle_start(event, user_id):
     direction = body.get('direction', 'de-fr')
     question_count = int(body.get('questionCount', 0)) or None
 
+    # Map old direction values to new ones internally
+    direction_map = {
+        'de-fr': 'source-target',
+        'fr-de': 'target-source',
+        'source-target': 'source-target',
+        'target-source': 'target-source',
+    }
+    internal_direction = direction_map.get(direction, 'source-target')
+
     # Fetch vocabulary items
     items_table = dynamodb.Table(VOCABITEMS_TABLE)
     response = items_table.query(
@@ -125,18 +134,21 @@ def handle_start(event, user_id):
     questions = []
     for i, item in enumerate(active_items):
         question_id = generate_uuid()
-        if direction == 'de-fr':
-            question_text = item['german']
-            correct_answer = item['french']
+        source_text = item.get('source', item.get('german', ''))
+        target_text = item.get('target', item.get('french', ''))
+
+        if internal_direction == 'source-target':
+            question_text = source_text
+            correct_answer = target_text
         else:
-            question_text = item['french']
-            correct_answer = item['german']
+            question_text = target_text
+            correct_answer = source_text
 
         questions.append({
             'questionId': question_id,
             'itemId': item['itemId'],
-            'german': item['german'],
-            'french': item['french'],
+            'source': source_text,
+            'target': target_text,
             'question': question_text,
             'correctAnswer': correct_answer,
             'questionNumber': i + 1,

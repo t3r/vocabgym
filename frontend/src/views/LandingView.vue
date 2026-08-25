@@ -6,7 +6,7 @@
       <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-24 sm:py-32">
         <div class="text-center">
           <h1 class="text-4xl sm:text-5xl lg:text-6xl font-bold tracking-tight">
-            Französisch Vokabeln lernen
+            Vokabeln lernen — Französisch, Englisch, Spanisch, Italienisch
           </h1>
           <p class="mt-6 text-lg sm:text-xl text-primary-100 max-w-2xl mx-auto">
             Scanne deine Arbeitsbuchseiten, extrahiere Vokabeln automatisch und übe mit

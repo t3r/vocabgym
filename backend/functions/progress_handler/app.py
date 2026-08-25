@@ -232,8 +232,8 @@ def handle_vocab_set_progress(event, user_id):
 
         item_progress.append({
             'itemId': item_id,
-            'german': item.get('german', ''),
-            'french': item.get('french', ''),
+            'source': item.get('source', item.get('german', '')),
+            'target': item.get('target', item.get('french', '')),
             'correctCount': correct,
             'incorrectCount': incorrect,
             'accuracy': accuracy,

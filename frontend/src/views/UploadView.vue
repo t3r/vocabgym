@@ -9,6 +9,20 @@
 
     <!-- Upload Phase -->
     <div v-if="phase === 'select'" class="card">
+      <!-- Language Selector -->
+      <div class="mb-6">
+        <label for="target-language" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Zielsprache:</label>
+        <select
+          id="target-language"
+          v-model="targetLanguage"
+          class="input-field"
+        >
+          <option v-for="lang in SUPPORTED_LANGUAGES" :key="lang.code" :value="lang.code">
+            {{ lang.flag }} {{ lang.name }}
+          </option>
+        </select>
+      </div>
+
       <ImageDropzone
         @upload-success="handleStartUpload"
         @upload-error="handleUploadError"
@@ -66,6 +80,7 @@ import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useUpload } from '@/composables/useUpload'
 import { useToast } from '@/composables/useToast'
+import { SUPPORTED_LANGUAGES, DEFAULT_TARGET_LANGUAGE } from '@/utils/languages'
 import ImageDropzone from '@/components/upload/ImageDropzone.vue'
 
 const router = useRouter()
@@ -76,6 +91,7 @@ const phase = ref('select') // 'select' | 'processing'
 const error = ref(null)
 const totalFiles = ref(0)
 const extractionPhase = ref(false)
+const targetLanguage = ref(DEFAULT_TARGET_LANGUAGE)
 
 async function handleStartUpload({ files, vocabSetId }) {
   phase.value = 'processing'
@@ -85,7 +101,7 @@ async function handleStartUpload({ files, vocabSetId }) {
 
   try {
     // Upload all files (first creates set, rest add to it)
-    const { vocabSetId: setId, imageKeys } = await upload.uploadMultipleImages(files)
+    const { vocabSetId: setId, imageKeys } = await upload.uploadMultipleImages(files, targetLanguage.value)
 
     // Now extract each image sequentially
     extractionPhase.value = true

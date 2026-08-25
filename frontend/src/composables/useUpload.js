@@ -16,9 +16,10 @@ export function useUpload() {
    * Upload a single image file to S3 via presigned URL.
    * @param {File} file - The file to upload
    * @param {string|null} vocabSetId - Optional existing set ID to add to
+   * @param {string|null} targetLanguage - Target language code (e.g. 'fr', 'en', 'es', 'it')
    * @returns {{ vocabSetId, imageKey }}
    */
-  async function uploadImage(file, vocabSetId = null) {
+  async function uploadImage(file, vocabSetId = null, targetLanguage = null) {
     isUploading.value = true
     uploadProgress.value = 0
     error.value = null
@@ -31,6 +32,9 @@ export function useUpload() {
       }
       if (vocabSetId) {
         payload.vocabSetId = vocabSetId
+      }
+      if (targetLanguage) {
+        payload.targetLanguage = targetLanguage
       }
 
       const presignResponse = await api.post('/vocab/upload', payload)
@@ -75,9 +79,10 @@ export function useUpload() {
    * Upload multiple files, creating one vocab set and adding all pages to it.
    * First file creates the set, subsequent files add to it.
    * @param {File[]} files - Array of files to upload
+   * @param {string|null} targetLanguage - Target language code
    * @returns {{ vocabSetId, imageKeys: string[] }}
    */
-  async function uploadMultipleImages(files) {
+  async function uploadMultipleImages(files, targetLanguage = null) {
     isUploading.value = true
     error.value = null
     filesProgress.value = files.map((f) => ({ name: f.name, progress: 0, status: 'pending' }))
@@ -89,7 +94,7 @@ export function useUpload() {
       for (let i = 0; i < files.length; i++) {
         filesProgress.value[i].status = 'uploading'
 
-        const result = await uploadImage(files[i], vocabSetId)
+        const result = await uploadImage(files[i], vocabSetId, targetLanguage)
 
         // First file creates the set, subsequent files reuse the ID
         if (!vocabSetId) {

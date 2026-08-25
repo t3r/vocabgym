@@ -176,7 +176,7 @@ def handle_get(event, user_id):
         except Exception as e:
             logger.warning(f"Failed to generate presigned URL: {e}")
 
-    return build_response(200, {
+    response_body = {
         'vocabSetId': vocab_set['vocabSetId'],
         'userId': vocab_set['userId'],
         'title': vocab_set.get('title', ''),
@@ -190,15 +190,21 @@ def handle_get(event, user_id):
         'items': [
             {
                 'itemId': item['itemId'],
-                'german': item['german'],
-                'french': item['french'],
+                'source': item.get('source', item.get('german', '')),
+                'target': item.get('target', item.get('french', '')),
                 'notes': item.get('notes', ''),
                 'order': item.get('order', 0),
                 'isActive': item.get('isActive', True),
             }
             for item in items
         ],
-    })
+    }
+
+    # Include targetLanguage if it exists on the vocab set
+    if vocab_set.get('targetLanguage'):
+        response_body['targetLanguage'] = vocab_set['targetLanguage']
+
+    return build_response(200, response_body)
 
 
 def handle_update(event, user_id):
@@ -282,12 +288,14 @@ def handle_update(event, user_id):
         with items_table.batch_writer() as batch:
             for i, item in enumerate(items):
                 item_id = item.get('itemId') or generate_uuid()
+                source_text = item.get('source', item.get('german', '')).strip()
+                target_text = item.get('target', item.get('french', '')).strip()
                 batch.put_item(
                     Item={
                         'vocabSetId': vocab_set_id,
                         'itemId': item_id,
-                        'german': item['german'].strip(),
-                        'french': item['french'].strip(),
+                        'source': source_text,
+                        'target': target_text,
                         'notes': item.get('notes', ''),
                         'order': i + 1,
                         'createdAt': timestamp,

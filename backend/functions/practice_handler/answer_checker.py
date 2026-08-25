@@ -4,6 +4,8 @@ import unicodedata
 import re
 from typing import Tuple
 
+from lib.languages import get_all_articles, SOURCE_LANGUAGE
+
 
 def normalize_answer(text: str) -> str:
     """Normalize an answer for comparison.
@@ -82,7 +84,7 @@ def levenshtein_distance(s1: str, s2: str) -> int:
     return previous_row[-1]
 
 
-def check_answer(user_answer: str, correct_answer: str) -> bool:
+def check_answer(user_answer: str, correct_answer: str, target_language: str = 'fr') -> bool:
     """Check if a user's answer is correct using fuzzy matching.
 
     The matching rules are:
@@ -94,6 +96,7 @@ def check_answer(user_answer: str, correct_answer: str) -> bool:
     Args:
         user_answer: The user's submitted answer
         correct_answer: The expected correct answer
+        target_language: Target language code for article stripping (default: 'fr')
 
     Returns:
         True if the answer is considered correct
@@ -110,8 +113,8 @@ def check_answer(user_answer: str, correct_answer: str) -> bool:
         return True
 
     # Try matching without articles
-    user_no_article = _strip_articles(norm_user)
-    correct_no_article = _strip_articles(norm_correct)
+    user_no_article = _strip_articles(norm_user, target_language)
+    correct_no_article = _strip_articles(norm_correct, target_language)
 
     if user_no_article == correct_no_article:
         return True
@@ -144,51 +147,58 @@ def check_answer(user_answer: str, correct_answer: str) -> bool:
     return False
 
 
-def _strip_articles(text: str) -> str:
-    """Remove common German and French articles from the beginning of text.
+def _strip_articles(text: str, target_language: str = 'fr') -> str:
+    """Remove common source and target language articles from the beginning of text.
 
-    German articles: der, die, das, ein, eine, eines, einem, einen, einer
-    French articles: le, la, les, l', un, une, des, du, de la, de l'
+    Uses the languages module to dynamically build the article list based on
+    the source language (German) and the specified target language.
 
     Args:
         text: Normalized text
+        target_language: Target language code (default: 'fr')
 
     Returns:
         Text with leading article removed
     """
-    # German articles
-    german_articles = [
-        'der ', 'die ', 'das ', 'ein ', 'eine ', 'eines ',
-        'einem ', 'einen ', 'einer ',
-    ]
+    # Get all articles for both source and target language
+    all_articles_list = get_all_articles(target_language)
+    if not all_articles_list:
+        # Fallback to hardcoded German + French if language not found
+        all_articles_list = [
+            'der', 'die', 'das', 'ein', 'eine', 'eines', 'einem', 'einen', 'einer',
+            'le', 'la', 'les', "l'", 'un', 'une', 'des', 'du', 'de la', "de l'", 'de les',
+        ]
 
-    # French articles (longer patterns first to avoid partial matches)
-    french_articles = [
-        'de la ', 'de l ', 'de les ',
-        'les ', 'des ', 'une ', 'du ',
-        'le ', 'la ', 'un ', 'l ',
-    ]
+    # Sort by length descending to match longer patterns first (e.g., "de la" before "de")
+    sorted_articles = sorted(all_articles_list, key=len, reverse=True)
 
-    all_articles = german_articles + french_articles
-
-    for article in all_articles:
-        if text.startswith(article):
-            return text[len(article):].strip()
+    for article in sorted_articles:
+        # Normalize the article for comparison (lowercase)
+        norm_article = article.lower()
+        # Handle articles that end with apostrophe (e.g., "l'", "de l'")
+        if norm_article.endswith("'"):
+            if text.startswith(norm_article):
+                return text[len(norm_article):].strip()
+        else:
+            prefix = norm_article + ' '
+            if text.startswith(prefix):
+                return text[len(prefix):].strip()
 
     return text
 
 
-def get_answer_feedback(user_answer: str, correct_answer: str) -> Tuple[bool, str]:
+def get_answer_feedback(user_answer: str, correct_answer: str, target_language: str = 'fr') -> Tuple[bool, str]:
     """Check answer and provide detailed feedback.
 
     Args:
         user_answer: The user's submitted answer
         correct_answer: The expected correct answer
+        target_language: Target language code for article stripping (default: 'fr')
 
     Returns:
         Tuple of (is_correct, feedback_message)
     """
-    is_correct = check_answer(user_answer, correct_answer)
+    is_correct = check_answer(user_answer, correct_answer, target_language)
 
     if is_correct:
         # Check if it was exact or fuzzy

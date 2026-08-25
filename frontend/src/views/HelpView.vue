@@ -29,7 +29,7 @@
     <div v-if="activeTab === 'student'" class="prose-content">
       <section class="mb-10">
         <h2 class="section-title">Hey! 👋 Willkommen bei VocabGym</h2>
-        <p>VocabGym hilft dir, deine französischen Vokabeln zu lernen — schnell, einfach und ohne nerviges Abtippen von Listen. Deine Lehrkraft scannt die Seiten aus eurem Arbeitsbuch und du kannst direkt losüben.</p>
+        <p>VocabGym hilft dir, deine Vokabeln zu lernen — schnell, einfach und ohne nerviges Abtippen von Listen. Deine Lehrkraft scannt die Seiten aus eurem Arbeitsbuch und du kannst direkt losüben.</p>
       </section>
 
       <section class="mb-10">
@@ -68,6 +68,9 @@
 
       <section class="mb-10">
         <h2 class="section-title">Tipps zum Üben</h2>
+        <div class="info-box mb-4">
+          <p class="text-sm">Beim Hochladen wählst du die Zielsprache (Französisch, Englisch, Spanisch oder Italienisch).</p>
+        </div>
         <div class="tips-grid">
           <div class="tip-card">
             <span class="tip-icon">💡</span>
@@ -122,7 +125,7 @@
     <div v-if="activeTab === 'teacher'" class="prose-content">
       <section class="mb-10">
         <h2 class="section-title">Willkommen, VocabGym für Lehrkräfte</h2>
-        <p>VocabGym unterstützt Sie dabei, Ihren Schülerinnen und Schülern eine motivierende Lernumgebung für französische Vokabeln bereitzustellen. Sie scannen die Arbeitsbuchseiten, die App extrahiert die Vokabeln automatisch, und Ihre Klasse kann sofort üben.</p>
+        <p>VocabGym unterstützt Sie dabei, Ihren Schülerinnen und Schülern eine motivierende Lernumgebung für Vokabeln in der gewählten Zielsprache bereitzustellen. Sie scannen die Arbeitsbuchseiten, die App extrahiert die Vokabeln automatisch, und Ihre Klasse kann sofort üben.</p>
       </section>
 
       <section class="mb-10">
@@ -177,6 +180,9 @@
           <li>Vokabeln als aktiv/inaktiv markieren (Checkboxen)</li>
           <li>Weitere Seiten zu einem bestehenden Set hinzufügen</li>
         </ul>
+        <div class="info-box mt-4">
+          <p class="text-sm">Beim Hochladen wählen Sie die Zielsprache (Französisch, Englisch, Spanisch oder Italienisch).</p>
+        </div>
       </section>
 
       <section class="mb-10">

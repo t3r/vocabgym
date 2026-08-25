@@ -10,7 +10,7 @@
         <h1 class="text-2xl font-bold text-gray-900 dark:text-white mb-2">VocabGym</h1>
         <p class="text-lg text-gray-700 mb-6">{{ message }}</p>
         <p class="text-sm text-gray-500 mb-8">
-          Trainiere deine französischen Vokabeln mit deinen Klassenkameraden.
+          Trainiere deine Vokabeln mit deinen Klassenkameraden.
         </p>
         <button @click="handleSignUp" class="btn-primary w-full text-lg py-3">
           Jetzt registrieren

@@ -16,6 +16,7 @@ from lib.utils import (
     get_path_parameter,
 )
 from lib.validation import validate_uuid
+from lib.languages import get_language, DEFAULT_TARGET_LANGUAGE
 
 from textract_parser import TextractParser
 
@@ -60,7 +61,7 @@ def extract_with_textract(image_key):
         image_key: S3 object key for the image
 
     Returns:
-        tuple: (vocab_pairs, confidence) where vocab_pairs is list of {german, french}
+        tuple: (vocab_pairs, confidence) where vocab_pairs is list of {source, target}
     """
     logger.info(json.dumps({
         'event': 'textract_start',
@@ -102,7 +103,7 @@ def extract_with_openai(image_key):
         image_key: S3 object key for the image
 
     Returns:
-        list: List of {german, french} vocabulary pairs
+        list: List of {source, target} vocabulary pairs
     """
     api_key = get_openai_api_key()
     if not api_key:
@@ -141,7 +142,7 @@ def extract_with_openai(image_key):
                                 "Extract all German-French vocabulary pairs from this "
                                 "workbook page. Return ONLY a JSON array with this exact "
                                 "structure:\n"
-                                '[{"german": "das Haus", "french": "la maison"}]\n\n'
+                                '[{"source": "das Haus", "target": "la maison"}]\n\n'
                                 "Rules:\n"
                                 "1. Preserve accents and special characters exactly\n"
                                 "2. Ignore headers, page numbers, and instructions\n"
@@ -189,7 +190,7 @@ def store_vocab_items(vocab_set_id, vocab_pairs):
 
     Args:
         vocab_set_id: The vocabulary set ID
-        vocab_pairs: List of {german, french, confidence} dicts
+        vocab_pairs: List of {source, target, confidence} dicts
 
     Returns:
         int: Number of items stored
@@ -200,12 +201,14 @@ def store_vocab_items(vocab_set_id, vocab_pairs):
     with table.batch_writer() as batch:
         for i, pair in enumerate(vocab_pairs):
             item_id = generate_uuid()
+            source_text = pair.get('source', pair.get('german', '')).strip()
+            target_text = pair.get('target', pair.get('french', '')).strip()
             batch.put_item(
                 Item={
                     'vocabSetId': vocab_set_id,
                     'itemId': item_id,
-                    'german': _strip_phonetics(pair['german'].strip()),
-                    'french': _strip_phonetics(pair['french'].strip()),
+                    'source': _strip_phonetics(source_text),
+                    'target': _strip_phonetics(target_text),
                     'notes': pair.get('notes', ''),
                     'order': i + 1,
                     'confidence': int(pair.get('confidence', 0) * 100),
@@ -438,8 +441,8 @@ def handle_get_extraction(event, user_id):
         'items': [
             {
                 'itemId': item['itemId'],
-                'german': item['german'],
-                'french': item['french'],
+                'source': item.get('source', item.get('german', '')),
+                'target': item.get('target', item.get('french', '')),
                 'notes': item.get('notes', ''),
                 'confidence': item.get('confidence', 0),
                 'order': item.get('order', 0),

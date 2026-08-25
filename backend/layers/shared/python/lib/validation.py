@@ -93,7 +93,8 @@ def validate_vocab_items(items):
     """Validate a list of vocabulary items.
 
     Args:
-        items: List of vocabulary item dicts with 'german' and 'french' keys
+        items: List of vocabulary item dicts with 'source'/'target' keys
+               (also accepts legacy 'german'/'french' keys for backwards compat)
 
     Returns:
         tuple: (is_valid, error_message)
@@ -111,20 +112,21 @@ def validate_vocab_items(items):
         if not isinstance(item, dict):
             return False, f"Item {i+1} must be an object"
 
-        german = item.get('german', '').strip()
-        french = item.get('french', '').strip()
+        # Accept both source/target (new) and german/french (legacy)
+        source = item.get('source', item.get('german', '')).strip()
+        target = item.get('target', item.get('french', '')).strip()
 
-        if not german:
-            return False, f"Item {i+1}: German word is required"
+        if not source:
+            return False, f"Item {i+1}: Source word is required"
 
-        if not french:
-            return False, f"Item {i+1}: French word is required"
+        if not target:
+            return False, f"Item {i+1}: Target word is required"
 
-        if len(german) > MAX_VOCAB_WORD_LENGTH:
-            return False, f"Item {i+1}: German word exceeds maximum length of {MAX_VOCAB_WORD_LENGTH}"
+        if len(source) > MAX_VOCAB_WORD_LENGTH:
+            return False, f"Item {i+1}: Source word exceeds maximum length of {MAX_VOCAB_WORD_LENGTH}"
 
-        if len(french) > MAX_VOCAB_WORD_LENGTH:
-            return False, f"Item {i+1}: French word exceeds maximum length of {MAX_VOCAB_WORD_LENGTH}"
+        if len(target) > MAX_VOCAB_WORD_LENGTH:
+            return False, f"Item {i+1}: Target word exceeds maximum length of {MAX_VOCAB_WORD_LENGTH}"
 
     return True, None
 
@@ -146,8 +148,8 @@ def validate_practice_options(data):
         return False, "vocabSetId is required"
 
     direction = data.get('direction', 'de-fr')
-    if direction not in ('de-fr', 'fr-de'):
-        return False, "Direction must be 'de-fr' or 'fr-de'"
+    if direction not in ('de-fr', 'fr-de', 'source-target', 'target-source'):
+        return False, "Direction must be 'de-fr', 'fr-de', 'source-target', or 'target-source'"
 
     question_count = data.get('questionCount')
     if question_count is not None:

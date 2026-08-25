@@ -9,8 +9,8 @@
         <div>
           <label class="label">Richtung</label>
           <select v-model="direction" class="input-field">
-            <option value="de-fr">Deutsch → Französisch</option>
-            <option value="fr-de">Französisch → Deutsch</option>
+            <option value="source-target">Deutsch → {{ getLanguageName(targetLanguage) }}</option>
+            <option value="target-source">{{ getLanguageName(targetLanguage) }} → Deutsch</option>
           </select>
         </div>
       </div>
@@ -37,6 +37,7 @@
         :feedback="feedback"
         :streak="practiceStore.currentStreak"
         :hint-enabled="practiceStore.currentStreak >= 2"
+        :target-language="targetLanguage"
         @submit="handleSubmit"
         @skip="handleSkip"
         @next="handleNext"
@@ -59,7 +60,9 @@
 import { ref, onBeforeUnmount } from 'vue'
 import { useRouter, onBeforeRouteLeave } from 'vue-router'
 import { usePracticeStore } from '@/stores/practice'
+import { useVocabStore } from '@/stores/vocab'
 import { useToast } from '@/composables/useToast'
+import { getLanguageName } from '@/utils/languages'
 import ProgressBar from '@/components/practice/ProgressBar.vue'
 import QuestionCard from '@/components/practice/QuestionCard.vue'
 import SessionSummary from '@/components/practice/SessionSummary.vue'
@@ -70,18 +73,38 @@ const props = defineProps({
 
 const router = useRouter()
 const practiceStore = usePracticeStore()
+const vocabStore = useVocabStore()
 const { showError } = useToast()
 
-const direction = ref('de-fr')
+const direction = ref('source-target')
 const isStarting = ref(false)
 const feedback = ref(null)
+const targetLanguage = ref('fr')
+
+// Load vocab set to get targetLanguage
+async function loadVocabSetMeta() {
+  try {
+    const data = await vocabStore.fetchVocabSet(props.vocabSetId)
+    if (data?.targetLanguage) {
+      targetLanguage.value = data.targetLanguage
+    }
+  } catch {
+    // fallback to 'fr'
+  }
+}
+loadVocabSetMeta()
 
 async function startPractice() {
   isStarting.value = true
   feedback.value = null
   try {
+    // Map new direction values to legacy for backend compatibility
+    let apiDirection = direction.value
+    if (apiDirection === 'source-target') apiDirection = 'de-fr'
+    if (apiDirection === 'target-source') apiDirection = 'fr-de'
+
     await practiceStore.startSession(props.vocabSetId, {
-      direction: direction.value
+      direction: apiDirection
     })
   } catch (err) {
     showError(err.message || 'Fehler beim Starten der Übung')

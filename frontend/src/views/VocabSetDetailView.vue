@@ -92,7 +92,7 @@
                 </th>
                 <th class="pb-3 text-sm font-medium text-gray-500 dark:text-gray-400 dark:text-gray-500">#</th>
                 <th class="pb-3 text-sm font-medium text-gray-500 dark:text-gray-400 dark:text-gray-500">Deutsch</th>
-                <th class="pb-3 text-sm font-medium text-gray-500 dark:text-gray-400 dark:text-gray-500">Französisch</th>
+                <th class="pb-3 text-sm font-medium text-gray-500 dark:text-gray-400 dark:text-gray-500">{{ getLanguageName(vocabSet?.targetLanguage || 'fr') }}</th>
               </tr>
             </thead>
             <tbody>
@@ -111,8 +111,8 @@
                   />
                 </td>
                 <td class="py-3 text-sm text-gray-400 dark:text-gray-500">{{ index + 1 }}</td>
-                <td class="py-3 font-medium dark:text-gray-200">{{ item.german }}</td>
-                <td class="py-3 dark:text-gray-300">{{ item.french }}</td>
+                <td class="py-3 font-medium dark:text-gray-200">{{ item.source || item.german }}</td>
+                <td class="py-3 dark:text-gray-300">{{ item.target || item.french }}</td>
               </tr>
             </tbody>
           </table>
@@ -138,6 +138,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useVocabStore } from '@/stores/vocab'
 import { useUpload } from '@/composables/useUpload'
 import { useToast } from '@/composables/useToast'
+import { getLanguageName } from '@/utils/languages'
 import api from '@/services/api'
 import LoadingSpinner from '@/components/common/LoadingSpinner.vue'
 import ImageDropzone from '@/components/upload/ImageDropzone.vue'
