@@ -194,6 +194,7 @@ def handle_get(event, user_id):
                 'french': item['french'],
                 'notes': item.get('notes', ''),
                 'order': item.get('order', 0),
+                'isActive': item.get('isActive', True),
             }
             for item in items
         ],
@@ -291,7 +292,7 @@ def handle_update(event, user_id):
                         'order': i + 1,
                         'createdAt': timestamp,
                         'updatedAt': timestamp,
-                        'isActive': True,
+                        'isActive': item.get('isActive', True),
                     }
                 )
 
