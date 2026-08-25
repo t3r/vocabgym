@@ -5,29 +5,40 @@
       <div class="text-5xl font-bold mb-2" :class="scoreColorClass">
         {{ results.score.percentage }}%
       </div>
-      <p class="text-gray-600">
+      <p class="text-gray-600 dark:text-gray-300">
         {{ results.score.correct }} von {{ results.score.total }} richtig
       </p>
-      <p v-if="results.duration" class="text-sm text-gray-400 mt-1">
+      <p v-if="results.duration" class="text-sm text-gray-400 dark:text-gray-500 mt-1">
         Dauer: {{ formatDuration(results.duration) }}
+      </p>
+    </div>
+
+    <!-- League Update -->
+    <div v-if="results.leagueUpdate" class="mb-6 px-4 py-3 bg-primary-50 dark:bg-primary-900/20 rounded-lg border border-primary-200 dark:border-primary-800">
+      <p class="text-sm font-medium text-primary-800 dark:text-primary-200">
+        +{{ results.leagueUpdate.pointsAdded || results.score.correct }} Punkte für die Liga
+        <span class="mx-2">|</span>
+        🔥 Streak: {{ results.leagueUpdate.currentStreak || 0 }} Tage
       </p>
     </div>
 
     <!-- Detailed Results -->
     <div v-if="results.detailedResults?.length" class="mb-6 text-left">
-      <h4 class="font-medium text-gray-900 mb-3">Ergebnisse im Detail</h4>
+      <h4 class="font-medium text-gray-900 dark:text-white dark:text-gray-100 mb-3">Ergebnisse im Detail</h4>
       <div class="max-h-64 overflow-y-auto space-y-2">
         <div
           v-for="(result, index) in results.detailedResults"
           :key="index"
           class="flex items-center gap-3 px-3 py-2 rounded-md text-sm"
-          :class="result.correct ? 'bg-green-50' : 'bg-red-50'"
+          :class="result.correct
+            ? 'bg-green-50 dark:bg-green-900/30 text-green-900 dark:text-green-200'
+            : 'bg-red-50 dark:bg-red-900/30 text-red-900 dark:text-red-200'"
         >
           <span :class="result.correct ? 'text-success' : 'text-error'">
             {{ result.correct ? '✓' : '✗' }}
           </span>
           <span class="flex-1 truncate">{{ result.correctAnswer }}</span>
-          <span v-if="!result.correct" class="text-xs text-gray-500 truncate">
+          <span v-if="!result.correct" class="text-xs text-gray-500 dark:text-gray-400 truncate">
             ({{ result.userAnswer || 'übersprungen' }})
           </span>
         </div>
