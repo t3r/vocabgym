@@ -7,7 +7,7 @@
       <!-- Valid Invite -->
       <div v-else-if="inviteValid" class="card py-10">
         <div class="text-5xl mb-4">📖💪</div>
-        <h1 class="text-2xl font-bold text-gray-900 mb-2">VocabGym</h1>
+        <h1 class="text-2xl font-bold text-gray-900 dark:text-white mb-2">VocabGym</h1>
         <p class="text-lg text-gray-700 mb-6">{{ message }}</p>
         <p class="text-sm text-gray-500 mb-8">
           Trainiere deine französischen Vokabeln mit deinen Klassenkameraden.
@@ -20,15 +20,15 @@
       <!-- Expired Invite -->
       <div v-else-if="inviteExpired" class="card py-10">
         <div class="text-5xl mb-4">⏰</div>
-        <h1 class="text-xl font-bold text-gray-900 mb-2">Link abgelaufen</h1>
-        <p class="text-gray-600">{{ message }}</p>
+        <h1 class="text-xl font-bold text-gray-900 dark:text-white mb-2">Link abgelaufen</h1>
+        <p class="text-gray-600 dark:text-gray-300">{{ message }}</p>
       </div>
 
       <!-- Invalid Invite -->
       <div v-else class="card py-10">
         <div class="text-5xl mb-4">❌</div>
-        <h1 class="text-xl font-bold text-gray-900 mb-2">Ungültiger Link</h1>
-        <p class="text-gray-600">{{ message }}</p>
+        <h1 class="text-xl font-bold text-gray-900 dark:text-white mb-2">Ungültiger Link</h1>
+        <p class="text-gray-600 dark:text-gray-300">{{ message }}</p>
       </div>
     </div>
   </div>

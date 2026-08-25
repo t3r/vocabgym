@@ -1,7 +1,7 @@
 <template>
   <div>
-    <h3 class="font-semibold text-gray-900 mb-3">Originalbild</h3>
-    <div v-if="imageUrl" class="rounded-lg overflow-hidden border border-gray-200">
+    <h3 class="font-semibold text-gray-900 dark:text-white mb-3">Originalbild</h3>
+    <div v-if="imageUrl" class="rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700">
       <img
         :src="imageUrl"
         alt="Arbeitsbuchseite"

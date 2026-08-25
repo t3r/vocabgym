@@ -3,7 +3,7 @@
   <div class="max-w-2xl mx-auto px-4 sm:px-6 py-8">
     <!-- Session Setup (before start) -->
     <div v-if="!practiceStore.isSessionActive && !practiceStore.sessionResults" class="card">
-      <h1 class="text-2xl font-bold text-gray-900 mb-6">Übung starten</h1>
+      <h1 class="text-2xl font-bold text-gray-900 dark:text-white mb-6">Übung starten</h1>
 
       <div class="space-y-4 mb-6">
         <div>

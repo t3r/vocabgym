@@ -18,14 +18,14 @@
             :aria-labelledby="titleId"
           >
             <!-- Header -->
-            <div v-if="title || $slots.header" class="px-6 py-4 border-b border-gray-200">
+            <div v-if="title || $slots.header" class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
               <slot name="header">
-                <h3 :id="titleId" class="text-lg font-semibold text-gray-900">{{ title }}</h3>
+                <h3 :id="titleId" class="text-lg font-semibold text-gray-900 dark:text-white">{{ title }}</h3>
               </slot>
               <button
                 v-if="closeable"
                 @click="$emit('close')"
-                class="absolute top-4 right-4 text-gray-400 hover:text-gray-600"
+                class="absolute top-4 right-4 text-gray-400 hover:text-gray-600 dark:text-gray-300"
                 aria-label="Schließen"
               >
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">

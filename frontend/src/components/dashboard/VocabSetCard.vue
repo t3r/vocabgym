@@ -2,7 +2,7 @@
   <div class="card hover:shadow-lg transition-shadow cursor-pointer" @click="$emit('view', vocabSet)">
     <!-- Title and Metadata -->
     <div class="mb-3">
-      <h3 class="font-semibold text-gray-900 truncate">{{ vocabSet.title || 'Unbenanntes Set' }}</h3>
+      <h3 class="font-semibold text-gray-900 dark:text-white truncate">{{ vocabSet.title || 'Unbenanntes Set' }}</h3>
       <p class="text-sm text-gray-500 mt-1">
         {{ vocabSet.itemCount || 0 }} Vokabeln
         <span v-if="vocabSet.metadata?.chapter"> · Kap. {{ vocabSet.metadata.chapter }}</span>
@@ -39,7 +39,7 @@
       </button>
       <button
         @click="$emit('delete', vocabSet)"
-        class="text-gray-400 hover:text-error p-1.5 rounded-md hover:bg-red-50 transition-colors"
+        class="text-gray-400 hover:text-error p-1.5 rounded-md hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
         aria-label="Löschen"
       >
         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">

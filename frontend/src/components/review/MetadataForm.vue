@@ -1,6 +1,6 @@
 <template>
   <div class="card">
-    <h3 class="font-semibold text-gray-900 mb-4">Metadaten</h3>
+    <h3 class="font-semibold text-gray-900 dark:text-white mb-4">Metadaten</h3>
     <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
       <div>
         <label class="label">Titel</label>

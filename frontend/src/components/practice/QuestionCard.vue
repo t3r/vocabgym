@@ -2,7 +2,7 @@
   <div class="card">
     <!-- Streak Display -->
     <div v-if="streak > 0" class="flex justify-end mb-2">
-      <span class="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
+      <span class="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-green-100 dark:bg-green-900/50 text-green-800 dark:text-green-200">
         🔥 {{ streak }} richtig in Folge
       </span>
     </div>
@@ -25,17 +25,17 @@
     />
 
     <!-- Almost Correct - Let User Decide -->
-    <div v-if="feedback && feedback.close" class="rounded-lg p-4 text-center bg-yellow-50 border border-yellow-200">
+    <div v-if="feedback && feedback.close" class="rounded-lg p-4 text-center bg-yellow-50 dark:bg-yellow-900/30 border border-yellow-200 dark:border-yellow-800">
       <p class="font-semibold text-yellow-800 mb-2">Fast richtig!</p>
-      <p class="text-sm text-gray-600">
+      <p class="text-sm text-gray-600 dark:text-gray-300">
         Deine Antwort: <span class="font-medium">{{ feedback.userAnswer }}</span>
       </p>
       <p class="text-sm text-gray-600 mt-1">
-        Richtig wäre: <span class="font-medium text-green-700">{{ feedback.correctAnswer }}</span>
+        Richtig wäre: <span class="font-medium text-green-700 dark:text-green-300">{{ feedback.correctAnswer }}</span>
       </p>
       <!-- Gender Error Explanation -->
-      <div v-if="genderError" class="mt-3 p-2 bg-yellow-100 border border-yellow-300 rounded text-left">
-        <p class="text-sm font-medium text-yellow-800">⚠️ Genus-Fehler (falscher Artikel)</p>
+      <div v-if="genderError" class="mt-3 p-2 bg-yellow-100 dark:bg-yellow-900/30 border border-yellow-300 dark:border-yellow-700 rounded text-left">
+        <p class="text-sm font-medium text-yellow-800 dark:text-yellow-200">⚠️ Genus-Fehler (falscher Artikel)</p>
         <p class="text-xs text-yellow-700 mt-1">{{ genderError }}</p>
       </div>
       <div class="mt-4 flex justify-center gap-3">
@@ -99,7 +99,7 @@
         v-if="showingHint"
         class="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg text-center"
       >
-        <p class="text-sm text-blue-800">
+        <p class="text-sm text-blue-800 dark:text-blue-200">
           💡 <span class="font-medium">{{ correctAnswerText }}</span>
         </p>
       </div>

@@ -32,7 +32,7 @@
           <!-- Close button -->
           <button
             @click="uiStore.removeToast(toast.id)"
-            class="flex-shrink-0 text-gray-400 hover:text-gray-600"
+            class="flex-shrink-0 text-gray-400 hover:text-gray-600 dark:text-gray-300"
             aria-label="Schließen"
           >
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">

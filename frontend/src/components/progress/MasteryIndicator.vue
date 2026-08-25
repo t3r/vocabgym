@@ -8,7 +8,7 @@
         :class="i <= filledBars ? activeColor : 'bg-gray-200'"
       ></div>
     </div>
-    <span class="text-xs text-gray-500">{{ label }}</span>
+    <span class="text-xs text-gray-500 dark:text-gray-400 dark:text-gray-500">{{ label }}</span>
   </div>
 </template>
 

@@ -3,8 +3,8 @@
   <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
     <div class="mb-6 flex items-center justify-between">
       <div>
-        <h1 class="text-2xl font-bold text-gray-900">Vokabeln prüfen</h1>
-        <p class="mt-1 text-gray-600">Überprüfe die extrahierten Vokabeln und korrigiere Fehler.</p>
+        <h1 class="text-2xl font-bold text-gray-900 dark:text-white">Vokabeln prüfen</h1>
+        <p class="mt-1 text-gray-600 dark:text-gray-300">Überprüfe die extrahierten Vokabeln und korrigiere Fehler.</p>
       </div>
       <div class="flex gap-3">
         <button @click="handleCancel" class="btn-secondary">Abbrechen</button>
