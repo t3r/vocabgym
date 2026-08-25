@@ -183,12 +183,12 @@ def handle_vocab_set_progress(event, user_id):
     if not is_valid:
         return build_response(400, {'error': err})
 
-    # Get vocab items
+    # Get vocab items (only active ones)
     items_table = dynamodb.Table(VOCABITEMS_TABLE)
     items_response = items_table.query(
         KeyConditionExpression=Key('vocabSetId').eq(vocab_set_id)
     )
-    items = items_response.get('Items', [])
+    items = [item for item in items_response.get('Items', []) if item.get('isActive', True)]
 
     # Get progress for all items in this set
     progress_table = dynamodb.Table(PROGRESS_TABLE)

@@ -1,7 +1,7 @@
 <template>
   <!-- Progress view: Charts, stats cards, session history -->
   <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-    <h1 class="text-2xl font-bold text-gray-900 mb-8">Mein Fortschritt</h1>
+    <h1 class="text-2xl font-bold text-gray-900 dark:text-white mb-8">Mein Fortschritt</h1>
 
     <LoadingSpinner v-if="isLoading" class="py-12" />
 
@@ -77,29 +77,49 @@ onMounted(async () => {
 
     recentSessions.value = data.recentSessions || []
 
-    // Build chart data if available
-    if (data.masteryDistribution) {
+    // Build mastery distribution chart from backend data
+    const dist = data.masteryDistribution
+    if (dist) {
       masteryData.value = {
-        labels: ['Neu', 'Lernend', 'Vertraut', 'Beherrscht'],
+        labels: ['Neu (0)', 'Stufe 1', 'Stufe 2', 'Stufe 3', 'Stufe 4', 'Beherrscht (5)'],
         datasets: [{
           label: 'Vokabeln',
-          data: data.masteryDistribution,
-          backgroundColor: ['#ef4444', '#f59e0b', '#3b82f6', '#10b981']
+          data: [
+            dist['0'] || 0,
+            dist['1'] || 0,
+            dist['2'] || 0,
+            dist['3'] || 0,
+            dist['4'] || 0,
+            dist['5'] || 0
+          ],
+          backgroundColor: ['#ef4444', '#f97316', '#f59e0b', '#3b82f6', '#8b5cf6', '#10b981']
         }]
       }
     }
 
-    if (data.activityHistory) {
-      activityData.value = {
-        labels: data.activityHistory.map((d) => d.date),
-        datasets: [{
-          label: 'Geübte Vokabeln',
-          data: data.activityHistory.map((d) => d.count),
-          borderColor: '#3b82f6',
-          backgroundColor: 'rgba(59, 130, 246, 0.1)',
-          fill: true,
-          tension: 0.3
-        }]
+    // Build activity chart from recent sessions (group by date)
+    if (recentSessions.value.length > 0) {
+      const sessionsByDate = {}
+      for (const session of recentSessions.value) {
+        if (!session.completedAt) continue
+        const date = new Date(Number(session.completedAt) * 1000)
+        const key = date.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' })
+        sessionsByDate[key] = (sessionsByDate[key] || 0) + (session.correct || 0)
+      }
+
+      const dates = Object.keys(sessionsByDate)
+      if (dates.length > 0) {
+        activityData.value = {
+          labels: dates,
+          datasets: [{
+            label: 'Richtige Antworten',
+            data: dates.map(d => sessionsByDate[d]),
+            borderColor: '#3b82f6',
+            backgroundColor: 'rgba(59, 130, 246, 0.1)',
+            fill: true,
+            tension: 0.3
+          }]
+        }
       }
     }
   } catch {
