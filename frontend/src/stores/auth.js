@@ -9,6 +9,8 @@ export const useAuthStore = defineStore('auth', () => {
   const refreshToken = ref(null)
   const isLoading = ref(false)
   const error = ref(null)
+  const role = ref(localStorage.getItem('vocab_trainer_role') || 'student')
+  const leagueId = ref(localStorage.getItem('vocab_trainer_leagueId') || null)
 
   const isAuthenticated = computed(() => !!accessToken.value && !!user.value)
 
@@ -79,7 +81,27 @@ export const useAuthStore = defineStore('auth', () => {
       refreshToken.value = storedRefreshToken
       user.value = JSON.parse(storedUser)
 
+      // Extract role from id_token cognito:groups claim
+      _extractRoleFromToken(storedIdToken)
+
       checkTokenExpiry()
+    }
+  }
+
+  function _extractRoleFromToken(token) {
+    if (!token) return
+    try {
+      const payload = JSON.parse(atob(token.split('.')[1]))
+      const groups = payload['cognito:groups'] || []
+      if (Array.isArray(groups) && groups.includes('teachers')) {
+        role.value = 'teacher'
+        localStorage.setItem('vocab_trainer_role', 'teacher')
+      } else {
+        role.value = 'student'
+        localStorage.setItem('vocab_trainer_role', 'student')
+      }
+    } catch {
+      // Token parse error, keep stored role
     }
   }
 
@@ -127,10 +149,31 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
+  function setLeagueId(id) {
+    leagueId.value = id
+    if (id) {
+      localStorage.setItem('vocab_trainer_leagueId', id)
+    } else {
+      localStorage.removeItem('vocab_trainer_leagueId')
+    }
+  }
+
+  function setRole(newRole) {
+    role.value = newRole
+    if (newRole) {
+      localStorage.setItem('vocab_trainer_role', newRole)
+    } else {
+      localStorage.removeItem('vocab_trainer_role')
+    }
+  }
+
   // Call persistTokens when state changes
   const originalLogin = handleAuthCallback
   const wrappedHandleAuthCallback = async (code) => {
     const result = await originalLogin(code)
+    if (result && idToken.value) {
+      _extractRoleFromToken(idToken.value)
+    }
     persistTokens()
     return result
   }
@@ -143,6 +186,8 @@ export const useAuthStore = defineStore('auth', () => {
     isAuthenticated,
     isLoading,
     error,
+    role,
+    leagueId,
     login,
     handleAuthCallback: wrappedHandleAuthCallback,
     logout: () => {
@@ -151,11 +196,17 @@ export const useAuthStore = defineStore('auth', () => {
       idToken.value = null
       refreshToken.value = null
       error.value = null
+      leagueId.value = null
+      role.value = 'student'
+      localStorage.removeItem('vocab_trainer_leagueId')
+      localStorage.removeItem('vocab_trainer_role')
       persistTokens()
       cognito.logout()
     },
     refreshSession,
     loadUserFromStorage,
-    checkTokenExpiry
+    checkTokenExpiry,
+    setLeagueId,
+    setRole
   }
 })

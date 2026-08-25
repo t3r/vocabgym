@@ -15,33 +15,52 @@
         <nav v-if="isAuthenticated" class="hidden md:flex items-center gap-6">
           <router-link
             to="/dashboard"
-            class="text-gray-600 hover:text-gray-900 font-medium transition-colors dark:text-gray-300 dark:hover:text-white"
+            class="text-gray-600 hover:text-gray-900 dark:text-white font-medium transition-colors dark:text-gray-300 dark:hover:text-white"
             active-class="text-primary-600 dark:text-primary-400"
           >
             Dashboard
           </router-link>
           <router-link
             to="/upload"
-            class="text-gray-600 hover:text-gray-900 font-medium transition-colors dark:text-gray-300 dark:hover:text-white"
+            class="text-gray-600 hover:text-gray-900 dark:text-white font-medium transition-colors dark:text-gray-300 dark:hover:text-white"
             active-class="text-primary-600 dark:text-primary-400"
           >
             Hochladen
           </router-link>
           <router-link
             to="/progress"
-            class="text-gray-600 hover:text-gray-900 font-medium transition-colors dark:text-gray-300 dark:hover:text-white"
+            class="text-gray-600 hover:text-gray-900 dark:text-white font-medium transition-colors dark:text-gray-300 dark:hover:text-white"
             active-class="text-primary-600 dark:text-primary-400"
           >
             Fortschritt
+          </router-link>
+          <router-link
+            to="/league"
+            class="text-gray-600 hover:text-gray-900 dark:text-white font-medium transition-colors dark:text-gray-300 dark:hover:text-white"
+            active-class="text-primary-600 dark:text-primary-400"
+          >
+            Liga
           </router-link>
         </nav>
 
         <!-- User Menu -->
         <div class="flex items-center gap-3">
+          <!-- Help Link -->
+          <router-link
+            to="/help"
+            class="p-2 rounded-md text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-700 text-sm font-medium"
+            title="Hilfe"
+            aria-label="Hilfe"
+          >
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+          </router-link>
+
           <!-- Dark Mode Toggle -->
           <button
             @click="toggleDarkMode"
-            class="p-2 rounded-md text-gray-500 hover:text-gray-900 hover:bg-gray-100 dark:text-gray-400 dark:hover:text-white dark:hover:bg-gray-700 text-lg"
+            class="p-2 rounded-md text-gray-500 hover:text-gray-900 dark:text-white hover:bg-gray-100 dark:text-gray-400 dark:hover:text-white dark:hover:bg-gray-700 text-lg"
             :aria-label="isDark ? 'Heller Modus' : 'Dunkler Modus'"
             :title="isDark ? 'Heller Modus' : 'Dunkler Modus'"
           >
@@ -63,7 +82,7 @@
         <button
           v-if="isAuthenticated"
           @click="toggleMobile"
-          class="md:hidden p-2 rounded-md text-gray-600 hover:text-gray-900 hover:bg-gray-100 dark:text-gray-300 dark:hover:text-white dark:hover:bg-gray-700"
+          class="md:hidden p-2 rounded-md text-gray-600 hover:text-gray-900 dark:text-white hover:bg-gray-100 dark:text-gray-300 dark:hover:text-white dark:hover:bg-gray-700"
           aria-label="Menü öffnen"
         >
           <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -78,6 +97,8 @@
           <router-link to="/dashboard" class="px-3 py-2 rounded-md text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700" @click="mobileMenuOpen = false">Dashboard</router-link>
           <router-link to="/upload" class="px-3 py-2 rounded-md text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700" @click="mobileMenuOpen = false">Hochladen</router-link>
           <router-link to="/progress" class="px-3 py-2 rounded-md text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700" @click="mobileMenuOpen = false">Fortschritt</router-link>
+          <router-link to="/league" class="px-3 py-2 rounded-md text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700" @click="mobileMenuOpen = false">Liga</router-link>
+          <router-link to="/help" class="px-3 py-2 rounded-md text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700" @click="mobileMenuOpen = false">Hilfe</router-link>
         </div>
       </nav>
     </div>

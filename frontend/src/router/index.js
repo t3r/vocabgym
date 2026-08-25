@@ -62,6 +62,25 @@ const routes = [
     props: true
   },
   {
+    path: '/league',
+    name: 'League',
+    component: () => import('@/views/LeagueView.vue'),
+    meta: { requiresAuth: true, title: 'Liga' }
+  },
+  {
+    path: '/league/join/:code?',
+    name: 'LeagueJoin',
+    component: () => import('@/views/LeagueJoinView.vue'),
+    meta: { requiresAuth: true, title: 'Liga beitreten' },
+    props: true
+  },
+  {
+    path: '/help',
+    name: 'Help',
+    component: () => import('@/views/HelpView.vue'),
+    meta: { requiresAuth: false, title: 'Hilfe' }
+  },
+  {
     path: '/:pathMatch(.*)*',
     name: 'NotFound',
     component: () => import('@/views/NotFoundView.vue'),

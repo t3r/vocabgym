@@ -9,6 +9,7 @@ Parameters:
     AllowedValues:
       - dev
       - prod
+      - stage
     Description: Deployment environment
 
 Globals:
@@ -27,6 +28,8 @@ Globals:
         SESSIONS_TABLE: !Ref PracticeSessionsTable
         PROGRESS_TABLE: !Ref ProgressTable
         IMAGES_BUCKET: !Ref ImagesBucket
+        LEAGUES_TABLE: !Ref LeaguesTable
+        LEAGUE_MEMBERS_TABLE: !Ref LeagueMembersTable
         REGION: !Ref AWS::Region
     Layers:
       - !Ref SharedLayer
@@ -86,6 +89,13 @@ Resources:
     Properties:
       Domain: !Sub vocabtrainer-${Environment}-${AWS::AccountId}
       UserPoolId: !Ref CognitoUserPool
+
+  CognitoTeachersGroup:
+    Type: AWS::Cognito::UserPoolGroup
+    Properties:
+      GroupName: teachers
+      UserPoolId: !Ref CognitoUserPool
+      Description: Lehrkräfte mit erweiterten Rechten (Liga erstellen/verwalten)
 
   # ============================================================
   # S3 Storage
@@ -360,6 +370,10 @@ Resources:
       FunctionName: !Sub vocabtrainer-practice-handler-${Environment}
       CodeUri: functions/practice_handler/
       Handler: app.lambda_handler
+      Environment:
+        Variables:
+          LEAGUES_TABLE: !Ref LeaguesTable
+          LEAGUE_MEMBERS_TABLE: !Ref LeagueMembersTable
       Policies:
         - DynamoDBCrudPolicy:
             TableName: !Ref VocabItemsTable
@@ -367,6 +381,10 @@ Resources:
             TableName: !Ref PracticeSessionsTable
         - DynamoDBCrudPolicy:
             TableName: !Ref ProgressTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref LeagueMembersTable
+        - DynamoDBReadPolicy:
+            TableName: !Ref UsersTable
       Events:
         StartPractice:
           Type: Api
@@ -441,6 +459,122 @@ Resources:
             Method: GET
             Auth:
               Authorizer: NONE
+
+  # ============================================================
+  # League Tables
+  # ============================================================
+  LeaguesTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub vocabtrainer-leagues-${Environment}
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: leagueId
+          AttributeType: S
+        - AttributeName: joinCode
+          AttributeType: S
+      KeySchema:
+        - AttributeName: leagueId
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: joinCode-index
+          KeySchema:
+            - AttributeName: joinCode
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+
+  LeagueMembersTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub vocabtrainer-league-members-${Environment}
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: leagueId
+          AttributeType: S
+        - AttributeName: userId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: leagueId
+          KeyType: HASH
+        - AttributeName: userId
+          KeyType: RANGE
+
+  # ============================================================
+  # League Lambda Function
+  # ============================================================
+  LeagueHandlerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub vocabtrainer-league-handler-${Environment}
+      CodeUri: functions/league_handler/
+      Handler: app.lambda_handler
+      Environment:
+        Variables:
+          LEAGUES_TABLE: !Ref LeaguesTable
+          LEAGUE_MEMBERS_TABLE: !Ref LeagueMembersTable
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref LeaguesTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref LeagueMembersTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref UsersTable
+        - DynamoDBReadPolicy:
+            TableName: !Ref VocabSetsTable
+        - DynamoDBReadPolicy:
+            TableName: !Ref ProgressTable
+        - DynamoDBReadPolicy:
+            TableName: !Ref PracticeSessionsTable
+      Events:
+        CreateLeague:
+          Type: Api
+          Properties:
+            RestApiId: !Ref VocabTrainerApi
+            Path: /league
+            Method: POST
+        GetLeague:
+          Type: Api
+          Properties:
+            RestApiId: !Ref VocabTrainerApi
+            Path: /league/{leagueId}
+            Method: GET
+        UpdateLeague:
+          Type: Api
+          Properties:
+            RestApiId: !Ref VocabTrainerApi
+            Path: /league/{leagueId}
+            Method: PUT
+        DeleteLeague:
+          Type: Api
+          Properties:
+            RestApiId: !Ref VocabTrainerApi
+            Path: /league/{leagueId}
+            Method: DELETE
+        JoinLeague:
+          Type: Api
+          Properties:
+            RestApiId: !Ref VocabTrainerApi
+            Path: /league/join
+            Method: POST
+        GetLeaderboard:
+          Type: Api
+          Properties:
+            RestApiId: !Ref VocabTrainerApi
+            Path: /league/{leagueId}/leaderboard
+            Method: GET
+        GetMembers:
+          Type: Api
+          Properties:
+            RestApiId: !Ref VocabTrainerApi
+            Path: /league/{leagueId}/members
+            Method: GET
+        RemoveMember:
+          Type: Api
+          Properties:
+            RestApiId: !Ref VocabTrainerApi
+            Path: /league/{leagueId}/members/{memberId}
+            Method: DELETE
 
   # ============================================================
   # Frontend Hosting

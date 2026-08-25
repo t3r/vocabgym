@@ -1,5 +1,6 @@
 """Practice Handler - Manage practice sessions with answer validation."""
 
+import datetime
 import json
 import logging
 import os
@@ -30,6 +31,8 @@ dynamodb = boto3.resource('dynamodb')
 VOCABITEMS_TABLE = os.environ['VOCABITEMS_TABLE']
 SESSIONS_TABLE = os.environ['SESSIONS_TABLE']
 PROGRESS_TABLE = os.environ['PROGRESS_TABLE']
+LEAGUE_MEMBERS_TABLE = os.environ.get('LEAGUE_MEMBERS_TABLE', '')
+USERS_TABLE = os.environ.get('USERS_TABLE', '')
 
 # TTL: 90 days for practice sessions
 SESSION_TTL_DAYS = 90
@@ -358,14 +361,23 @@ def handle_complete(event, user_id):
         'duration': duration,
     }))
 
-    return build_response(200, {
+    # League score + streak update
+    league_update = None
+    if LEAGUE_MEMBERS_TABLE and USERS_TABLE:
+        league_update = _update_league_stats(user_id, correct_count, total)
+
+    response_body = {
         'sessionId': session_id,
         'score': score,
         'correct': correct_count,
         'total': total,
         'duration': duration,
         'detailedResults': client_results,
-    })
+    }
+    if league_update:
+        response_body['leagueUpdate'] = league_update
+
+    return build_response(200, response_body)
 
 
 def _update_item_progress(user_id, vocab_set_id, item_id, is_correct):
@@ -432,3 +444,106 @@ def _update_item_progress(user_id, vocab_set_id, item_id, is_correct):
 
     except Exception as e:
         logger.warning(f"Failed to update progress for item {item_id}: {e}")
+
+
+def _update_league_stats(user_id, correct_count, total_questions):
+    """Update league member stats after a practice session.
+
+    Args:
+        user_id: User ID
+        correct_count: Number of correct answers in this session
+        total_questions: Total questions in this session
+
+    Returns:
+        dict with updated stats or None if user not in a league
+    """
+    try:
+        # Get user record to check for leagueId
+        users_table = dynamodb.Table(USERS_TABLE)
+        user_response = users_table.get_item(Key={'userId': user_id})
+        user = user_response.get('Item')
+
+        if not user or not user.get('leagueId'):
+            return None
+
+        league_id = user['leagueId']
+
+        # Calculate dates in Europe/Berlin timezone (UTC+2 approximation)
+        now_berlin = datetime.datetime.utcnow() + datetime.timedelta(hours=2)
+        today = now_berlin.strftime('%Y-%m-%d')
+        yesterday = (now_berlin - datetime.timedelta(days=1)).strftime('%Y-%m-%d')
+        monday = (now_berlin - datetime.timedelta(days=now_berlin.weekday())).strftime('%Y-%m-%d')
+
+        # Get current league member record
+        members_table = dynamodb.Table(LEAGUE_MEMBERS_TABLE)
+        member_response = members_table.get_item(
+            Key={'leagueId': league_id, 'userId': user_id}
+        )
+        member = member_response.get('Item')
+
+        if not member:
+            return None
+
+        # Calculate new values
+        new_total_correct = int(member.get('totalCorrect', 0)) + correct_count
+        new_total_attempts = int(member.get('totalAttempts', 0)) + total_questions
+
+        # Weekly reset logic
+        week_start_date = member.get('weekStartDate', '')
+        if week_start_date != monday:
+            new_weekly_correct = correct_count
+            new_week_start_date = monday
+        else:
+            new_weekly_correct = int(member.get('weeklyCorrect', 0)) + correct_count
+            new_week_start_date = monday
+
+        # Streak logic
+        last_practice_date = member.get('lastPracticeDate', '')
+        current_streak = int(member.get('currentStreak', 0))
+
+        if last_practice_date == today:
+            # Already practiced today, no streak change
+            new_streak = current_streak
+        elif last_practice_date == yesterday:
+            # Consecutive day, increment streak
+            new_streak = current_streak + 1
+        else:
+            # Streak broken or first practice
+            new_streak = 1
+
+        # Update member record
+        members_table.update_item(
+            Key={'leagueId': league_id, 'userId': user_id},
+            UpdateExpression=(
+                'SET totalCorrect = :tc, totalAttempts = :ta, '
+                'weeklyCorrect = :wc, weekStartDate = :wsd, '
+                'currentStreak = :cs, lastPracticeDate = :lpd'
+            ),
+            ExpressionAttributeValues={
+                ':tc': new_total_correct,
+                ':ta': new_total_attempts,
+                ':wc': new_weekly_correct,
+                ':wsd': new_week_start_date,
+                ':cs': new_streak,
+                ':lpd': today,
+            }
+        )
+
+        logger.info(json.dumps({
+            'event': 'league_stats_updated',
+            'userId': user_id,
+            'leagueId': league_id,
+            'totalCorrect': new_total_correct,
+            'currentStreak': new_streak,
+            'weeklyCorrect': new_weekly_correct,
+        }))
+
+        return {
+            'totalCorrect': new_total_correct,
+            'currentStreak': new_streak,
+            'weeklyCorrect': new_weekly_correct,
+        }
+
+    except Exception as e:
+        logger.warning(f"Failed to update league stats for user {user_id}: {e}")
+        return None

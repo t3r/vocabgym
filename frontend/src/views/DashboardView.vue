@@ -6,7 +6,48 @@
       <h1 class="text-2xl font-bold text-gray-900 dark:text-white">
         Willkommen zurück{{ userName ? `, ${userName}` : '' }}!
       </h1>
-      <p class="mt-1 text-gray-600 dark:text-gray-400">Hier siehst du deine Vokabelsets auf einen Blick.</p>
+      <p class="mt-1 text-gray-600 dark:text-gray-400 dark:text-gray-500">Hier siehst du deine Vokabelsets auf einen Blick.</p>
+    </div>
+
+    <!-- League Banner -->
+    <div v-if="authStore.leagueId && leagueBanner" class="card mb-6 bg-primary-50 dark:bg-primary-900/20 border border-primary-200 dark:border-primary-800">
+      <div class="flex items-center justify-between">
+        <div class="flex items-center gap-4">
+          <span class="text-lg font-semibold text-primary-800 dark:text-primary-200">{{ leagueBanner.name }}</span>
+          <span v-if="leagueBanner.rank" class="text-sm text-gray-600 dark:text-gray-400">
+            Rang #{{ leagueBanner.rank }}
+          </span>
+          <span v-if="leagueBanner.streak" class="text-sm text-orange-600 dark:text-orange-400">
+            🔥 {{ leagueBanner.streak }} Tage
+          </span>
+        </div>
+        <router-link to="/league" class="text-primary-600 dark:text-primary-400 text-sm font-medium hover:underline">
+          Zur Liga →
+        </router-link>
+      </div>
+    </div>
+
+    <!-- League Vocab Sets -->
+    <div v-if="authStore.leagueId && leagueVocabSets.length" class="mb-8">
+      <h2 class="text-xl font-semibold text-gray-900 dark:text-white mb-4">Liga-Vokabeln</h2>
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div
+          v-for="set in leagueVocabSets"
+          :key="set.vocabSetId"
+          class="card flex items-center justify-between"
+        >
+          <div>
+            <h3 class="font-medium text-gray-900 dark:text-white text-sm">{{ set.title }}</h3>
+            <p class="text-xs text-gray-500 dark:text-gray-400">{{ set.itemCount || 0 }} Wörter</p>
+          </div>
+          <router-link
+            :to="{ name: 'Practice', params: { vocabSetId: set.vocabSetId } }"
+            class="btn-primary text-xs px-3 py-1"
+          >
+            Üben
+          </router-link>
+        </div>
+      </div>
     </div>
 
     <StatsOverview class="mb-8" />
@@ -28,7 +69,7 @@
     </div>
 
     <!-- Invite Link Panel -->
-    <div v-if="inviteUrl" class="card mb-6 bg-blue-50 border-blue-200">
+    <div v-if="inviteUrl" class="card mb-6 bg-blue-50 border-blue-200 dark:border-blue-800">
       <div class="flex items-center justify-between">
         <div>
           <p class="font-medium text-blue-900">Einladungslink</p>
@@ -63,7 +104,7 @@
       <svg class="w-16 h-16 text-gray-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
       </svg>
-      <h3 class="text-lg font-medium text-gray-900 mb-2">Noch keine Vokabelsets</h3>
+      <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-2">Noch keine Vokabelsets</h3>
       <p class="text-gray-600 mb-6">Lade ein Bild deiner Arbeitsbuchseite hoch, um loszulegen.</p>
       <router-link to="/upload" class="btn-primary">Erstes Bild hochladen</router-link>
     </div>
@@ -102,9 +143,45 @@ const userName = computed(() => authStore.user?.name || authStore.user?.given_na
 const inviteUrl = ref(null)
 const copied = ref(false)
 
+// League data
+const leagueBanner = ref(null)
+const leagueVocabSets = ref([])
+
 onMounted(() => {
   vocabStore.fetchVocabSets()
+  if (authStore.leagueId) {
+    loadLeagueData()
+  }
 })
+
+async function loadLeagueData() {
+  try {
+    const [leagueRes, leaderboardRes] = await Promise.all([
+      api.get(`/league/${authStore.leagueId}`),
+      api.get(`/league/${authStore.leagueId}/leaderboard`)
+    ])
+    const league = leagueRes.data
+    const lb = leaderboardRes.data.leaderboard || leaderboardRes.data || []
+    const userId = authStore.user?.sub || authStore.user?.userId
+    const ownEntry = lb.find(e => e.userId === userId)
+
+    leagueBanner.value = {
+      name: league.name,
+      rank: ownEntry?.rank || null,
+      streak: ownEntry?.currentStreak || 0
+    }
+
+    // Load league vocab sets if any assigned
+    if (league.vocabSetIds?.length) {
+      const vocabRes = await api.get('/vocab')
+      const allSets = vocabRes.data.vocabSets || vocabRes.data || []
+      leagueVocabSets.value = allSets.filter(s => league.vocabSetIds.includes(s.vocabSetId))
+    }
+  } catch {
+    // League data load failure is non-critical
+    leagueBanner.value = null
+  }
+}
 
 async function generateInvite() {
   try {
