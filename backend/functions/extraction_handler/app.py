@@ -225,6 +225,7 @@ NICHT gültig sind:
 - Einträge wo eine Seite nur ein Beispielsatz ist (keine Übersetzung)
 - Buchstaben des Alphabets
 - Überschriften, Seitenzahlen, Übungsanweisungen
+- Unvollständige Einträge (z.B. nur "etw." oder "jdm." ohne den Rest der Übersetzung)
 
 Aufgabe:
 1. Behalte NUR echte Vokabelpaare (Deutsch ↔ {lang_name}).
@@ -232,7 +233,9 @@ Aufgabe:
 3. Entferne Nummerierungen und überflüssige Sonderzeichen.
 4. Korrigiere offensichtliche OCR-Fehler (z.B. fehlende Akzente).
 5. Behalte Artikel (der/die/das, le/la/les etc.) bei.
-6. Wenn KEINE gültigen Vokabelpaare vorhanden sind, antworte mit einem leeren Array: []
+6. Wenn eine Übersetzung aus mehreren Teilen besteht die offensichtlich zusammengehören (z.B. "etw." + "tauschen"), füge sie zu einem Eintrag zusammen (z.B. "etw. tauschen").
+7. Behalte Abkürzungen wie "etw." (etwas), "jdn." (jemanden), "jdm." (jemandem) als Teil der Übersetzung bei.
+8. Wenn KEINE gültigen Vokabelpaare vorhanden sind, antworte mit einem leeren Array: []
 
 Antworte NUR mit einem JSON-Array im Format:
 [{{"source": "deutsch", "target": "übersetzung"}}]

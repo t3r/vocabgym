@@ -145,14 +145,33 @@ class TextractParser:
         start_row = 2 if self._is_header_row(grid, 1, max_col) else 1
 
         for row in range(start_row, max_row + 1):
-            german_cell = grid.get((row, german_col))
-            french_cell = grid.get((row, french_col))
+            # If table has more than 2 columns, merge all non-target columns as source
+            if max_col > 2:
+                source_texts = []
+                target_texts = []
+                for col in range(1, max_col + 1):
+                    cell = grid.get((row, col))
+                    if not cell:
+                        continue
+                    text = self._get_cell_text(cell)
+                    if not text:
+                        continue
+                    if col == french_col:
+                        target_texts.append(text)
+                    else:
+                        source_texts.append(text)
 
-            if not german_cell or not french_cell:
-                continue
+                german_text = ' '.join(source_texts).strip()
+                french_text = ' '.join(target_texts).strip()
+            else:
+                german_cell = grid.get((row, german_col))
+                french_cell = grid.get((row, french_col))
 
-            german_text = self._get_cell_text(german_cell)
-            french_text = self._get_cell_text(french_cell)
+                if not german_cell or not french_cell:
+                    continue
+
+                german_text = self._get_cell_text(german_cell)
+                french_text = self._get_cell_text(french_cell)
 
             # Skip empty rows
             if not german_text or not french_text:
@@ -162,10 +181,14 @@ class TextractParser:
             if self._is_instruction_text(german_text) or self._is_instruction_text(french_text):
                 continue
 
-            confidence = (
-                self._get_cell_confidence(german_cell) +
-                self._get_cell_confidence(french_cell)
-            ) / 2.0
+            # Calculate confidence from available cells
+            if max_col > 2:
+                confidence = 0.85  # Default for merged columns
+            else:
+                confidence = (
+                    self._get_cell_confidence(grid.get((row, german_col), {})) +
+                    self._get_cell_confidence(grid.get((row, french_col), {}))
+                ) / 2.0
 
             pairs.append({
                 'source': german_text,
