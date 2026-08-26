@@ -159,45 +159,82 @@
         <!-- Manage Members -->
         <div class="card mb-6">
           <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-3">Teilnehmer verwalten</h3>
-          <div class="overflow-x-auto">
-            <table class="w-full text-sm">
-              <thead>
-                <tr class="text-left text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-gray-700">
-                  <th class="pb-2 pr-4">Name</th>
-                  <th class="pb-2 pr-4">Score</th>
-                  <th class="pb-2 pr-4">🔥 Streak</th>
-                  <th class="pb-2 pr-4">Letzte Übung</th>
-                  <th class="pb-2">Aktionen</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr
-                  v-for="member in members"
-                  :key="member.userId"
-                  class="border-b border-gray-200 dark:border-gray-700 last:border-0"
-                >
-                  <td class="py-2 pr-4">{{ member.displayName || member.email || 'Unbekannt' }}</td>
-                  <td class="py-2 pr-4">{{ member.totalCorrect || 0 }}</td>
-                  <td class="py-2 pr-4">{{ member.currentStreak || 0 }}</td>
-                  <td class="py-2 pr-4 text-xs text-gray-500 dark:text-gray-400">
-                    {{ member.lastPracticeDate ? formatDate(member.lastPracticeDate) : 'Nie' }}
-                  </td>
-                  <td class="py-2">
-                    <button
-                      @click="removeMember(member)"
-                      class="text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300 text-xs font-medium"
-                    >
-                      Entfernen
-                    </button>
-                  </td>
-                </tr>
-                <tr v-if="!members.length">
-                  <td colspan="5" class="py-4 text-center text-gray-500 dark:text-gray-400">
-                    Noch keine Teilnehmer
-                  </td>
-                </tr>
-              </tbody>
-            </table>
+          <div v-if="!members.length" class="text-gray-500 dark:text-gray-400 text-sm text-center py-4">
+            Noch keine Teilnehmer
+          </div>
+          <div v-else class="space-y-3">
+            <div
+              v-for="member in members"
+              :key="member.userId"
+              class="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden"
+            >
+              <!-- Member Summary Row (clickable) -->
+              <div
+                class="flex items-center justify-between p-3 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                @click="toggleMemberDetail(member.userId)"
+              >
+                <div class="flex items-center gap-3">
+                  <span class="font-medium text-gray-900 dark:text-white text-sm">
+                    {{ member.displayName || 'Unbekannt' }}
+                  </span>
+                  <span class="text-xs bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300 px-2 py-0.5 rounded-full">
+                    {{ member.totalCorrect || 0 }} Punkte
+                  </span>
+                  <span v-if="member.currentStreak" class="text-xs text-orange-600 dark:text-orange-400">
+                    🔥 {{ member.currentStreak }}
+                  </span>
+                </div>
+                <div class="flex items-center gap-2">
+                  <svg
+                    class="w-4 h-4 text-gray-400 transition-transform"
+                    :class="{ 'rotate-180': expandedMembers.includes(member.userId) }"
+                    fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                  >
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                  </svg>
+                </div>
+              </div>
+
+              <!-- Member Detail (expandable) -->
+              <div v-if="expandedMembers.includes(member.userId)" class="border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 p-4">
+                <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-4">
+                  <div class="text-center">
+                    <div class="text-lg font-bold text-gray-900 dark:text-white">{{ member.totalCorrect || 0 }}</div>
+                    <div class="text-xs text-gray-500 dark:text-gray-400">Gesamt richtig</div>
+                  </div>
+                  <div class="text-center">
+                    <div class="text-lg font-bold text-gray-900 dark:text-white">{{ member.totalAttempts || 0 }}</div>
+                    <div class="text-xs text-gray-500 dark:text-gray-400">Gesamt versucht</div>
+                  </div>
+                  <div class="text-center">
+                    <div class="text-lg font-bold text-gray-900 dark:text-white">
+                      {{ member.totalAttempts ? Math.round((member.totalCorrect / member.totalAttempts) * 100) : 0 }}%
+                    </div>
+                    <div class="text-xs text-gray-500 dark:text-gray-400">Genauigkeit</div>
+                  </div>
+                  <div class="text-center">
+                    <div class="text-lg font-bold text-gray-900 dark:text-white">{{ member.weeklyCorrect || 0 }}</div>
+                    <div class="text-xs text-gray-500 dark:text-gray-400">Diese Woche</div>
+                  </div>
+                </div>
+                <div class="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400">
+                  <span>
+                    Letzte Übung: {{ member.lastPracticeDate || 'Nie' }}
+                  </span>
+                  <span>
+                    Beigetreten: {{ formatDate(member.joinedAt) }}
+                  </span>
+                </div>
+                <div class="mt-3 pt-3 border-t border-gray-200 dark:border-gray-700">
+                  <button
+                    @click.stop="removeMember(member)"
+                    class="text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300 text-xs font-medium"
+                  >
+                    Aus Liga entfernen
+                  </button>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </template>
@@ -293,6 +330,7 @@ const savingScoreMode = ref(false)
 const selectedVocabSetIds = ref([])
 const savingVocabSets = ref(false)
 const joinCodeCopied = ref(false)
+const expandedMembers = ref([])
 
 const currentUserId = computed(() => authStore.user?.sub || authStore.user?.userId || '')
 
@@ -418,6 +456,15 @@ async function removeMember(member) {
     showSuccess('Teilnehmer entfernt')
   } catch {
     showToastError('Fehler beim Entfernen des Teilnehmers')
+  }
+}
+
+function toggleMemberDetail(userId) {
+  const idx = expandedMembers.value.indexOf(userId)
+  if (idx >= 0) {
+    expandedMembers.value.splice(idx, 1)
+  } else {
+    expandedMembers.value.push(userId)
   }
 }
 
