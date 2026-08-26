@@ -581,6 +581,12 @@ Resources:
             RestApiId: !Ref VocabTrainerApi
             Path: /league/{leagueId}/members/{memberId}
             Method: DELETE
+        UpdateProfile:
+          Type: Api
+          Properties:
+            RestApiId: !Ref VocabTrainerApi
+            Path: /users/profile
+            Method: PUT
 
   # ============================================================
   # Frontend Hosting

@@ -51,6 +51,10 @@ def lambda_handler(event, context):
     try:
         user_id = get_user_id_from_event(event)
 
+        # PUT /users/profile
+        if http_method == 'PUT' and '/users/profile' in path:
+            return handle_update_profile(event, user_id)
+
         # POST /league/join
         if http_method == 'POST' and path.endswith('/league/join'):
             return handle_join(event, user_id)
@@ -138,6 +142,47 @@ def _get_league(league_id):
     table = dynamodb.Table(LEAGUES_TABLE)
     response = table.get_item(Key={'leagueId': league_id})
     return response.get('Item')
+
+
+def handle_update_profile(event, user_id):
+    """Handle PUT /users/profile - Update user's display name.
+
+    Expected body:
+    {
+        "displayName": "Max M."
+    }
+    """
+    body = parse_body(event)
+    display_name = body.get('displayName', '').strip()
+
+    if not display_name:
+        return build_response(400, {'error': 'displayName is required'})
+
+    if len(display_name) > 50:
+        return build_response(400, {'error': 'displayName must be 50 characters or less'})
+
+    # Update Users table
+    users_table = dynamodb.Table(USERS_TABLE)
+    users_table.update_item(
+        Key={'userId': user_id},
+        UpdateExpression='SET displayName = :name',
+        ExpressionAttributeValues={':name': display_name}
+    )
+
+    # Also update displayName in LeagueMembers if user is in a league
+    user = _get_user(user_id)
+    if user and user.get('leagueId'):
+        members_table = dynamodb.Table(LEAGUE_MEMBERS_TABLE)
+        try:
+            members_table.update_item(
+                Key={'leagueId': user['leagueId'], 'userId': user_id},
+                UpdateExpression='SET displayName = :name',
+                ExpressionAttributeValues={':name': display_name}
+            )
+        except Exception as e:
+            logger.warning(f"Failed to update displayName in league members: {e}")
+
+    return build_response(200, {'displayName': display_name})
 
 
 def handle_create(event, user_id):
@@ -254,7 +299,7 @@ def handle_join(event, user_id):
     members_table.put_item(Item={
         'leagueId': league_id,
         'userId': user_id,
-        'displayName': user.get('displayName', user.get('email', 'Student')),
+        'displayName': user.get('displayName', 'Unbekannt'),
         'role': 'student',
         'currentStreak': 0,
         'totalCorrect': 0,

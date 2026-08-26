@@ -68,8 +68,31 @@
           </button>
 
           <div v-if="isAuthenticated" class="flex items-center gap-3">
-            <div class="hidden sm:block text-sm text-gray-600 dark:text-gray-300">
-              {{ userName }}
+            <button
+              @click="editingName = true"
+              class="hidden sm:block text-sm text-gray-600 dark:text-gray-300 hover:text-primary-600 dark:hover:text-primary-400 cursor-pointer"
+              title="Namen ändern"
+            >
+              {{ userName || 'Name setzen' }}
+            </button>
+            <!-- Inline Name Editor -->
+            <div v-if="editingName" class="fixed inset-0 z-50 flex items-start justify-center pt-20" @click.self="editingName = false">
+              <div class="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-4 w-72 border border-gray-200 dark:border-gray-700">
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Anzeigename</label>
+                <input
+                  v-model="newDisplayName"
+                  type="text"
+                  maxlength="50"
+                  placeholder="Dein Name"
+                  class="input-field w-full text-sm mb-3"
+                  @keyup.enter="saveDisplayName"
+                  ref="nameInput"
+                />
+                <div class="flex gap-2">
+                  <button @click="saveDisplayName" class="btn-primary text-xs flex-1" :disabled="!newDisplayName.trim()">Speichern</button>
+                  <button @click="editingName = false" class="btn-secondary text-xs">Abbrechen</button>
+                </div>
+              </div>
             </div>
             <LogoutButton />
           </div>
@@ -106,14 +129,43 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, nextTick, watch } from 'vue'
 import { useAuth } from '@/composables/useAuth'
+import api from '@/services/api'
 import LoginButton from '@/components/auth/LoginButton.vue'
 import LogoutButton from '@/components/auth/LogoutButton.vue'
 
 const { isAuthenticated, userName } = useAuth()
 const mobileMenuOpen = ref(false)
 const isDark = ref(false)
+const editingName = ref(false)
+const newDisplayName = ref('')
+const nameInput = ref(null)
+
+watch(editingName, (val) => {
+  if (val) {
+    newDisplayName.value = userName.value || ''
+    nextTick(() => nameInput.value?.focus())
+  }
+})
+
+async function saveDisplayName() {
+  const name = newDisplayName.value.trim()
+  if (!name) return
+  try {
+    await api.put('/users/profile', { displayName: name })
+    // Update local user object
+    const { user } = useAuth()
+    if (user.value) {
+      user.value.name = name
+    }
+    localStorage.setItem('vocab_trainer_displayName', name)
+    editingName.value = false
+  } catch {
+    // Silent fail - name will update on next login
+    editingName.value = false
+  }
+}
 
 onMounted(() => {
   // Check saved preference or system preference

@@ -56,7 +56,7 @@
                 :class="entry.userId === currentUserId ? 'bg-primary-50 dark:bg-primary-900/20' : ''"
               >
                 <td class="py-2 pr-4 font-medium">{{ entry.rank }}</td>
-                <td class="py-2 pr-4">{{ entry.displayName || entry.email || 'Unbekannt' }}</td>
+                <td class="py-2 pr-4">{{ entry.displayName || 'Unbekannt' }}</td>
                 <td class="py-2 pr-4 font-medium">{{ entry.score }}</td>
                 <td class="py-2">{{ entry.currentStreak || 0 }} Tage</td>
               </tr>
@@ -448,7 +448,7 @@ async function saveAssignedSets() {
 }
 
 async function removeMember(member) {
-  const name = member.displayName || member.email || 'diesen Teilnehmer'
+  const name = member.displayName || 'diesen Teilnehmer'
   if (!confirm(`Möchtest du ${name} wirklich aus der Liga entfernen?`)) return
   try {
     await api.delete(`/league/${authStore.leagueId}/members/${member.userId}`)

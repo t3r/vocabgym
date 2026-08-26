@@ -14,7 +14,7 @@ export function useAuth() {
 
   const userName = computed(() => {
     if (!authStore.user) return ''
-    return authStore.user.name || authStore.user.email || ''
+    return localStorage.getItem('vocab_trainer_displayName') || authStore.user.name || ''
   })
 
   const userInitials = computed(() => {
