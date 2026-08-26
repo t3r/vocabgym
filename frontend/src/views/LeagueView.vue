@@ -70,6 +70,34 @@
         </div>
       </div>
 
+      <!-- League Vocab Sets - Quick Practice -->
+      <div v-if="leagueVocabSets.length" class="card mb-6">
+        <h2 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">Jetzt üben</h2>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div
+            v-for="set in leagueVocabSets"
+            :key="set.vocabSetId"
+            class="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700 rounded-lg"
+          >
+            <div>
+              <p class="font-medium text-gray-900 dark:text-white text-sm">{{ set.title || 'Unbenanntes Set' }}</p>
+              <p class="text-xs text-gray-500 dark:text-gray-400">{{ set.itemCount || 0 }} Vokabeln</p>
+            </div>
+            <router-link
+              :to="{ name: 'Practice', params: { vocabSetId: set.vocabSetId } }"
+              class="btn-primary text-xs px-3 py-1.5"
+            >
+              Üben
+            </router-link>
+          </div>
+        </div>
+      </div>
+      <div v-else-if="authStore.role !== 'teacher'" class="card mb-6">
+        <p class="text-gray-500 dark:text-gray-400 text-sm text-center py-4">
+          Noch keine Vokabelsets zugewiesen. Deine Lehrkraft wird bald Sets freischalten.
+        </p>
+      </div>
+
       <!-- Teacher Management Section -->
       <template v-if="authStore.role === 'teacher'">
         <!-- Join Code -->
@@ -245,6 +273,7 @@ const loading = ref(false)
 const league = ref(null)
 const leaderboard = ref([])
 const members = ref([])
+const leagueVocabSets = ref([])
 const myVocabSets = ref([])
 
 // Join form state
@@ -288,6 +317,15 @@ async function loadLeagueData() {
     leaderboard.value = leaderboardRes.data.leaderboard || leaderboardRes.data || []
     selectedScoreMode.value = league.value.scoreMode || 'total'
     selectedVocabSetIds.value = league.value.vocabSetIds || []
+
+    // Load league vocab sets for practice
+    if (league.value.vocabSetIds?.length) {
+      const setPromises = league.value.vocabSetIds.map(id =>
+        api.get(`/vocab/${id}`).then(r => r.data).catch(() => null)
+      )
+      const sets = await Promise.all(setPromises)
+      leagueVocabSets.value = sets.filter(Boolean)
+    }
 
     if (authStore.role === 'teacher') {
       const [membersRes, vocabRes] = await Promise.all([
