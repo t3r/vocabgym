@@ -152,7 +152,7 @@
                   <td class="py-2 pr-4">{{ member.totalCorrect || 0 }}</td>
                   <td class="py-2 pr-4">{{ member.currentStreak || 0 }}</td>
                   <td class="py-2 pr-4 text-xs text-gray-500 dark:text-gray-400">
-                    {{ member.lastPracticedAt ? formatDate(member.lastPracticedAt) : 'Nie' }}
+                    {{ member.lastPracticeDate ? formatDate(member.lastPracticeDate) : 'Nie' }}
                   </td>
                   <td class="py-2">
                     <button
