@@ -491,12 +491,13 @@ def handle_get_leaderboard(event, user_id):
 
     score_mode = league.get('scoreMode', 'weekly')
 
-    # Get all members (exclude teachers — they manage, not compete)
+    # Get all members (exclude the teacher — they manage, not compete)
     members_table = dynamodb.Table(LEAGUE_MEMBERS_TABLE)
     response = members_table.query(
         KeyConditionExpression=Key('leagueId').eq(league_id)
     )
-    members = [m for m in response.get('Items', []) if m.get('role') != 'teacher']
+    teacher_id = league.get('teacherUserId', '')
+    members = [m for m in response.get('Items', []) if m.get('userId') != teacher_id and m.get('role') != 'teacher']
 
     # Calculate current week Monday (Europe/Berlin approx UTC+2)
     now_berlin = datetime.datetime.utcnow() + datetime.timedelta(hours=2)
