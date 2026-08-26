@@ -531,7 +531,7 @@ def handle_process(event, user_id):
         }
     )
 
-    # Try Textract first
+    # Try Textract first for OCR, then use Bedrock for intelligent extraction
     vocab_pairs = []
     raw_text = ''
     extraction_method = 'textract'
@@ -539,23 +539,28 @@ def handle_process(event, user_id):
     try:
         vocab_pairs, confidence, raw_text = extract_with_textract(image_key)
 
-        # If Textract table extraction found few/no pairs, use LLM to extract
-        # directly from the raw OCR text (handles free-text layouts)
-        if len(vocab_pairs) < 3 or confidence < 0.7:
-            logger.info(json.dumps({
-                'event': 'textract_insufficient',
-                'confidence': confidence,
-                'pairsFound': len(vocab_pairs),
-                'rawTextLength': len(raw_text),
-                'fallbackToBedrock': True,
-            }))
-
+        # Always prefer Bedrock extraction from raw text when raw text is available.
+        # Textract table parsing often misaligns columns on complex workbook layouts,
+        # while the LLM can intelligently parse the full OCR text regardless of layout.
+        if raw_text and len(raw_text.strip()) > 50:
             target_language = item.get('targetLanguage', DEFAULT_TARGET_LANGUAGE)
             bedrock_pairs = extract_with_bedrock_from_text(raw_text, target_language)
 
-            if bedrock_pairs and len(bedrock_pairs) > len(vocab_pairs):
+            if bedrock_pairs and len(bedrock_pairs) >= len(vocab_pairs):
+                logger.info(json.dumps({
+                    'event': 'using_bedrock_extraction',
+                    'textractPairs': len(vocab_pairs),
+                    'bedrockPairs': len(bedrock_pairs),
+                    'rawTextLength': len(raw_text),
+                }))
                 vocab_pairs = bedrock_pairs
                 extraction_method = 'bedrock_from_text'
+            else:
+                logger.info(json.dumps({
+                    'event': 'keeping_textract_pairs',
+                    'textractPairs': len(vocab_pairs),
+                    'bedrockPairs': len(bedrock_pairs) if bedrock_pairs else 0,
+                }))
 
     except Exception as e:
         logger.warning(f"Textract failed: {e}")
