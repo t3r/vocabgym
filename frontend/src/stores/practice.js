@@ -156,7 +156,8 @@ export const usePracticeStore = defineStore('practice', () => {
         score: score.value,
         duration,
         detailedResults: answers.value,
-        leagueUpdate: response.data.leagueUpdate || null
+        leagueUpdate: response.data.leagueUpdate || null,
+        errorPatterns: response.data.errorPatterns || null,
       }
     } catch {
       // Even if API fails, show local results

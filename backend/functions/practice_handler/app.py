@@ -400,7 +400,118 @@ def handle_complete(event, user_id):
     if league_update:
         response_body['leagueUpdate'] = league_update
 
+    # Analyze error patterns for this session
+    wrong_answers = [r for r in client_results if not r.get('correct', False)]
+    if wrong_answers:
+        patterns = _analyze_error_patterns(user_id, vocab_set_id, wrong_answers)
+        if patterns:
+            response_body['errorPatterns'] = patterns
+
     return build_response(200, response_body)
+
+
+def _analyze_error_patterns(user_id, vocab_set_id, wrong_answers):
+    """Analyze error patterns from this session and historical data.
+
+    Detects:
+    - Article/gender errors (wrong article, correct word)
+    - Repeated mistakes on same words
+    - Common confusion patterns
+
+    Args:
+        user_id: User ID
+        vocab_set_id: Vocabulary set ID
+        wrong_answers: List of wrong answer dicts from this session
+
+    Returns:
+        dict with pattern analysis or None if no patterns detected
+    """
+    patterns = {
+        'articleErrors': [],    # Words where only the article was wrong
+        'repeatedErrors': [],   # Words that were wrong before (from recentErrors)
+        'confusions': [],       # Words confused with each other
+        'summary': '',          # German text summary of findings
+    }
+
+    # Load historical progress for this user+set
+    progress_table = dynamodb.Table(PROGRESS_TABLE)
+    progress_key = f"{user_id}#{vocab_set_id}"
+
+    try:
+        progress_response = progress_table.query(
+            KeyConditionExpression=Key('progressKey').eq(progress_key)
+        )
+        progress_items = {
+            p['itemId']: p for p in progress_response.get('Items', [])
+        }
+    except Exception:
+        progress_items = {}
+
+    # German and common target language articles for detection
+    all_articles = [
+        'der', 'die', 'das', 'ein', 'eine',
+        'le', 'la', 'les', 'un', 'une', 'des', "l'",
+        'el', 'la', 'los', 'las',
+        'il', 'lo', 'i', 'gli',
+        'the', 'a', 'an',
+    ]
+
+    for wrong in wrong_answers:
+        user_answer = (wrong.get('userAnswer') or '').strip().lower()
+        correct_answer = (wrong.get('correctAnswer') or '').strip().lower()
+        item_id = wrong.get('itemId', '')
+
+        if not user_answer or not correct_answer:
+            continue
+
+        # Detect article errors: same word, different article
+        user_parts = user_answer.split(' ', 1)
+        correct_parts = correct_answer.split(' ', 1)
+
+        if (len(user_parts) > 1 and len(correct_parts) > 1
+                and user_parts[0] in all_articles and correct_parts[0] in all_articles
+                and user_parts[1] == correct_parts[1]):
+            patterns['articleErrors'].append({
+                'word': correct_answer,
+                'yourArticle': user_parts[0],
+                'correctArticle': correct_parts[0],
+            })
+            continue
+
+        # Detect repeated errors (same word wrong multiple times historically)
+        progress = progress_items.get(item_id, {})
+        recent_errors = progress.get('recentErrors', [])
+        if len(recent_errors) >= 2:
+            patterns['repeatedErrors'].append({
+                'word': correct_answer,
+                'timesWrong': int(progress.get('incorrectCount', 0)),
+                'lastAnswers': [e.get('answer', '') for e in recent_errors[-3:]],
+            })
+
+    # Build summary text
+    summary_parts = []
+    if patterns['articleErrors']:
+        count = len(patterns['articleErrors'])
+        summary_parts.append(
+            f"Artikel-Fehler bei {count} {'Wort' if count == 1 else 'Wörtern'} "
+            f"— achte auf das grammatische Geschlecht!"
+        )
+    if patterns['repeatedErrors']:
+        count = len(patterns['repeatedErrors'])
+        words = ', '.join(e['word'] for e in patterns['repeatedErrors'][:3])
+        summary_parts.append(
+            f"{count} Wörter bereiten dir wiederholt Schwierigkeiten: {words}"
+        )
+
+    if not summary_parts:
+        return None
+
+    patterns['summary'] = ' '.join(summary_parts)
+
+    # Remove empty lists from response
+    patterns = {k: v for k, v in patterns.items() if v}
+
+    return patterns
 
 
 def _prioritize_items(active_items, user_id, vocab_set_id):

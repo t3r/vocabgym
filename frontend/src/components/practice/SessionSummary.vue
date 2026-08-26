@@ -22,6 +22,35 @@
       </p>
     </div>
 
+    <!-- Error Pattern Analysis -->
+    <div v-if="results.errorPatterns" class="mb-6 text-left">
+      <div class="p-4 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg">
+        <h4 class="font-medium text-yellow-900 dark:text-yellow-200 mb-2 flex items-center gap-2">
+          <span>💡</span> Lernhinweis
+        </h4>
+        <p class="text-sm text-yellow-800 dark:text-yellow-300 mb-3">{{ results.errorPatterns.summary }}</p>
+
+        <!-- Article errors detail -->
+        <div v-if="results.errorPatterns.articleErrors?.length" class="mt-3 space-y-1">
+          <p class="text-xs font-medium text-yellow-700 dark:text-yellow-400">Artikel-Fehler:</p>
+          <div v-for="(err, i) in results.errorPatterns.articleErrors" :key="'art-'+i" class="text-xs text-yellow-700 dark:text-yellow-400">
+            <span class="line-through text-red-600 dark:text-red-400">{{ err.yourArticle }}</span>
+            → <span class="font-medium text-green-700 dark:text-green-400">{{ err.correctArticle }}</span>
+            {{ err.word.split(' ').slice(1).join(' ') }}
+          </div>
+        </div>
+
+        <!-- Repeated errors detail -->
+        <div v-if="results.errorPatterns.repeatedErrors?.length" class="mt-3 space-y-1">
+          <p class="text-xs font-medium text-yellow-700 dark:text-yellow-400">Wiederholte Schwierigkeiten:</p>
+          <div v-for="(err, i) in results.errorPatterns.repeatedErrors" :key="'rep-'+i" class="text-xs text-yellow-700 dark:text-yellow-400">
+            <span class="font-medium">{{ err.word }}</span>
+            <span class="text-gray-500 dark:text-gray-400"> ({{ err.timesWrong }}× falsch)</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- Detailed Results -->
     <div v-if="results.detailedResults?.length" class="mb-6 text-left">
       <h4 class="font-medium text-gray-900 dark:text-white dark:text-gray-100 mb-3">Ergebnisse im Detail</h4>
