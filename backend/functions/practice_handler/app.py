@@ -120,8 +120,9 @@ def handle_start(event, user_id):
     if not active_items:
         return build_response(404, {'error': 'No active vocabulary items found'})
 
-    # Shuffle and limit
-    random.shuffle(active_items)
+    # Smart Repetition: prioritize weak words based on progress data
+    active_items = _prioritize_items(active_items, user_id, vocab_set_id)
+
     if question_count and question_count < len(active_items):
         active_items = active_items[:question_count]
 
@@ -280,7 +281,7 @@ def handle_submit(event, user_id):
     )
 
     # Update progress for this item
-    _update_item_progress(user_id, session['vocabSetId'], question['itemId'], is_correct)
+    _update_item_progress(user_id, session['vocabSetId'], question['itemId'], is_correct, user_answer=user_answer)
 
     logger.info(json.dumps({
         'event': 'answer_submitted',
@@ -361,7 +362,11 @@ def handle_complete(event, user_id):
     for result in client_results:
         item_id = result.get('itemId')
         if item_id:
-            _update_item_progress(user_id, vocab_set_id, item_id, result.get('correct', False))
+            _update_item_progress(
+                user_id, vocab_set_id, item_id,
+                result.get('correct', False),
+                user_answer=result.get('userAnswer')
+            )
 
     logger.info(json.dumps({
         'event': 'practice_completed',
@@ -398,7 +403,83 @@ def handle_complete(event, user_id):
     return build_response(200, response_body)
 
 
-def _update_item_progress(user_id, vocab_set_id, item_id, is_correct):
+def _prioritize_items(active_items, user_id, vocab_set_id):
+    """Prioritize vocabulary items based on progress data.
+
+    Weak words (low mastery, recent errors, low consecutive correct) appear
+    earlier in the list. New words (never practiced) are mixed in.
+
+    Uses weighted random sort: each item gets a priority score, then items
+    are sorted by score (highest first) with some randomization to avoid
+    always the same order.
+
+    Priority factors:
+    - Low mastery level → higher priority
+    - Recent errors → higher priority
+    - Never practiced → medium priority (new words should appear)
+    - High mastery → lower priority (already known)
+    """
+    progress_table = dynamodb.Table(PROGRESS_TABLE)
+    progress_key = f"{user_id}#{vocab_set_id}"
+
+    # Fetch all progress records for this user+set
+    try:
+        progress_response = progress_table.query(
+            KeyConditionExpression=Key('progressKey').eq(progress_key)
+        )
+        progress_items = {
+            p['itemId']: p for p in progress_response.get('Items', [])
+        }
+    except Exception as e:
+        logger.warning(f"Failed to fetch progress for prioritization: {e}")
+        # Fallback to random shuffle
+        random.shuffle(active_items)
+        return active_items
+
+    # Calculate priority score for each item
+    scored_items = []
+    for item in active_items:
+        item_id = item['itemId']
+        progress = progress_items.get(item_id, {})
+
+        mastery = int(progress.get('masteryLevel', 0))
+        consecutive_correct = int(progress.get('consecutiveCorrect', 0))
+        incorrect_count = int(progress.get('incorrectCount', 0))
+        correct_count = int(progress.get('correctCount', 0))
+        recent_errors = progress.get('recentErrors', [])
+
+        # Priority score: higher = should appear earlier
+        if correct_count == 0 and incorrect_count == 0:
+            # Never practiced — medium priority
+            priority = 5.0
+        else:
+            # Base: inverse of mastery (0-5 mastery → 5-0 priority)
+            priority = 5.0 - mastery
+
+            # Boost for recent errors
+            priority += min(len(recent_errors), 3) * 1.5
+
+            # Boost for low accuracy
+            total = correct_count + incorrect_count
+            if total > 0:
+                error_rate = incorrect_count / total
+                priority += error_rate * 2.0
+
+            # Penalize high consecutive correct (well-known)
+            priority -= min(consecutive_correct, 3) * 0.5
+
+        # Add small random factor to avoid identical ordering
+        priority += random.uniform(0, 1.5)
+
+        scored_items.append((priority, item))
+
+    # Sort by priority descending (weakest words first)
+    scored_items.sort(key=lambda x: x[0], reverse=True)
+
+    return [item for _, item in scored_items]
+
+
+def _update_item_progress(user_id, vocab_set_id, item_id, is_correct, user_answer=None):
     """Update the progress table for a specific vocabulary item.
 
     Args:
@@ -406,6 +487,7 @@ def _update_item_progress(user_id, vocab_set_id, item_id, is_correct):
         vocab_set_id: Vocabulary set ID
         item_id: Vocabulary item ID
         is_correct: Whether the answer was correct
+        user_answer: The user's answer (stored on errors for pattern detection)
     """
     progress_table = dynamodb.Table(PROGRESS_TABLE)
     progress_key = f"{user_id}#{vocab_set_id}"
@@ -419,22 +501,51 @@ def _update_item_progress(user_id, vocab_set_id, item_id, is_correct):
                 'lastPracticedAt = :ts, '
                 'consecutiveCorrect = if_not_exists(consecutiveCorrect, :zero) + :one'
             )
-        else:
-            update_expr = (
-                'SET incorrectCount = if_not_exists(incorrectCount, :zero) + :one, '
-                'lastPracticedAt = :ts, '
-                'consecutiveCorrect = :zero'
-            )
-
-        progress_table.update_item(
-            Key={'progressKey': progress_key, 'itemId': item_id},
-            UpdateExpression=update_expr,
-            ExpressionAttributeValues={
+            expr_values = {
                 ':one': 1,
                 ':zero': 0,
                 ':ts': timestamp,
             }
+        else:
+            # Build error entry for pattern tracking
+            error_entry = {
+                'answer': user_answer or '',
+                'timestamp': timestamp,
+            }
+
+            update_expr = (
+                'SET incorrectCount = if_not_exists(incorrectCount, :zero) + :one, '
+                'lastPracticedAt = :ts, '
+                'consecutiveCorrect = :zero, '
+                'recentErrors = list_append(if_not_exists(recentErrors, :empty), :newError)'
+            )
+            expr_values = {
+                ':one': 1,
+                ':zero': 0,
+                ':ts': timestamp,
+                ':empty': [],
+                ':newError': [error_entry],
+            }
+
+        progress_table.update_item(
+            Key={'progressKey': progress_key, 'itemId': item_id},
+            UpdateExpression=update_expr,
+            ExpressionAttributeValues=expr_values,
         )
+
+        # Trim recentErrors to last 5 entries
+        if not is_correct:
+            response = progress_table.get_item(
+                Key={'progressKey': progress_key, 'itemId': item_id}
+            )
+            item = response.get('Item', {})
+            recent_errors = item.get('recentErrors', [])
+            if len(recent_errors) > 5:
+                progress_table.update_item(
+                    Key={'progressKey': progress_key, 'itemId': item_id},
+                    UpdateExpression='SET recentErrors = :trimmed',
+                    ExpressionAttributeValues={':trimmed': recent_errors[-5:]},
+                )
 
         # Recalculate mastery level
         response = progress_table.get_item(

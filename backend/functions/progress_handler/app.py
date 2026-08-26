@@ -240,6 +240,7 @@ def handle_vocab_set_progress(event, user_id):
             'masteryLevel': mastery,
             'lastPracticedAt': progress.get('lastPracticedAt', 0),
             'consecutiveCorrect': progress.get('consecutiveCorrect', 0),
+            'recentErrors': progress.get('recentErrors', []),
         })
 
     # Sort by mastery level (lowest first - words needing most practice)
