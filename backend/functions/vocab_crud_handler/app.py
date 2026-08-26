@@ -176,12 +176,29 @@ def handle_get(event, user_id):
         except Exception as e:
             logger.warning(f"Failed to generate presigned URL: {e}")
 
+    # Generate presigned URLs for all images in the set
+    image_keys = vocab_set.get('imageKeys') or ([source_image_key] if source_image_key else [])
+    image_urls = []
+    for key in image_keys:
+        if key:
+            try:
+                url = s3_client.generate_presigned_url(
+                    'get_object',
+                    Params={'Bucket': IMAGES_BUCKET, 'Key': key},
+                    ExpiresIn=3600,
+                )
+                image_urls.append(url)
+            except Exception as e:
+                logger.warning(f"Failed to generate presigned URL for {key}: {e}")
+
     response_body = {
         'vocabSetId': vocab_set['vocabSetId'],
         'userId': vocab_set['userId'],
         'title': vocab_set.get('title', ''),
         'sourceImageKey': source_image_key,
         'sourceImageUrl': image_url,
+        'imageKeys': image_keys,
+        'imageUrls': image_urls,
         'extractionStatus': vocab_set.get('extractionStatus', 'pending'),
         'metadata': vocab_set.get('metadata', {}),
         'itemCount': len(items),
@@ -195,6 +212,7 @@ def handle_get(event, user_id):
                 'notes': item.get('notes', ''),
                 'order': item.get('order', 0),
                 'isActive': item.get('isActive', True),
+                **(({'imageKey': item['imageKey']} if item.get('imageKey') else {})),
             }
             for item in items
         ],

@@ -100,21 +100,36 @@ def lambda_handler(event, context):
             ExpiresIn=300,  # 5 minutes
         )
 
-        # Create initial VocabSet record only if new
+        # Create initial VocabSet record or append image to existing set
+        table = dynamodb.Table(VOCABSETS_TABLE)
         if not existing_vocab_set_id:
-            table = dynamodb.Table(VOCABSETS_TABLE)
             table.put_item(
                 Item={
                     'vocabSetId': vocab_set_id,
                     'userId': user_id,
                     'title': '',
                     'sourceImageKey': image_key,
+                    'imageKeys': [image_key],
                     'extractionStatus': 'pending',
                     'metadata': {},
                     'createdAt': timestamp,
                     'updatedAt': timestamp,
                     'itemCount': 0,
                 }
+            )
+        else:
+            # Append new image key to existing vocab set's imageKeys list
+            table.update_item(
+                Key={'vocabSetId': vocab_set_id, 'userId': user_id},
+                UpdateExpression=(
+                    'SET imageKeys = list_append(if_not_exists(imageKeys, :empty), :newKey), '
+                    'updatedAt = :ts'
+                ),
+                ExpressionAttributeValues={
+                    ':empty': [],
+                    ':newKey': [image_key],
+                    ':ts': timestamp,
+                },
             )
 
         logger.info(json.dumps({

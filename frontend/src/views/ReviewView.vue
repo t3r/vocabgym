@@ -1,6 +1,6 @@
 <template>
-  <!-- Review view: Image preview + editable vocabulary table -->
-  <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+  <div class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    <!-- Header with title, cancel, save -->
     <div class="mb-6 flex items-center justify-between">
       <div>
         <h1 class="text-2xl font-bold text-gray-900 dark:text-white">Vokabeln prüfen</h1>
@@ -16,42 +16,164 @@
 
     <LoadingSpinner v-if="isLoading" class="py-12" />
 
-    <div v-else class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-      <!-- Left: Image Preview -->
-      <div class="card">
-        <ImagePreview :image-url="vocabSet?.sourceImageUrl" />
+    <div v-else class="space-y-6">
+      <!-- Metadata Form -->
+      <MetadataForm
+        v-model:title="metadata.title"
+        v-model:chapter="metadata.chapter"
+        v-model:page-number="metadata.pageNumber"
+        v-model:topic="metadata.topic"
+      />
+
+      <!-- Image groups -->
+      <div v-for="(group, groupIndex) in imageGroups" :key="group.imageKey" class="card">
+        <!-- Image -->
+        <div v-if="group.imageUrl" class="mb-4 rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700">
+          <img
+            :src="group.imageUrl"
+            :alt="`Seite ${groupIndex + 1}`"
+            class="max-h-96 w-full object-contain bg-gray-50 dark:bg-gray-800"
+            loading="lazy"
+          />
+        </div>
+
+        <h3 class="font-semibold text-gray-900 dark:text-white mb-3">Seite {{ groupIndex + 1 }}</h3>
+
+        <!-- Editable table for this image's items -->
+        <div class="overflow-x-auto">
+          <table class="w-full">
+            <thead>
+              <tr class="border-b border-gray-200 dark:border-gray-700">
+                <th class="pb-2 text-left text-sm font-medium text-gray-500 dark:text-gray-400 w-8">#</th>
+                <th class="pb-2 text-left text-sm font-medium text-gray-500 dark:text-gray-400">Deutsch</th>
+                <th class="pb-2 text-left text-sm font-medium text-gray-500 dark:text-gray-400">{{ targetLanguageName }}</th>
+                <th class="pb-2 w-10"></th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr
+                v-for="(item, itemIndex) in group.items"
+                :key="item.itemId"
+                class="border-b border-gray-100 dark:border-gray-700/50 group"
+              >
+                <td class="py-2 text-sm text-gray-400 dark:text-gray-500 align-middle">{{ itemIndex + 1 }}</td>
+                <td class="py-2 pr-2">
+                  <input
+                    :value="item.source || item.german"
+                    @input="updateItem(item, 'source', $event.target.value)"
+                    class="input-field text-sm"
+                    :class="{ 'border-error': !(item.source || item.german)?.trim() }"
+                    placeholder="Deutsch"
+                  />
+                </td>
+                <td class="py-2 pr-2">
+                  <input
+                    :value="item.target || item.french"
+                    @input="updateItem(item, 'target', $event.target.value)"
+                    class="input-field text-sm"
+                    :class="{ 'border-error': !(item.target || item.french)?.trim() }"
+                    :placeholder="targetLanguageName"
+                  />
+                </td>
+                <td class="py-2 text-center">
+                  <button
+                    @click="deleteItem(item)"
+                    class="opacity-0 group-hover:opacity-100 text-red-400 hover:text-red-600 dark:text-red-500 dark:hover:text-red-400 transition-all p-1 rounded"
+                    aria-label="Zeile löschen"
+                  >
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Add row button -->
+        <button
+          @click="addItem(group.imageKey)"
+          class="mt-4 w-full py-2 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-md text-sm text-gray-500 dark:text-gray-400 hover:border-primary-400 hover:text-primary-600 dark:hover:border-primary-500 dark:hover:text-primary-400 transition-colors"
+        >
+          + Eintrag hinzufügen
+        </button>
       </div>
 
-      <!-- Right: Editable Table + Metadata -->
-      <div class="space-y-6">
-        <MetadataForm
-          v-model:title="metadata.title"
-          v-model:chapter="metadata.chapter"
-          v-model:page-number="metadata.pageNumber"
-          v-model:topic="metadata.topic"
-        />
+      <!-- Unassigned items (no imageKey) -->
+      <div v-if="unassignedItems.length > 0" class="card">
+        <h3 class="font-semibold text-gray-900 dark:text-white mb-3">Weitere Vokabeln</h3>
 
-        <VocabTable
-          :items="items"
-          :target-language="vocabSet?.targetLanguage || 'fr'"
-          @update="handleItemUpdate"
-          @delete="handleItemDelete"
-          @add="handleItemAdd"
-        />
+        <div class="overflow-x-auto">
+          <table class="w-full">
+            <thead>
+              <tr class="border-b border-gray-200 dark:border-gray-700">
+                <th class="pb-2 text-left text-sm font-medium text-gray-500 dark:text-gray-400 w-8">#</th>
+                <th class="pb-2 text-left text-sm font-medium text-gray-500 dark:text-gray-400">Deutsch</th>
+                <th class="pb-2 text-left text-sm font-medium text-gray-500 dark:text-gray-400">{{ targetLanguageName }}</th>
+                <th class="pb-2 w-10"></th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr
+                v-for="(item, itemIndex) in unassignedItems"
+                :key="item.itemId"
+                class="border-b border-gray-100 dark:border-gray-700/50 group"
+              >
+                <td class="py-2 text-sm text-gray-400 dark:text-gray-500 align-middle">{{ itemIndex + 1 }}</td>
+                <td class="py-2 pr-2">
+                  <input
+                    :value="item.source || item.german"
+                    @input="updateItem(item, 'source', $event.target.value)"
+                    class="input-field text-sm"
+                    :class="{ 'border-error': !(item.source || item.german)?.trim() }"
+                    placeholder="Deutsch"
+                  />
+                </td>
+                <td class="py-2 pr-2">
+                  <input
+                    :value="item.target || item.french"
+                    @input="updateItem(item, 'target', $event.target.value)"
+                    class="input-field text-sm"
+                    :class="{ 'border-error': !(item.target || item.french)?.trim() }"
+                    :placeholder="targetLanguageName"
+                  />
+                </td>
+                <td class="py-2 text-center">
+                  <button
+                    @click="deleteItem(item)"
+                    class="opacity-0 group-hover:opacity-100 text-red-400 hover:text-red-600 dark:text-red-500 dark:hover:text-red-400 transition-all p-1 rounded"
+                    aria-label="Zeile löschen"
+                  >
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <button
+          @click="addItem(null)"
+          class="mt-4 w-full py-2 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-md text-sm text-gray-500 dark:text-gray-400 hover:border-primary-400 hover:text-primary-600 dark:hover:border-primary-500 dark:hover:text-primary-400 transition-colors"
+        >
+          + Eintrag hinzufügen
+        </button>
       </div>
     </div>
   </div>
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useVocabStore } from '@/stores/vocab'
 import { useToast } from '@/composables/useToast'
+import { getLanguageName } from '@/utils/languages'
 import LoadingSpinner from '@/components/common/LoadingSpinner.vue'
-import ImagePreview from '@/components/review/ImagePreview.vue'
 import MetadataForm from '@/components/review/MetadataForm.vue'
-import VocabTable from '@/components/review/VocabTable.vue'
 
 const props = defineProps({
   vocabSetId: { type: String, required: true }
@@ -72,6 +194,72 @@ const metadata = reactive({
   topic: ''
 })
 
+const targetLanguageName = computed(() => {
+  return getLanguageName(vocabSet.value?.targetLanguage || 'fr')
+})
+
+/**
+ * Group items by their imageKey, matching against vocabSet.imageKeys/imageUrls.
+ */
+const imageGroups = computed(() => {
+  const imageKeys = vocabSet.value?.imageKeys || []
+  const imageUrls = vocabSet.value?.imageUrls || []
+
+  // Build a map of imageKey -> imageUrl
+  const keyToUrl = {}
+  imageKeys.forEach((key, idx) => {
+    keyToUrl[key] = imageUrls[idx] || null
+  })
+
+  // If no imageKeys but we have a legacy sourceImageKey/sourceImageUrl, use that
+  if (imageKeys.length === 0 && vocabSet.value?.sourceImageKey) {
+    const legacyKey = vocabSet.value.sourceImageKey
+    keyToUrl[legacyKey] = vocabSet.value.sourceImageUrl || null
+    imageKeys.push(legacyKey)
+  }
+
+  // Group items by imageKey
+  const groups = []
+  const usedKeys = new Set()
+
+  for (const key of imageKeys) {
+    const groupItems = items.value.filter(item => item.imageKey === key)
+    if (groupItems.length > 0 || imageUrls.length > 0) {
+      groups.push({
+        imageKey: key,
+        imageUrl: keyToUrl[key] || null,
+        items: groupItems
+      })
+      usedKeys.add(key)
+    }
+  }
+
+  // Also show image cards that have no items yet (newly uploaded images)
+  for (const key of imageKeys) {
+    if (!usedKeys.has(key)) {
+      groups.push({
+        imageKey: key,
+        imageUrl: keyToUrl[key] || null,
+        items: []
+      })
+    }
+  }
+
+  return groups
+})
+
+/**
+ * Items without an imageKey (legacy data or manually added without assignment).
+ */
+const unassignedItems = computed(() => {
+  const imageKeys = vocabSet.value?.imageKeys || []
+  const legacyKey = vocabSet.value?.sourceImageKey
+  const allKnownKeys = new Set([...imageKeys])
+  if (legacyKey) allKnownKeys.add(legacyKey)
+
+  return items.value.filter(item => !item.imageKey || !allKnownKeys.has(item.imageKey))
+})
+
 onMounted(async () => {
   try {
     const data = await vocabStore.fetchVocabSet(props.vocabSetId)
@@ -88,27 +276,39 @@ onMounted(async () => {
   }
 })
 
-function handleItemUpdate(index, field, value) {
-  items.value[index] = { ...items.value[index], [field]: value }
+function updateItem(item, field, value) {
+  const idx = items.value.indexOf(item)
+  if (idx !== -1) {
+    items.value[idx] = { ...items.value[idx], [field]: value }
+  }
 }
 
-function handleItemDelete(index) {
-  items.value.splice(index, 1)
+function deleteItem(item) {
+  const idx = items.value.indexOf(item)
+  if (idx !== -1) {
+    items.value.splice(idx, 1)
+  }
 }
 
-function handleItemAdd() {
-  items.value.push({
+function addItem(imageKey) {
+  const newItem = {
     itemId: `new-${Date.now()}`,
     source: '',
     target: '',
     notes: '',
     order: items.value.length + 1
-  })
+  }
+  if (imageKey) {
+    newItem.imageKey = imageKey
+  }
+  items.value.push(newItem)
 }
 
 async function handleSave() {
   // Validate: no empty pairs
-  const invalidItems = items.value.filter((item) => !(item.source || item.german)?.trim() || !(item.target || item.french)?.trim())
+  const invalidItems = items.value.filter(
+    (item) => !(item.source || item.german)?.trim() || !(item.target || item.french)?.trim()
+  )
   if (invalidItems.length > 0) {
     showError('Bitte fülle alle Quell- und Zielsprachfelder aus.')
     return

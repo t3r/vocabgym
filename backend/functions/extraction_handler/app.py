@@ -185,12 +185,13 @@ def extract_with_openai(image_key):
         return []
 
 
-def store_vocab_items(vocab_set_id, vocab_pairs):
+def store_vocab_items(vocab_set_id, vocab_pairs, image_key=None):
     """Store extracted vocabulary items in DynamoDB.
 
     Args:
         vocab_set_id: The vocabulary set ID
         vocab_pairs: List of {source, target, confidence} dicts
+        image_key: S3 key of the source image for these items
 
     Returns:
         int: Number of items stored
@@ -203,20 +204,21 @@ def store_vocab_items(vocab_set_id, vocab_pairs):
             item_id = generate_uuid()
             source_text = pair.get('source', pair.get('german', '')).strip()
             target_text = pair.get('target', pair.get('french', '')).strip()
-            batch.put_item(
-                Item={
-                    'vocabSetId': vocab_set_id,
-                    'itemId': item_id,
-                    'source': _strip_phonetics(source_text),
-                    'target': _strip_phonetics(target_text),
-                    'notes': pair.get('notes', ''),
-                    'order': i + 1,
-                    'confidence': int(pair.get('confidence', 0) * 100),
-                    'createdAt': timestamp,
-                    'updatedAt': timestamp,
-                    'isActive': True,
-                }
-            )
+            item_data = {
+                'vocabSetId': vocab_set_id,
+                'itemId': item_id,
+                'source': _strip_phonetics(source_text),
+                'target': _strip_phonetics(target_text),
+                'notes': pair.get('notes', ''),
+                'order': i + 1,
+                'confidence': int(pair.get('confidence', 0) * 100),
+                'createdAt': timestamp,
+                'updatedAt': timestamp,
+                'isActive': True,
+            }
+            if image_key:
+                item_data['imageKey'] = image_key
+            batch.put_item(Item=item_data)
 
     return len(vocab_pairs)
 
@@ -369,7 +371,7 @@ def handle_process(event, user_id):
 
     # Store extracted items
     if vocab_pairs:
-        item_count = store_vocab_items(vocab_set_id, vocab_pairs)
+        item_count = store_vocab_items(vocab_set_id, vocab_pairs, image_key=image_key)
         status = 'review'
     else:
         item_count = 0
