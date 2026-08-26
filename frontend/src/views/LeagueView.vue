@@ -284,7 +284,7 @@ async function loadLeagueData() {
       api.get(`/league/${authStore.leagueId}`),
       api.get(`/league/${authStore.leagueId}/leaderboard`)
     ])
-    league.value = leagueRes.data
+    league.value = leagueRes.data.league || leagueRes.data
     leaderboard.value = leaderboardRes.data.leaderboard || leaderboardRes.data || []
     selectedScoreMode.value = league.value.scoreMode || 'total'
     selectedVocabSetIds.value = league.value.vocabSetIds || []
