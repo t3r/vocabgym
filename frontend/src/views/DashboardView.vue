@@ -160,7 +160,7 @@ async function loadLeagueData() {
       api.get(`/league/${authStore.leagueId}`),
       api.get(`/league/${authStore.leagueId}/leaderboard`)
     ])
-    const league = leagueRes.data
+    const league = leagueRes.data.league || leagueRes.data
     const lb = leaderboardRes.data.leaderboard || leaderboardRes.data || []
     const userId = authStore.user?.sub || authStore.user?.userId
     const ownEntry = lb.find(e => e.userId === userId)
@@ -173,9 +173,11 @@ async function loadLeagueData() {
 
     // Load league vocab sets if any assigned
     if (league.vocabSetIds?.length) {
-      const vocabRes = await api.get('/vocab')
-      const allSets = vocabRes.data.vocabSets || vocabRes.data || []
-      leagueVocabSets.value = allSets.filter(s => league.vocabSetIds.includes(s.vocabSetId))
+      const setPromises = league.vocabSetIds.map(id =>
+        api.get(`/vocab/${id}`).then(r => r.data).catch(() => null)
+      )
+      const sets = await Promise.all(setPromises)
+      leagueVocabSets.value = sets.filter(Boolean)
     }
   } catch {
     // League data load failure is non-critical

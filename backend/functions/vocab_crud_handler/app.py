@@ -144,15 +144,25 @@ def handle_get(event, user_id):
     if not is_valid:
         return build_response(400, {'error': err})
 
-    # Get vocab set
+    # Get vocab set - first try owned by user
     vocabsets_table = dynamodb.Table(VOCABSETS_TABLE)
     response = vocabsets_table.get_item(
         Key={'vocabSetId': vocab_set_id, 'userId': user_id}
     )
 
     vocab_set = response.get('Item')
+
+    # If not owned by user, check if it's a league-assigned set
     if not vocab_set:
-        return build_response(404, {'error': 'Vocabulary set not found'})
+        # Query by vocabSetId only (any owner)
+        query_response = vocabsets_table.query(
+            KeyConditionExpression=Key('vocabSetId').eq(vocab_set_id)
+        )
+        sets = query_response.get('Items', [])
+        if sets:
+            vocab_set = sets[0]
+        else:
+            return build_response(404, {'error': 'Vocabulary set not found'})
 
     # Get items
     items_table = dynamodb.Table(VOCABITEMS_TABLE)
