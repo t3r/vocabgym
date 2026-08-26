@@ -62,7 +62,8 @@ def extract_with_textract(image_key):
         image_key: S3 object key for the image
 
     Returns:
-        tuple: (vocab_pairs, confidence) where vocab_pairs is list of {source, target}
+        tuple: (vocab_pairs, confidence, raw_text) where vocab_pairs is list of {source, target}
+               and raw_text is the full OCR text for LLM fallback
     """
     logger.info(json.dumps({
         'event': 'textract_start',
@@ -81,6 +82,7 @@ def extract_with_textract(image_key):
 
     parser = TextractParser(response)
     vocab_pairs = parser.extract_vocabulary_pairs()
+    raw_text = parser.extract_raw_text()
 
     # Calculate average confidence
     if vocab_pairs:
@@ -92,9 +94,10 @@ def extract_with_textract(image_key):
         'event': 'textract_complete',
         'pairsFound': len(vocab_pairs),
         'avgConfidence': round(avg_confidence, 2),
+        'rawTextLines': raw_text.count('\n') + 1 if raw_text else 0,
     }))
 
-    return vocab_pairs, avg_confidence
+    return vocab_pairs, avg_confidence, raw_text
 
 
 def extract_with_openai(image_key):
@@ -183,6 +186,91 @@ def extract_with_openai(image_key):
 
     except Exception as e:
         logger.exception(f"OpenAI extraction failed: {e}")
+        return []
+
+
+
+def extract_with_bedrock_from_text(raw_text, target_language='fr'):
+    """Use Bedrock LLM to extract vocabulary pairs directly from raw OCR text.
+
+    This is used when Textract table detection fails or finds too few pairs,
+    e.g. for vocabulary pages that use free-text layouts rather than strict tables.
+
+    Args:
+        raw_text: Full OCR text from Textract LINE blocks
+        target_language: Target language code
+
+    Returns:
+        list: List of {source, target} vocabulary pairs
+    """
+    if not raw_text or len(raw_text.strip()) < 20:
+        return []
+
+    lang_config = get_language(target_language) or get_language(DEFAULT_TARGET_LANGUAGE)
+    lang_name_de = lang_config.get('name', 'Französisch') if lang_config else 'Französisch'
+
+    prompt = f"""Du bekommst den OCR-Text einer Schulbuchseite (Vokabular-Seite). Extrahiere ALLE Vokabelpaare (Deutsch ↔ {lang_name_de}).
+
+Das Layout der Seite kann variieren:
+- Manchmal steht das {lang_name_de} Wort links, die deutsche Übersetzung rechts
+- Manchmal gibt es Lautschrift in Klammern [ʃɑ̃ʒe] — diese IGNORIEREN
+- Manchmal gibt es Beispielsätze — diese NICHT als Vokabelpaar aufnehmen
+- Manchmal steht die Übersetzung in mehreren Teilen (z.B. "etw. tauschen; etw. austauschen")
+
+Regeln:
+1. Extrahiere NUR echte Vokabelpaare — ein {lang_name_de} Wort/Phrase und seine deutsche Übersetzung
+2. "source" = deutsches Wort/Phrase, "target" = {lang_name_de} Wort/Phrase
+3. Behalte Artikel (le/la/les, der/die/das, un/une) bei
+4. Behalte Abkürzungen wie "etw." (etwas), "jdn." (jemanden), "jdm." (jemandem), "qc" (quelque chose), "qn" (quelqu'un) bei
+5. Wenn eine Übersetzung mehrere Bedeutungen hat, fasse sie mit Semikolon zusammen (z.B. "etw. tauschen; etw. austauschen")
+6. Ignoriere: Lautschrift, Beispielsätze, Grammatik-Erklärungen, Konjugationstabellen, Seitenzahlen, Überschriften
+7. Nimm auch bildbasierte Vokabeln auf (z.B. "un ordinateur portable" → "ein Laptop-Computer")
+
+Antworte NUR mit einem JSON-Array:
+[{{"source": "deutsche Übersetzung", "target": "{lang_name_de} Wort"}}]
+
+Keine Erklärungen, kein Markdown, nur das JSON-Array.
+
+OCR-Text der Seite:
+{raw_text}"""
+
+    try:
+        response = bedrock_client.converse(
+            modelId='eu.amazon.nova-pro-v1:0',
+            messages=[
+                {'role': 'user', 'content': [{'text': prompt}]}
+            ],
+            inferenceConfig={
+                'maxTokens': 4096,
+            }
+        )
+
+        result_text = response['output']['message']['content'][0]['text'].strip()
+
+        # Parse JSON response (handle markdown code blocks)
+        if result_text.startswith('```'):
+            result_text = result_text.split('\n', 1)[1]
+            result_text = result_text.rsplit('```', 1)[0]
+        result_text = result_text.strip()
+
+        vocab_pairs = json.loads(result_text)
+
+        if isinstance(vocab_pairs, list):
+            # Add confidence score
+            for pair in vocab_pairs:
+                pair['confidence'] = 0.90
+
+            logger.info(json.dumps({
+                'event': 'bedrock_extraction_complete',
+                'pairsFound': len(vocab_pairs),
+            }))
+            return vocab_pairs
+        else:
+            logger.warning("Bedrock extraction returned non-list result")
+            return []
+
+    except Exception as e:
+        logger.exception(f"Bedrock extraction from text failed: {e}")
         return []
 
 
@@ -445,34 +533,43 @@ def handle_process(event, user_id):
 
     # Try Textract first
     vocab_pairs = []
+    raw_text = ''
     extraction_method = 'textract'
 
     try:
-        vocab_pairs, confidence = extract_with_textract(image_key)
+        vocab_pairs, confidence, raw_text = extract_with_textract(image_key)
 
-        # If confidence is low or no pairs found, try OpenAI fallback
-        if confidence < 0.7 or not vocab_pairs:
+        # If Textract table extraction found few/no pairs, use LLM to extract
+        # directly from the raw OCR text (handles free-text layouts)
+        if len(vocab_pairs) < 3 or confidence < 0.7:
             logger.info(json.dumps({
-                'event': 'textract_low_confidence',
+                'event': 'textract_insufficient',
                 'confidence': confidence,
                 'pairsFound': len(vocab_pairs),
-                'fallbackToOpenAI': True,
+                'rawTextLength': len(raw_text),
+                'fallbackToBedrock': True,
             }))
-            openai_pairs = extract_with_openai(image_key)
-            if openai_pairs and (not vocab_pairs or len(openai_pairs) > len(vocab_pairs)):
-                vocab_pairs = openai_pairs
-                extraction_method = 'openai'
+
+            target_language = item.get('targetLanguage', DEFAULT_TARGET_LANGUAGE)
+            bedrock_pairs = extract_with_bedrock_from_text(raw_text, target_language)
+
+            if bedrock_pairs and len(bedrock_pairs) > len(vocab_pairs):
+                vocab_pairs = bedrock_pairs
+                extraction_method = 'bedrock_from_text'
 
     except Exception as e:
-        logger.warning(f"Textract failed, trying OpenAI fallback: {e}")
-        vocab_pairs = extract_with_openai(image_key)
-        extraction_method = 'openai_fallback'
+        logger.warning(f"Textract failed: {e}")
+        # If textract completely fails, there's no raw_text either
+        extraction_method = 'failed'
 
     # Store extracted items
     if vocab_pairs:
-        # Verify and clean pairs with Bedrock LLM
         target_language = item.get('targetLanguage', DEFAULT_TARGET_LANGUAGE)
-        vocab_pairs = verify_with_bedrock(vocab_pairs, target_language)
+
+        # Only verify with Bedrock if extraction came from Textract table parsing
+        # (Bedrock extraction already produces clean pairs)
+        if extraction_method == 'textract':
+            vocab_pairs = verify_with_bedrock(vocab_pairs, target_language)
 
         if vocab_pairs:
             item_count = store_vocab_items(vocab_set_id, vocab_pairs, image_key=image_key)

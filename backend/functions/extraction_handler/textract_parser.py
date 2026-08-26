@@ -45,6 +45,29 @@ class TextractParser:
 
         return all_pairs
 
+    def extract_raw_text(self) -> str:
+        """Extract all LINE text from the document for LLM-based extraction.
+
+        Returns all text lines concatenated, preserving document order.
+        This is useful when table detection fails and an LLM should
+        extract vocabulary directly from the raw OCR text.
+
+        Returns:
+            String with all text lines separated by newlines
+        """
+        lines = [
+            block for block in self.blocks
+            if block['BlockType'] == 'LINE'
+        ]
+
+        # Sort by vertical position (Top) then horizontal (Left)
+        lines.sort(key=lambda b: (
+            round(b.get('Geometry', {}).get('BoundingBox', {}).get('Top', 0), 2),
+            b.get('Geometry', {}).get('BoundingBox', {}).get('Left', 0),
+        ))
+
+        return '\n'.join(block.get('Text', '') for block in lines if block.get('Text'))
+
     def _get_tables(self) -> List[dict]:
         """Get all TABLE blocks from the response."""
         return [block for block in self.blocks if block['BlockType'] == 'TABLE']
