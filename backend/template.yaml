@@ -309,6 +309,12 @@ Resources:
                 - textract:AnalyzeDocument
                 - textract:DetectDocumentText
               Resource: '*'
+            - Effect: Allow
+              Action:
+                - bedrock:InvokeModel
+              Resource:
+                - 'arn:aws:bedrock:*::foundation-model/*'
+                - !Sub 'arn:aws:bedrock:*:${AWS::AccountId}:inference-profile/*'
       Events:
         ProcessVocab:
           Type: Api

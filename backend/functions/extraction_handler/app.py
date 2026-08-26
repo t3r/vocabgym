@@ -26,6 +26,7 @@ logger.setLevel(os.environ.get('LOG_LEVEL', 'INFO'))
 # Initialize AWS clients
 s3_client = boto3.client('s3')
 textract_client = boto3.client('textract')
+bedrock_client = boto3.client('bedrock-runtime')
 dynamodb = boto3.resource('dynamodb')
 secrets_client = boto3.client('secretsmanager')
 
@@ -183,6 +184,91 @@ def extract_with_openai(image_key):
     except Exception as e:
         logger.exception(f"OpenAI extraction failed: {e}")
         return []
+
+
+def verify_with_bedrock(vocab_pairs, target_language='fr'):
+    """Use Amazon Bedrock (Claude) to verify and clean extracted vocabulary pairs.
+
+    Removes non-vocabulary entries (headers, instructions, page numbers),
+    formats multiple meanings with semicolons, and cleans up noise.
+
+    Args:
+        vocab_pairs: List of {source, target} dicts from Textract
+        target_language: Target language code for context
+
+    Returns:
+        list: Cleaned list of {source, target} dicts
+    """
+    if not vocab_pairs:
+        return vocab_pairs
+
+    lang_config = get_language(target_language) or get_language(DEFAULT_TARGET_LANGUAGE)
+    lang_name = lang_config['nameEnglish'] if lang_config else 'French'
+
+    # Build the pairs as text for the prompt
+    pairs_text = '\n'.join(
+        f"{i+1}. {p.get('source', '')} | {p.get('target', '')}"
+        for i, p in enumerate(vocab_pairs)
+    )
+
+    prompt = f"""Du bekommst eine Liste von OCR-extrahierten Vokabelpaaren (Deutsch → {lang_name}) aus einem Schulbuch.
+
+Aufgabe:
+1. Entferne Einträge, die KEINE Vokabeln sind (Überschriften, Seitenzahlen, Übungsanweisungen, Grammatikhinweise ohne Übersetzung).
+2. Wenn ein Eintrag mehrere Übersetzungen/Bedeutungen enthält, trenne sie mit Semikolon (;).
+3. Entferne Nummerierungen, Aufzählungszeichen und überflüssige Sonderzeichen.
+4. Korrigiere offensichtliche OCR-Fehler bei Sonderzeichen (z.B. fehlende Akzente im {lang_name}).
+5. Behalte Artikel (der/die/das, le/la/les etc.) bei.
+
+Antworte NUR mit einem JSON-Array im Format:
+[{{"source": "deutsch", "target": "übersetzung"}}]
+
+Keine Erklärungen, kein Markdown, nur das JSON-Array.
+
+Extrahierte Paare:
+{pairs_text}"""
+
+    try:
+        response = bedrock_client.invoke_model(
+            modelId='eu.anthropic.claude-3-haiku-20240307-v1:0',
+            contentType='application/json',
+            accept='application/json',
+            body=json.dumps({
+                'anthropic_version': 'bedrock-2023-05-31',
+                'max_tokens': 4096,
+                'messages': [
+                    {'role': 'user', 'content': prompt}
+                ]
+            })
+        )
+
+        response_body = json.loads(response['body'].read())
+        result_text = response_body['content'][0]['text'].strip()
+
+        # Parse JSON response
+        # Handle potential markdown code blocks
+        if result_text.startswith('```'):
+            result_text = result_text.split('\n', 1)[1]
+            result_text = result_text.rsplit('```', 1)[0]
+        result_text = result_text.strip()
+
+        verified_pairs = json.loads(result_text)
+
+        if isinstance(verified_pairs, list) and len(verified_pairs) > 0:
+            logger.info(json.dumps({
+                'event': 'bedrock_verification_complete',
+                'inputPairs': len(vocab_pairs),
+                'outputPairs': len(verified_pairs),
+                'removed': len(vocab_pairs) - len(verified_pairs),
+            }))
+            return verified_pairs
+        else:
+            logger.warning("Bedrock returned empty or invalid result, using original pairs")
+            return vocab_pairs
+
+    except Exception as e:
+        logger.warning(f"Bedrock verification failed, using original pairs: {e}")
+        return vocab_pairs
 
 
 def store_vocab_items(vocab_set_id, vocab_pairs, image_key=None):
@@ -371,6 +457,10 @@ def handle_process(event, user_id):
 
     # Store extracted items
     if vocab_pairs:
+        # Verify and clean pairs with Bedrock LLM
+        target_language = item.get('targetLanguage', DEFAULT_TARGET_LANGUAGE)
+        vocab_pairs = verify_with_bedrock(vocab_pairs, target_language)
+
         item_count = store_vocab_items(vocab_set_id, vocab_pairs, image_key=image_key)
         status = 'review'
     else:
