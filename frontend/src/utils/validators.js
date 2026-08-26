@@ -38,12 +38,12 @@ export function isPositiveInteger(value) {
   return true
 }
 
-const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/heic']
+const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png']
 
 export function isValidFileType(file) {
   if (!file) return true
   if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
-    return 'Nur JPG, PNG und HEIC Dateien sind erlaubt'
+    return 'Nur JPG und PNG Dateien sind erlaubt'
   }
   return true
 }

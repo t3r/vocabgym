@@ -34,14 +34,14 @@
       <p class="text-gray-600 dark:text-gray-300 mb-2">
         <span class="font-medium text-primary-600">Klicke hier</span> oder ziehe Bilder hierher
       </p>
-      <p class="text-xs text-gray-400 dark:text-gray-500">JPG, PNG oder HEIC · Max. 10 MB pro Bild · Mehrere Seiten möglich</p>
+      <p class="text-xs text-gray-400 dark:text-gray-500">JPG oder PNG · Max. 10 MB pro Bild · Mehrere Seiten möglich</p>
     </div>
 
     <!-- Hidden File Input -->
     <input
       ref="fileInput"
       type="file"
-      accept="image/jpeg,image/png,image/heic"
+      accept="image/jpeg,image/png"
       multiple
       class="hidden"
       @change="handleFileSelect"

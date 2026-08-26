@@ -28,7 +28,7 @@ export function useUpload() {
       // Step 1: Request presigned URL from backend
       const payload = {
         fileName: file.name,
-        contentType: file.type
+        contentType: file.type || 'image/jpeg'
       }
       if (vocabSetId) {
         payload.vocabSetId = vocabSetId
