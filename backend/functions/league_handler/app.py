@@ -222,7 +222,10 @@ def handle_join(event, user_id):
     # Check if user is already in a league
     user = _get_user(user_id)
     if not user:
-        return build_response(404, {'error': 'User not found'})
+        # User record doesn't exist yet (first interaction) - create it
+        users_table = dynamodb.Table(USERS_TABLE)
+        user = {'userId': user_id, 'role': 'student'}
+        users_table.put_item(Item=user)
 
     if user.get('leagueId'):
         return build_response(400, {'error': 'You are already in a league. Leave your current league first.'})
