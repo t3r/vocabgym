@@ -29,7 +29,7 @@
     <div v-if="activeTab === 'student'" class="prose-content">
       <section class="mb-10">
         <h2 class="section-title">Hey! 👋 Willkommen bei VocabGym</h2>
-        <p>VocabGym hilft dir, deine Vokabeln zu lernen — schnell, einfach und ohne nerviges Abtippen von Listen. Deine Lehrkraft scannt die Seiten aus eurem Arbeitsbuch und du kannst direkt losüben.</p>
+        <p>VocabGym hilft dir, deine Vokabeln zu lernen — schnell, einfach und ohne nerviges Abtippen von Listen. Deine Lehrkraft scannt die Seiten aus eurem Arbeitsbuch und du kannst direkt losüben. Die App unterstützt Französisch, Englisch, Spanisch und Italienisch.</p>
       </section>
 
       <section class="mb-10">
@@ -38,8 +38,8 @@
           <div class="step">
             <span class="step-number">1</span>
             <div>
-              <h3 class="step-title">Anmelden</h3>
-              <p>Melde dich mit deiner E-Mail-Adresse an. Beim ersten Mal musst du ein Konto erstellen — danach reicht dein Passwort.</p>
+              <h3 class="step-title">Anmelden & Namen setzen</h3>
+              <p>Melde dich mit deiner E-Mail-Adresse an. Klick dann oben rechts auf deinen Namen (oder „Name setzen") und gib dir einen Anzeigenamen — der wird in der Liga-Rangliste angezeigt. Deine E-Mail sieht niemand.</p>
             </div>
           </div>
           <div class="step">
@@ -53,14 +53,14 @@
             <span class="step-number">3</span>
             <div>
               <h3 class="step-title">Üben</h3>
-              <p>Auf deinem Dashboard siehst du die Vokabelsets, die deine Lehrkraft für euch freigeschaltet hat. Klick auf „Üben" und leg los! Du tippst die Übersetzung ein und bekommst sofort Feedback.</p>
+              <p>Du findest die Vokabelsets zum Üben an zwei Stellen: auf deinem <strong>Dashboard</strong> unter „Liga-Vokabeln" und direkt in der <strong>Liga-Ansicht</strong> unter „Jetzt üben". Klick auf „Üben" und leg los!</p>
             </div>
           </div>
           <div class="step">
             <span class="step-number">4</span>
             <div>
               <h3 class="step-title">Punkte sammeln & Streak halten</h3>
-              <p>Jede richtige Antwort bringt dir Punkte für die Liga-Rangliste. Und wenn du jeden Tag übst, wächst dein 🔥 Streak — miss keinen Tag, sonst geht er auf null!</p>
+              <p>Jede richtige Antwort bringt dir Punkte für die Liga-Rangliste. Wenn du <strong>jeden Tag</strong> übst, wächst dein 🔥 Streak — miss keinen Tag, sonst geht er auf null! Nach jeder Übung siehst du, wie viele Punkte du für die Liga gesammelt hast.</p>
             </div>
           </div>
         </div>
@@ -68,9 +68,6 @@
 
       <section class="mb-10">
         <h2 class="section-title">Tipps zum Üben</h2>
-        <div class="info-box mb-4">
-          <p class="text-sm">Beim Hochladen wählst du die Zielsprache (Französisch, Englisch, Spanisch oder Italienisch).</p>
-        </div>
         <div class="tips-grid">
           <div class="tip-card">
             <span class="tip-icon">💡</span>
@@ -80,7 +77,7 @@
           <div class="tip-card">
             <span class="tip-icon">🎯</span>
             <h3>Artikel beachten!</h3>
-            <p>Pass bei den Artikeln auf: „le", „la", „les" bzw. „der", „die", „das". Falscher Artikel = leider falsch. Aber du bekommst eine Eselsbrücke angezeigt!</p>
+            <p>Pass bei den Artikeln auf! Falscher Artikel = leider falsch. Aber du bekommst eine Erklärung zum Geschlecht angezeigt.</p>
           </div>
           <div class="tip-card">
             <span class="tip-icon">⏭️</span>
@@ -107,7 +104,12 @@
 
       <section class="mb-10">
         <h2 class="section-title">Mehrere Antworten möglich?</h2>
-        <p>Manchmal gibt es mehr als eine richtige Übersetzung. Wenn im Set mehrere Antworten hinterlegt sind (getrennt durch „;" oder „/"), wird jede davon akzeptiert. Du musst nur <strong>eine</strong> davon richtig eintippen.</p>
+        <p>Manchmal gibt es mehr als eine richtige Übersetzung. Wenn mehrere Antworten hinterlegt sind (getrennt durch „;"), wird jede davon akzeptiert. Du musst nur <strong>eine</strong> davon richtig eintippen.</p>
+      </section>
+
+      <section class="mb-10">
+        <h2 class="section-title">Übungsrichtung wählen</h2>
+        <p>Vor jeder Übung kannst du die Richtung wählen: „Deutsch → Zielsprache" oder „Zielsprache → Deutsch". Wechsle ab, damit du in beide Richtungen fit wirst!</p>
       </section>
 
       <section class="mb-10">
@@ -125,7 +127,7 @@
     <div v-if="activeTab === 'teacher'" class="prose-content">
       <section class="mb-10">
         <h2 class="section-title">Willkommen, VocabGym für Lehrkräfte</h2>
-        <p>VocabGym unterstützt Sie dabei, Ihren Schülerinnen und Schülern eine motivierende Lernumgebung für Vokabeln in der gewählten Zielsprache bereitzustellen. Sie scannen die Arbeitsbuchseiten, die App extrahiert die Vokabeln automatisch, und Ihre Klasse kann sofort üben.</p>
+        <p>VocabGym unterstützt Sie dabei, Ihren Schülerinnen und Schülern eine motivierende Lernumgebung für Vokabeln bereitzustellen. Sie scannen die Arbeitsbuchseiten, die App extrahiert die Vokabeln automatisch per KI, und Ihre Klasse kann sofort üben. Unterstützte Zielsprachen: Französisch, Englisch, Spanisch und Italienisch.</p>
       </section>
 
       <section class="mb-10">
@@ -135,7 +137,7 @@
             <span class="step-number">1</span>
             <div>
               <h3 class="step-title">Konto einrichten</h3>
-              <p>Registrieren Sie sich mit Ihrer E-Mail-Adresse. Ihre Lehrkraft-Rolle wird vom Administrator freigeschaltet. Sobald dies geschehen ist, stehen Ihnen die erweiterten Funktionen zur Verfügung.</p>
+              <p>Registrieren Sie sich mit Ihrer E-Mail-Adresse. Ihre Lehrkraft-Rolle wird vom Administrator freigeschaltet (Cognito-Gruppe „teachers"). Setzen Sie anschließend Ihren Anzeigenamen über den Klick auf Ihren Namen oben rechts.</p>
             </div>
           </div>
           <div class="step">
@@ -149,11 +151,18 @@
             <span class="step-number">3</span>
             <div>
               <h3 class="step-title">Vokabeln hochladen</h3>
-              <p>Fotografieren Sie die Vokabelseiten aus dem Arbeitsbuch und laden Sie diese unter „Hochladen" hoch. Die KI-gestützte Texterkennung extrahiert die Vokabelpaare automatisch. Sie können das Ergebnis anschließend korrigieren.</p>
+              <p>Fotografieren Sie die Vokabelseiten und laden Sie diese unter „Hochladen" hoch. Wählen Sie dabei die <strong>Zielsprache</strong>. Sie können mehrere Seiten gleichzeitig hochladen — sie werden automatisch einem Set zugeordnet. Die KI erkennt die Vokabelpaare und bereinigt das Ergebnis automatisch (entfernt Überschriften, Seitenzahlen etc.).</p>
             </div>
           </div>
           <div class="step">
             <span class="step-number">4</span>
+            <div>
+              <h3 class="step-title">Vokabeln prüfen</h3>
+              <p>Nach dem Upload sehen Sie alle hochgeladenen Bilder mit den zugeordneten Vokabeln darunter. Korrigieren oder löschen Sie fehlerhafte Einträge direkt inline. Fügen Sie fehlende Paare manuell hinzu.</p>
+            </div>
+          </div>
+          <div class="step">
+            <span class="step-number">5</span>
             <div>
               <h3 class="step-title">Vokabelsets der Liga zuweisen</h3>
               <p>In der Liga-Verwaltung können Sie festlegen, welche Vokabelsets für die Klasse freigeschaltet werden. Nur zugewiesene Sets erscheinen bei den Lernenden.</p>
@@ -168,21 +177,20 @@
           <h3 class="font-semibold mb-2">Tipps für optimale Erkennung:</h3>
           <ul class="list-disc list-inside space-y-1 text-sm">
             <li>Fotografieren Sie die Seite bei gutem Licht, möglichst gerade</li>
-            <li>Unterstützte Formate: JPG, PNG, HEIC (max. 10 MB)</li>
+            <li>Unterstützte Formate: JPG, PNG (max. 10 MB) — HEIC-Fotos vom iPhone werden automatisch konvertiert</li>
             <li>Tabellenstrukturen werden am besten erkannt</li>
-            <li>Phonetische Transkriptionen in eckigen Klammern werden automatisch entfernt</li>
+            <li>Mehrere Seiten können gleichzeitig hochgeladen werden</li>
+            <li>Die KI bereinigt automatisch: Phonetik [eckige Klammern], Überschriften, Nicht-Vokabel-Einträge</li>
+            <li>Seiten ohne echte Vokabelpaare (z.B. Grammatik-Erklärungen) werden automatisch als leer erkannt</li>
           </ul>
         </div>
-        <p class="mt-4">Nach dem Upload werden die Vokabeln automatisch extrahiert. Im Prüfbildschirm können Sie:</p>
+        <p class="mt-4">Im Prüfbildschirm sehen Sie jedes hochgeladene Bild mit den zugeordneten Vokabeln darunter. Sie können:</p>
         <ul class="list-disc list-inside space-y-1 mt-2 text-gray-700 dark:text-gray-300">
-          <li>Einzelne Einträge korrigieren (Klick auf das Feld)</li>
-          <li>Vokabeln löschen oder hinzufügen</li>
-          <li>Vokabeln als aktiv/inaktiv markieren (Checkboxen)</li>
-          <li>Weitere Seiten zu einem bestehenden Set hinzufügen</li>
+          <li>Einzelne Einträge inline korrigieren</li>
+          <li>Vokabeln per ✕-Button löschen</li>
+          <li>Neue Paare pro Bild hinzufügen</li>
+          <li>Titel und Metadaten (Kapitel, Seite, Thema) setzen</li>
         </ul>
-        <div class="info-box mt-4">
-          <p class="text-sm">Beim Hochladen wählen Sie die Zielsprache (Französisch, Englisch, Spanisch oder Italienisch).</p>
-        </div>
       </section>
 
       <section class="mb-10">
@@ -213,42 +221,58 @@
         <h2 class="section-title">Liga verwalten</h2>
         <p>In der Liga-Ansicht finden Sie als Lehrkraft folgende Verwaltungsmöglichkeiten:</p>
         <ul class="list-disc list-inside space-y-2 mt-3 text-gray-700 dark:text-gray-300">
-          <li><strong>Beitrittscode</strong> — Teilen Sie diesen Code mit Ihrer Klasse (z.B. an die Tafel schreiben, per Chat senden)</li>
+          <li><strong>Beitrittscode</strong> — Teilen Sie diesen Code mit Ihrer Klasse (z.B. an die Tafel schreiben, per Chat senden). Per Klick kopierbar.</li>
+          <li><strong>Score-Modus</strong> — Jederzeit änderbar per Dropdown</li>
           <li><strong>Vokabelsets zuweisen</strong> — Aktivieren Sie per Checkbox die Sets, die geübt werden sollen</li>
-          <li><strong>Teilnehmer einsehen</strong> — Sehen Sie den Lernfortschritt jedes Mitglieds (Score, Streak, letzte Übung)</li>
-          <li><strong>Teilnehmer entfernen</strong> — Bei Bedarf können einzelne Personen aus der Liga entfernt werden</li>
+          <li><strong>Teilnehmer-Details</strong> — Klicken Sie auf einen Teilnehmer für detaillierte Statistiken (Genauigkeit, wöchentlicher Score, Gesamtversuche, letztes Übungsdatum)</li>
+          <li><strong>Teilnehmer entfernen</strong> — In der Detailansicht eines Teilnehmers</li>
         </ul>
       </section>
 
       <section class="mb-10">
         <h2 class="section-title">Ergebnisse einsehen</h2>
-        <p>Als Lehrkraft haben Sie Zugriff auf detaillierte Statistiken aller Teilnehmenden:</p>
+        <p>Klicken Sie in der Teilnehmer-Liste auf einen Namen, um die Detailansicht aufzuklappen:</p>
         <ul class="list-disc list-inside space-y-1 mt-2 text-gray-700 dark:text-gray-300">
-          <li>Gesamtpunktzahl und Genauigkeit pro Person</li>
+          <li>Gesamt richtige Antworten und Gesamtversuche</li>
+          <li>Genauigkeit in Prozent</li>
+          <li>Wöchentlicher Score (aktuelle Woche)</li>
           <li>Aktueller Streak (aufeinanderfolgende Übungstage)</li>
-          <li>Datum der letzten Übung</li>
+          <li>Datum der letzten Übung und Beitrittsdatum</li>
         </ul>
-        <p class="mt-3 text-sm text-gray-500 dark:text-gray-400">Hinweis: Die Lernenden sehen untereinander nur die Rangliste (Name, Punktzahl, Streak), nicht die detaillierten Ergebnisse der anderen.</p>
+        <p class="mt-3 text-sm text-gray-500 dark:text-gray-400">Hinweis: Die Lernenden sehen untereinander nur die Rangliste (Anzeigename, Punktzahl, Streak), nicht die detaillierten Ergebnisse der anderen. E-Mail-Adressen werden nirgends angezeigt.</p>
       </section>
 
       <section class="mb-10">
         <h2 class="section-title">Streak-System</h2>
-        <p>Der Streak zählt aufeinanderfolgende Kalendertage, an denen geübt wurde. Wird an einem Tag nicht geübt, wird der Streak auf 0 zurückgesetzt. Dies motiviert die Lernenden zu täglicher, kurzer Übungspraxis.</p>
+        <p>Der Streak zählt aufeinanderfolgende Kalendertage, an denen geübt wurde. Wird an einem Tag nicht geübt, wird der Streak auf 0 zurückgesetzt. Dies motiviert die Lernenden zu täglicher, kurzer Übungspraxis. Die Lernenden sehen ihren Streak im Dashboard und in der Liga-Ansicht.</p>
+      </section>
+
+      <section class="mb-10">
+        <h2 class="section-title">Anzeigenamen</h2>
+        <p>Alle Teilnehmenden setzen ihren eigenen Anzeigenamen (Klick auf den Namen oben rechts). Nur dieser Name erscheint in der Liga — E-Mail-Adressen werden niemals anderen Teilnehmenden angezeigt. Ermutigen Sie Ihre Klasse, einen erkennbaren Namen zu wählen.</p>
       </section>
 
       <section>
         <h2 class="section-title">Fehlerbehebung</h2>
         <div class="info-box">
-          <p>Bei Fehlermeldungen wird eine eindeutige <strong>Fehler-ID</strong> angezeigt (z.B. „a3f2b1c8"). Diese ID identifiziert den Fehler in den Server-Logs und erleichtert die Diagnose erheblich. Notieren Sie die ID bei wiederkehrenden Problemen.</p>
+          <p>Bei Fehlermeldungen wird eine eindeutige <strong>Fehler-ID</strong> angezeigt (z.B. „a3f2b1c8"). Diese ID identifiziert den Fehler in den Server-Logs und erleichtert die Diagnose erheblich.</p>
         </div>
         <div class="mt-4 space-y-3">
           <div>
             <h3 class="font-semibold text-gray-900 dark:text-white">Vokabeln werden nicht korrekt erkannt</h3>
-            <p class="text-sm text-gray-600 dark:text-gray-400">Stellen Sie sicher, dass das Foto scharf ist und die Tabelle gut lesbar. Bei handschriftlichen Ergänzungen funktioniert die Erkennung eingeschränkt. Sie können alle Einträge im Prüfbildschirm manuell korrigieren.</p>
+            <p class="text-sm text-gray-600 dark:text-gray-400">Stellen Sie sicher, dass das Foto scharf ist und die Tabelle gut lesbar. Die KI filtert automatisch Nicht-Vokabel-Inhalte, aber bei ungewöhnlichen Layouts kann es zu Fehlern kommen. Korrigieren Sie im Prüfbildschirm.</p>
+          </div>
+          <div>
+            <h3 class="font-semibold text-gray-900 dark:text-white">Seite wird als „leer" erkannt</h3>
+            <p class="text-sm text-gray-600 dark:text-gray-400">Seiten ohne echte Vokabelpaare (z.B. reine Grammatik-Erklärungen, Übungsanweisungen) werden von der KI korrekt als nicht verwendbar erkannt. Scannen Sie nur Seiten mit Vokabeltabellen.</p>
           </div>
           <div>
             <h3 class="font-semibold text-gray-900 dark:text-white">Schüler/in kann nicht beitreten</h3>
             <p class="text-sm text-gray-600 dark:text-gray-400">Jede Person kann nur einer Liga angehören. Prüfen Sie, ob die Person eventuell bereits Mitglied einer anderen Liga ist.</p>
+          </div>
+          <div>
+            <h3 class="font-semibold text-gray-900 dark:text-white">Liga-Scores werden nicht aktualisiert</h3>
+            <p class="text-sm text-gray-600 dark:text-gray-400">Scores werden nach jeder abgeschlossenen Übung aktualisiert. Stellen Sie sicher, dass die Übung vollständig beendet wird (nicht vorzeitig geschlossen).</p>
           </div>
         </div>
       </section>
