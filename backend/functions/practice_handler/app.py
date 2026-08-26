@@ -371,10 +371,16 @@ def handle_complete(event, user_id):
         'correct': correct_count,
         'total': total,
         'duration': duration,
-    }))
+    }, default=str))
 
     # League score + streak update
     league_update = None
+    logger.info(json.dumps({
+        'event': 'league_update_check',
+        'LEAGUE_MEMBERS_TABLE': LEAGUE_MEMBERS_TABLE,
+        'USERS_TABLE': USERS_TABLE,
+        'will_update': bool(LEAGUE_MEMBERS_TABLE and USERS_TABLE),
+    }, default=str))
     if LEAGUE_MEMBERS_TABLE and USERS_TABLE:
         league_update = _update_league_stats(user_id, correct_count, total)
 
@@ -474,6 +480,14 @@ def _update_league_stats(user_id, correct_count, total_questions):
         users_table = dynamodb.Table(USERS_TABLE)
         user_response = users_table.get_item(Key={'userId': user_id})
         user = user_response.get('Item')
+
+        logger.info(json.dumps({
+            'event': 'league_stats_check',
+            'userId': user_id,
+            'usersTable': USERS_TABLE,
+            'userFound': user is not None,
+            'leagueId': user.get('leagueId') if user else None,
+        }, default=str))
 
         if not user or not user.get('leagueId'):
             return None
