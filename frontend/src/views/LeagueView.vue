@@ -11,7 +11,7 @@
       <div class="mb-6">
         <h1 class="text-2xl font-bold text-gray-900 dark:text-white">{{ league.name }}</h1>
         <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">
-          {{ league.memberCount || 0 }} Teilnehmer · Score-Modus: {{ scoreModeLabel(league.scoreMode) }}
+          {{ leaderboard.length }} Teilnehmer · Score-Modus: {{ scoreModeLabel(league.scoreMode) }}
         </p>
       </div>
 
