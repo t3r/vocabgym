@@ -211,14 +211,28 @@ def verify_with_bedrock(vocab_pairs, target_language='fr'):
         for i, p in enumerate(vocab_pairs)
     )
 
-    prompt = f"""Du bekommst eine Liste von OCR-extrahierten Vokabelpaaren (Deutsch → {lang_name}) aus einem Schulbuch.
+    prompt = f"""Du bekommst eine Liste von OCR-extrahierten Einträgen aus einem Schulbuch. Deine Aufgabe ist es, daraus NUR echte Vokabelpaare (Deutsch ↔ {lang_name}) zu extrahieren.
+
+WICHTIG - Ein gültiges Vokabelpaar erfüllt ALLE diese Kriterien:
+- Eine Seite ist Deutsch, die andere Seite ist {lang_name}
+- Es handelt sich um eine Wort-für-Wort oder Phrase-für-Phrase Übersetzung
+- Beide Seiten haben eigenständige Bedeutung als Wort/Phrase
+
+NICHT gültig sind:
+- Erklärungsseiten (z.B. Satzzeichen, Grammatikregeln, Aussprachehinweise)
+- Beispielsätze ohne Übersetzung
+- Einträge wo beide Seiten dieselbe Sprache sind
+- Einträge wo eine Seite nur ein Beispielsatz ist (keine Übersetzung)
+- Buchstaben des Alphabets
+- Überschriften, Seitenzahlen, Übungsanweisungen
 
 Aufgabe:
-1. Entferne Einträge, die KEINE Vokabeln sind (Überschriften, Seitenzahlen, Übungsanweisungen, Grammatikhinweise ohne Übersetzung).
-2. Wenn ein Eintrag mehrere Übersetzungen/Bedeutungen enthält, trenne sie mit Semikolon (;).
-3. Entferne Nummerierungen, Aufzählungszeichen und überflüssige Sonderzeichen.
-4. Korrigiere offensichtliche OCR-Fehler bei Sonderzeichen (z.B. fehlende Akzente im {lang_name}).
+1. Behalte NUR echte Vokabelpaare (Deutsch ↔ {lang_name}).
+2. Wenn ein Eintrag mehrere Übersetzungen enthält, trenne sie mit Semikolon (;).
+3. Entferne Nummerierungen und überflüssige Sonderzeichen.
+4. Korrigiere offensichtliche OCR-Fehler (z.B. fehlende Akzente).
 5. Behalte Artikel (der/die/das, le/la/les etc.) bei.
+6. Wenn KEINE gültigen Vokabelpaare vorhanden sind, antworte mit einem leeren Array: []
 
 Antworte NUR mit einem JSON-Array im Format:
 [{{"source": "deutsch", "target": "übersetzung"}}]
@@ -229,21 +243,17 @@ Extrahierte Paare:
 {pairs_text}"""
 
     try:
-        response = bedrock_client.invoke_model(
-            modelId='eu.anthropic.claude-3-haiku-20240307-v1:0',
-            contentType='application/json',
-            accept='application/json',
-            body=json.dumps({
-                'anthropic_version': 'bedrock-2023-05-31',
-                'max_tokens': 4096,
-                'messages': [
-                    {'role': 'user', 'content': prompt}
-                ]
-            })
+        response = bedrock_client.converse(
+            modelId='eu.amazon.nova-pro-v1:0',
+            messages=[
+                {'role': 'user', 'content': [{'text': prompt}]}
+            ],
+            inferenceConfig={
+                'maxTokens': 4096,
+            }
         )
 
-        response_body = json.loads(response['body'].read())
-        result_text = response_body['content'][0]['text'].strip()
+        result_text = response['output']['message']['content'][0]['text'].strip()
 
         # Parse JSON response
         # Handle potential markdown code blocks
@@ -461,8 +471,12 @@ def handle_process(event, user_id):
         target_language = item.get('targetLanguage', DEFAULT_TARGET_LANGUAGE)
         vocab_pairs = verify_with_bedrock(vocab_pairs, target_language)
 
-        item_count = store_vocab_items(vocab_set_id, vocab_pairs, image_key=image_key)
-        status = 'review'
+        if vocab_pairs:
+            item_count = store_vocab_items(vocab_set_id, vocab_pairs, image_key=image_key)
+            status = 'review'
+        else:
+            item_count = 0
+            status = 'review'  # Still reviewable, just no valid pairs found
     else:
         item_count = 0
         status = 'failed'
