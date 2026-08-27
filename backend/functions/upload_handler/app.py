@@ -68,6 +68,7 @@ def lambda_handler(event, context):
         file_name = body.get('fileName', '')
         content_type = body.get('contentType', '')
         existing_vocab_set_id = body.get('vocabSetId')
+        target_language = body.get('targetLanguage', '')
 
         is_valid, error_msg = validate_file_upload(file_name, content_type)
         if not is_valid:
@@ -104,20 +105,21 @@ def lambda_handler(event, context):
         # Create initial VocabSet record or append image to existing set
         table = dynamodb.Table(VOCABSETS_TABLE)
         if not existing_vocab_set_id:
-            table.put_item(
-                Item={
-                    'vocabSetId': vocab_set_id,
-                    'userId': user_id,
-                    'title': '',
-                    'sourceImageKey': image_key,
-                    'imageKeys': [image_key],
-                    'extractionStatus': 'pending',
-                    'metadata': {},
-                    'createdAt': timestamp,
-                    'updatedAt': timestamp,
-                    'itemCount': 0,
-                }
-            )
+            item_data = {
+                'vocabSetId': vocab_set_id,
+                'userId': user_id,
+                'title': '',
+                'sourceImageKey': image_key,
+                'imageKeys': [image_key],
+                'extractionStatus': 'pending',
+                'metadata': {},
+                'createdAt': timestamp,
+                'updatedAt': timestamp,
+                'itemCount': 0,
+            }
+            if target_language:
+                item_data['targetLanguage'] = target_language
+            table.put_item(Item=item_data)
         else:
             # Append new image key to existing vocab set's imageKeys list
             table.update_item(

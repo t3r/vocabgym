@@ -128,8 +128,15 @@ onMounted(async () => {
     const res = await api.get('/goals')
     const goals = res.data.goals || res.data || []
     // Find first active goal (not completed, not expired)
-    const active = goals.find(g => g.status !== 'completed' && g.status !== 'expired')
+    const active = goals.find(g => {
+      const status = g.progress?.status || g.status
+      return status !== 'completed' && status !== 'expired'
+    })
     if (active) {
+      // Flatten progress into goal for easy template access
+      if (active.progress) {
+        Object.assign(active, active.progress)
+      }
       goal.value = active
     }
   } catch {

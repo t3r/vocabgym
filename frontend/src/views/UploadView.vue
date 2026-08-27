@@ -17,6 +17,7 @@
           v-model="targetLanguage"
           class="input-field"
         >
+          <option value="">🔍 Automatisch erkennen</option>
           <option v-for="lang in SUPPORTED_LANGUAGES" :key="lang.code" :value="lang.code">
             {{ lang.flag }} {{ lang.name }}
           </option>
@@ -91,7 +92,7 @@ const phase = ref('select') // 'select' | 'processing'
 const error = ref(null)
 const totalFiles = ref(0)
 const extractionPhase = ref(false)
-const targetLanguage = ref(DEFAULT_TARGET_LANGUAGE)
+const targetLanguage = ref('')
 
 async function handleStartUpload({ files, vocabSetId }) {
   phase.value = 'processing'

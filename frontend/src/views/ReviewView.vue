@@ -25,6 +25,16 @@
         v-model:topic="metadata.topic"
       />
 
+      <!-- Language Selector -->
+      <div class="card flex items-center gap-4">
+        <label class="text-sm font-medium text-gray-700 dark:text-gray-300 whitespace-nowrap">Zielsprache:</label>
+        <select v-model="selectedLanguage" class="input flex-1 max-w-xs" @change="handleLanguageChange">
+          <option v-for="lang in SUPPORTED_LANGUAGES" :key="lang.code" :value="lang.code">
+            {{ lang.flag }} {{ lang.name }}
+          </option>
+        </select>
+      </div>
+
       <!-- Image groups -->
       <div v-for="(group, groupIndex) in imageGroups" :key="group.imageKey" class="card">
         <!-- Image -->
@@ -171,7 +181,7 @@ import { ref, reactive, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useVocabStore } from '@/stores/vocab'
 import { useToast } from '@/composables/useToast'
-import { getLanguageName } from '@/utils/languages'
+import { getLanguageName, SUPPORTED_LANGUAGES } from '@/utils/languages'
 import LoadingSpinner from '@/components/common/LoadingSpinner.vue'
 import MetadataForm from '@/components/review/MetadataForm.vue'
 
@@ -187,6 +197,7 @@ const isLoading = ref(true)
 const isSaving = ref(false)
 const vocabSet = ref(null)
 const items = ref([])
+const selectedLanguage = ref('fr')
 const metadata = reactive({
   title: '',
   chapter: '',
@@ -195,7 +206,7 @@ const metadata = reactive({
 })
 
 const targetLanguageName = computed(() => {
-  return getLanguageName(vocabSet.value?.targetLanguage || 'fr')
+  return getLanguageName(selectedLanguage.value || 'fr')
 })
 
 /**
@@ -265,6 +276,7 @@ onMounted(async () => {
     const data = await vocabStore.fetchVocabSet(props.vocabSetId)
     vocabSet.value = data
     items.value = data.items || []
+    selectedLanguage.value = data.targetLanguage || 'fr'
     metadata.title = data.title || ''
     metadata.chapter = data.metadata?.chapter || ''
     metadata.pageNumber = data.metadata?.pageNumber || ''
@@ -318,6 +330,7 @@ async function handleSave() {
   try {
     await vocabStore.updateVocabSet(props.vocabSetId, {
       title: metadata.title || 'Unbenanntes Set',
+      targetLanguage: selectedLanguage.value,
       metadata: {
         chapter: metadata.chapter,
         pageNumber: metadata.pageNumber ? Number(metadata.pageNumber) : null,
@@ -332,6 +345,11 @@ async function handleSave() {
   } finally {
     isSaving.value = false
   }
+}
+
+function handleLanguageChange() {
+  // Language change is reflected immediately in column headers via targetLanguageName computed.
+  // The new value is saved when user clicks "Speichern & Freigeben".
 }
 
 function handleCancel() {

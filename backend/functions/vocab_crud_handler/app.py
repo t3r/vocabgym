@@ -302,6 +302,10 @@ def handle_update(event, user_id):
         update_expr_parts.append('metadata = :metadata')
         expr_values[':metadata'] = body['metadata']
 
+    if 'targetLanguage' in body:
+        update_expr_parts.append('targetLanguage = :tl')
+        expr_values[':tl'] = body['targetLanguage']
+
     if body.get('approve'):
         update_expr_parts.append('extractionStatus = :status')
         expr_values[':status'] = 'approved'

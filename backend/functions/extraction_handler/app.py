@@ -116,6 +116,63 @@ def extract_with_textract(image_key):
     return vocab_pairs, avg_confidence, raw_text
 
 
+def detect_target_language(raw_text):
+    """Use Bedrock to detect the target language from raw OCR text.
+
+    Analyzes vocabulary page text to determine if it's French, English,
+    Spanish, or Italian alongside German.
+
+    Args:
+        raw_text: Raw OCR text from Textract
+
+    Returns:
+        str: Language code ('fr', 'en', 'es', 'it') or None if detection fails
+    """
+    if not raw_text or len(raw_text.strip()) < 30:
+        return None
+
+    # Take first 500 chars to save tokens
+    sample = raw_text[:500]
+
+    prompt = f"""Analysiere diesen OCR-Text einer Schulbuchseite. Die Seite enthält deutsche Vokabeln und Übersetzungen in EINER Fremdsprache.
+
+Welche Fremdsprache ist es? Antworte NUR mit dem Sprachcode:
+- fr (Französisch)
+- en (Englisch)
+- es (Spanisch)
+- it (Italienisch)
+
+Antworte mit GENAU EINEM Sprachcode, nichts anderes.
+
+Text:
+{sample}"""
+
+    try:
+        response = bedrock_client.converse(
+            modelId='eu.amazon.nova-pro-v1:0',
+            messages=[{'role': 'user', 'content': [{'text': prompt}]}],
+            inferenceConfig={'maxTokens': 10},
+        )
+        result = response['output']['message']['content'][0]['text'].strip().lower()
+
+        if result in ('fr', 'en', 'es', 'it'):
+            logger.info(f"Detected target language: {result}")
+            return result
+
+        # Try to extract code from longer response
+        for code in ('fr', 'en', 'es', 'it'):
+            if code in result:
+                logger.info(f"Detected target language (parsed): {code}")
+                return code
+
+        logger.warning(f"Could not parse language from: {result}")
+        return None
+
+    except Exception as e:
+        logger.warning(f"Language detection failed: {e}")
+        return None
+
+
 def extract_with_bedrock_from_text(raw_text, target_language='fr'):
     """Use Bedrock LLM to extract vocabulary pairs directly from raw OCR text.
 
@@ -388,6 +445,7 @@ def handle_process(event, user_id):
     vocab_pairs = []
     raw_text = ''
     extraction_method = 'textract'
+    target_language = item.get('targetLanguage', '')
 
     try:
         vocab_pairs, confidence, raw_text = extract_with_textract(image_key)
@@ -396,7 +454,21 @@ def handle_process(event, user_id):
         # Textract table parsing often misaligns columns on complex workbook layouts,
         # while the LLM can intelligently parse the full OCR text regardless of layout.
         if raw_text and len(raw_text.strip()) > 50:
-            target_language = item.get('targetLanguage', DEFAULT_TARGET_LANGUAGE)
+            # Auto-detect language if not set on the VocabSet
+            if not target_language:
+                target_language = detect_target_language(raw_text) or DEFAULT_TARGET_LANGUAGE
+                # Save detected language back to the VocabSet
+                vocabsets_table.update_item(
+                    Key={'vocabSetId': vocab_set_id, 'userId': user_id},
+                    UpdateExpression='SET targetLanguage = :lang',
+                    ExpressionAttributeValues={':lang': target_language},
+                )
+                logger.info(json.dumps({
+                    'event': 'language_auto_detected',
+                    'vocabSetId': vocab_set_id,
+                    'detectedLanguage': target_language,
+                }))
+
             bedrock_pairs = extract_with_bedrock_from_text(raw_text, target_language)
 
             if bedrock_pairs and len(bedrock_pairs) >= len(vocab_pairs):
@@ -422,7 +494,8 @@ def handle_process(event, user_id):
 
     # Store extracted items
     if vocab_pairs:
-        target_language = item.get('targetLanguage', DEFAULT_TARGET_LANGUAGE)
+        if not target_language:
+            target_language = DEFAULT_TARGET_LANGUAGE
 
         # Only verify with Bedrock if extraction came from Textract table parsing
         # (Bedrock extraction already produces clean pairs)

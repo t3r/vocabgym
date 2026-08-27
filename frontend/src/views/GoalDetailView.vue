@@ -333,7 +333,12 @@ async function confirmDelete() {
 onMounted(async () => {
   try {
     const res = await api.get(`/goals/${props.goalId}`)
-    goal.value = res.data.goal || res.data
+    const data = res.data.goal || res.data
+    // Flatten progress sub-object into goal for easy template access
+    if (data.progress) {
+      Object.assign(data, data.progress)
+    }
+    goal.value = data
 
     // If teacher and league goal, load member progress
     if (isTeacher.value && goal.value.leagueId) {
