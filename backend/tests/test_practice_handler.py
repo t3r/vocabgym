@@ -52,7 +52,7 @@ class TestNormalizeAnswer:
         assert normalize_answer('hello!') == 'hello'
         assert normalize_answer('world.') == 'world'
         assert normalize_answer('"test"') == 'test'
-        assert normalize_answer('(note)') == 'note'
+        assert normalize_answer('(note)') == ''  # parenthesized content is fully stripped
 
     def test_whitespace_collapse(self):
         """Test that multiple spaces are collapsed."""
