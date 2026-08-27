@@ -1,0 +1,37 @@
+# SAM CLI deployment configuration
+version = 0.1
+
+[default.deploy.parameters]
+stack_name = "vocabtrainer-dev"
+resolve_s3 = true
+s3_prefix = "vocabtrainer-dev"
+confirm_changeset = true
+capabilities = "CAPABILITY_IAM CAPABILITY_AUTO_EXPAND"
+parameter_overrides = "Environment=\"dev\""
+tags = "Project=VocabTrainer Environment=dev"
+disable_rollback = true
+image_repositories = []
+
+[default.build.parameters]
+use_container = false
+parallel = true
+
+[default.local_start_api.parameters]
+warm_containers = "EAGER"
+
+[default.global.parameters]
+region = "eu-central-1"
+
+[prod.deploy.parameters]
+stack_name = "vocabtrainer-prod"
+resolve_s3 = true
+s3_prefix = "vocabtrainer-prod"
+region = "eu-central-1"
+confirm_changeset = true
+capabilities = "CAPABILITY_IAM CAPABILITY_AUTO_EXPAND"
+parameter_overrides = "Environment=prod"
+tags = "Project=VocabTrainer Environment=prod"
+
+[prod.build.parameters]
+use_container = false
+parallel = true

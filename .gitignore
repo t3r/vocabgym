@@ -42,7 +42,6 @@ Desktop.ini
 
 # AWS SAM build artifacts
 .aws-sam/
-samconfig.toml
 
 # Coverage reports
 coverage/
