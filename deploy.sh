@@ -25,7 +25,12 @@ echo ""
 echo "📦 Building backend..."
 cd "$(dirname "$0")/backend"
 
-sam build --use-container
+# Use container build locally (for arm64 native deps), skip in CI
+if [ -n "${CI}" ]; then
+  sam build
+else
+  sam build --use-container
+fi
 
 echo ""
 echo "☁️  Deploying backend stack..."
@@ -89,6 +94,7 @@ VITE_COGNITO_REDIRECT_URI=${FRONTEND_URL}/callback
 VITE_COGNITO_LOGOUT_URI=${FRONTEND_URL}
 VITE_AWS_REGION=${REGION}
 VITE_COGNITO_USER_POOL_ID=${USER_POOL_ID}
+VITE_APP_VERSION=${VITE_APP_VERSION:-$(git describe --tags --always 2>/dev/null || git rev-parse --short HEAD)}
 EOF
 
 npm ci --silent

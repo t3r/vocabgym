@@ -123,6 +123,11 @@
         @delete="handleDelete"
       />
     </div>
+
+    <!-- Version -->
+    <p class="text-center text-xs text-gray-300 dark:text-gray-700 mt-8">
+      {{ appVersion }}
+    </p>
   </div>
 </template>
 
@@ -144,6 +149,7 @@ const authStore = useAuthStore()
 const { showError, showSuccess } = useToast()
 
 const userName = computed(() => authStore.user?.name || authStore.user?.given_name || '')
+const appVersion = import.meta.env.VITE_APP_VERSION || 'dev'
 const inviteUrl = ref(null)
 const copied = ref(false)
 

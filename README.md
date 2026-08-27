@@ -108,6 +108,34 @@ EOF
 
 `deploy.sh` führt aus: `sam build` → `sam deploy` → Stack-Outputs lesen → Frontend bauen → S3 sync → CloudFront invalidieren.
 
+### CI/CD (GitHub Actions)
+
+| Trigger | Workflow | Aktion |
+|---------|----------|--------|
+| Pull Request → `main` | `test.yml` | Tests ausführen (mandatory) |
+| Push → `main` | `deploy-dev.yml` | Tests + Deploy nach dev |
+| GitHub Release | `deploy-prod.yml` | Tests + Deploy nach prod |
+
+Die Release-Version (Tag) wird im Dashboard unten angezeigt.
+
+**GitHub Setup:**
+
+1. Environments `dev` und `prod` in Repository Settings anlegen
+2. Secrets pro Environment setzen:
+   - `AWS_DEPLOY_ROLE_ARN` — IAM Role ARN für OIDC (GitHub → AWS)
+   - `CERTIFICATE_ARN` — ACM Zertifikat
+   - `HOSTED_ZONE_ID` — Route 53 Zone
+3. Branch Protection für `main`:
+   - ✅ Require pull request before merging
+   - ✅ Require status checks: "Backend Tests", "Frontend Tests"
+
+**Prod-Release erstellen:**
+```bash
+git tag v1.0.0
+git push origin v1.0.0
+# Dann auf GitHub: Releases → Create release from tag
+```
+
 ### Umgebungen
 
 | Stage | Domain | Stack |
