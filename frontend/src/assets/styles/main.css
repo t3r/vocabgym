@@ -7,6 +7,19 @@
     @apply text-gray-900 bg-gray-50 dark:text-gray-100 dark:bg-gray-900;
   }
 
+  /* Global dark mode for all form inputs */
+  input[type="text"],
+  input[type="email"],
+  input[type="password"],
+  input[type="number"],
+  input[type="search"],
+  input[type="url"],
+  input[type="tel"],
+  select,
+  textarea {
+    @apply dark:bg-gray-700 dark:border-gray-600 dark:text-gray-100 dark:placeholder-gray-400;
+  }
+
   h1 {
     @apply text-3xl font-bold;
   }
@@ -51,6 +64,10 @@
 
   .input-field {
     @apply block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm dark:bg-gray-700 dark:border-gray-600 dark:text-gray-100 dark:placeholder-gray-400;
+  }
+
+  .input {
+    @apply block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm dark:bg-gray-700 dark:border-gray-600 dark:text-gray-100 dark:placeholder-gray-400;
   }
 
   .label {
