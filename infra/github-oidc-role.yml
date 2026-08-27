@@ -1,0 +1,214 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: GitHub Actions OIDC role for VocabGym deployments
+
+Parameters:
+  GitHubOrg:
+    Type: String
+    Description: GitHub organization or user name
+  GitHubRepo:
+    Type: String
+    Default: vocabgym
+    Description: GitHub repository name
+  OIDCProviderArn:
+    Type: String
+    Default: ''
+    Description: "Existing GitHub OIDC provider ARN. Leave empty to create a new one."
+
+Conditions:
+  CreateOIDCProvider: !Equals [!Ref OIDCProviderArn, '']
+
+Resources:
+  # ============================================================
+  # GitHub OIDC Identity Provider (one per account, reusable)
+  # ============================================================
+  GitHubOIDCProvider:
+    Type: AWS::IAM::OIDCProvider
+    Condition: CreateOIDCProvider
+    Properties:
+      Url: https://token.actions.githubusercontent.com
+      ClientIdList:
+        - sts.amazonaws.com
+      ThumbprintList:
+        - 6938fd4d98bab03faadb97b34396831e3780aea1
+        - 1c58a3a8518e8759bf075b76b750d4f2df264fcd
+
+  # ============================================================
+  # Deploy Role (assumed by GitHub Actions via OIDC)
+  # ============================================================
+  GitHubDeployRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub vocabgym-github-deploy-${AWS::Region}
+      MaxSessionDuration: 3600
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Federated: !If
+                - CreateOIDCProvider
+                - !Ref GitHubOIDCProvider
+                - !Ref OIDCProviderArn
+            Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                token.actions.githubusercontent.com:aud: sts.amazonaws.com
+              StringLike:
+                token.actions.githubusercontent.com:sub:
+                  - !Sub repo:${GitHubOrg}/${GitHubRepo}:ref:refs/heads/main
+                  - !Sub repo:${GitHubOrg}/${GitHubRepo}:environment:dev
+                  - !Sub repo:${GitHubOrg}/${GitHubRepo}:environment:prod
+      Tags:
+        - Key: Project
+          Value: VocabGym
+
+  # ============================================================
+  # Permissions
+  # ============================================================
+  DeployPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: vocabgym-deploy
+      Roles:
+        - !Ref GitHubDeployRole
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          # CloudFormation — manage the application stack
+          - Sid: CloudFormation
+            Effect: Allow
+            Action:
+              - cloudformation:*
+            Resource:
+              - !Sub arn:aws:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/vocabtrainer-*/*
+              - !Sub arn:aws:cloudformation:${AWS::Region}:aws:transform/*
+
+          # SAM artifact bucket (auto-created by SAM with aws-sam-cli-managed prefix)
+          - Sid: SAMArtifacts
+            Effect: Allow
+            Action:
+              - s3:*
+            Resource:
+              - arn:aws:s3:::aws-sam-cli-managed-*
+              - arn:aws:s3:::aws-sam-cli-managed-*/*
+
+          # S3 — frontend bucket + image bucket
+          - Sid: S3Buckets
+            Effect: Allow
+            Action:
+              - s3:*
+            Resource:
+              - !Sub arn:aws:s3:::vocabtrainer-*-${AWS::AccountId}
+              - !Sub arn:aws:s3:::vocabtrainer-*-${AWS::AccountId}/*
+
+          # Lambda — create, update, delete functions + layers
+          - Sid: Lambda
+            Effect: Allow
+            Action:
+              - lambda:*
+            Resource:
+              - !Sub arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:vocabtrainer-*
+              - !Sub arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:layer:vocabtrainer-*
+              - !Sub arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:layer:vocabtrainer-*:*
+
+          # API Gateway
+          - Sid: ApiGateway
+            Effect: Allow
+            Action:
+              - apigateway:*
+            Resource:
+              - !Sub arn:aws:apigateway:${AWS::Region}::*
+
+          # DynamoDB — manage tables
+          - Sid: DynamoDB
+            Effect: Allow
+            Action:
+              - dynamodb:*
+            Resource:
+              - !Sub arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/vocabtrainer-*
+
+          # Cognito — manage user pool
+          - Sid: Cognito
+            Effect: Allow
+            Action:
+              - cognito-idp:*
+            Resource:
+              - !Sub arn:aws:cognito-idp:${AWS::Region}:${AWS::AccountId}:userpool/*
+
+          # IAM — manage roles and policies for Lambda execution roles
+          - Sid: IAM
+            Effect: Allow
+            Action:
+              - iam:GetRole
+              - iam:CreateRole
+              - iam:DeleteRole
+              - iam:UpdateRole
+              - iam:AttachRolePolicy
+              - iam:DetachRolePolicy
+              - iam:PutRolePolicy
+              - iam:DeleteRolePolicy
+              - iam:GetRolePolicy
+              - iam:PassRole
+              - iam:TagRole
+              - iam:UntagRole
+              - iam:ListRolePolicies
+              - iam:ListAttachedRolePolicies
+            Resource:
+              - !Sub arn:aws:iam::${AWS::AccountId}:role/vocabtrainer-*
+
+          # CloudFront — manage distribution + invalidation
+          - Sid: CloudFront
+            Effect: Allow
+            Action:
+              - cloudfront:*
+            Resource:
+              - !Sub arn:aws:cloudfront::${AWS::AccountId}:distribution/*
+              - !Sub arn:aws:cloudfront::${AWS::AccountId}:origin-access-control/*
+
+          # Route 53 — manage DNS records
+          - Sid: Route53
+            Effect: Allow
+            Action:
+              - route53:ChangeResourceRecordSets
+              - route53:GetHostedZone
+              - route53:ListResourceRecordSets
+            Resource:
+              - arn:aws:route53:::hostedzone/*
+
+          # SSM Parameter Store — manage prompts
+          - Sid: SSM
+            Effect: Allow
+            Action:
+              - ssm:PutParameter
+              - ssm:GetParameter
+              - ssm:GetParameters
+              - ssm:DeleteParameter
+              - ssm:AddTagsToResource
+              - ssm:ListTagsForResource
+            Resource:
+              - !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/vocabtrainer/*
+
+          # CloudFormation needs these for stack operations
+          - Sid: CloudFormationGlobal
+            Effect: Allow
+            Action:
+              - cloudformation:GetTemplateSummary
+              - cloudformation:ValidateTemplate
+              - cloudformation:ListStacks
+            Resource: '*'
+
+          # Lambda needs GetLayerVersion during stack updates
+          - Sid: LambdaGlobal
+            Effect: Allow
+            Action:
+              - lambda:GetLayerVersion
+            Resource: '*'
+
+Outputs:
+  DeployRoleArn:
+    Description: "ARN for GitHub Actions — set as AWS_DEPLOY_ROLE_ARN secret in GitHub"
+    Value: !GetAtt GitHubDeployRole.Arn
+  OIDCProviderArn:
+    Description: "OIDC Provider ARN (reuse for other repos)"
+    Condition: CreateOIDCProvider
+    Value: !Ref GitHubOIDCProvider
