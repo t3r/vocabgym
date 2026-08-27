@@ -5,6 +5,9 @@ Parameters:
   GitHubOrg:
     Type: String
     Description: GitHub organization or user name
+  GitHubOrgId:
+    Type: String
+    Description: "Numeric GitHub org/user ID (gh api /users/<org> --jq .id)"
   GitHubRepo:
     Type: String
     Default: vocabgym
@@ -55,7 +58,10 @@ Resources:
                 token.actions.githubusercontent.com:aud: sts.amazonaws.com
               StringLike:
                 token.actions.githubusercontent.com:sub:
+                  # Classic format (repos created before July 15, 2026)
                   - !Sub repo:${GitHubOrg}/${GitHubRepo}:*
+                  # Immutable-ID format (repos created after July 15, 2026)
+                  - !Sub repo:${GitHubOrg}@${GitHubOrgId}/${GitHubRepo}@*:*
       Tags:
         - Key: Project
           Value: VocabGym
