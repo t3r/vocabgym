@@ -85,6 +85,7 @@ Resources:
               - cloudformation:*
             Resource:
               - !Sub arn:aws:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/vocabtrainer-*/*
+              - !Sub arn:aws:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/aws-sam-cli-managed-default/*
               - !Sub arn:aws:cloudformation:${AWS::Region}:aws:transform/*
 
           # SAM artifact bucket (auto-created by SAM with aws-sam-cli-managed prefix)
