@@ -72,6 +72,11 @@ Resources:
         RecoveryMechanisms:
           - Name: verified_email
             Priority: 1
+      AdminCreateUserConfig:
+        AllowAdminCreateUserOnly: true
+        InviteMessageTemplate:
+          EmailSubject: "Dein VocabGym-Konto wurde erstellt"
+          EmailMessage: "Hallo! Dein Lehrer hat ein VocabGym-Konto für dich erstellt. Dein Benutzername ist {username} und dein temporäres Passwort ist {####}. Bitte melde dich an und ändere dein Passwort."
 
   CognitoUserPoolClient:
     Type: AWS::Cognito::UserPoolClient
@@ -639,6 +644,7 @@ Resources:
         Variables:
           LEAGUES_TABLE: !Ref LeaguesTable
           LEAGUE_MEMBERS_TABLE: !Ref LeagueMembersTable
+          USER_POOL_ID: !Ref CognitoUserPool
       Policies:
         - DynamoDBCrudPolicy:
             TableName: !Ref LeaguesTable
@@ -652,6 +658,13 @@ Resources:
             TableName: !Ref ProgressTable
         - DynamoDBReadPolicy:
             TableName: !Ref PracticeSessionsTable
+        - Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action:
+                - cognito-idp:AdminCreateUser
+                - cognito-idp:AdminGetUser
+              Resource: !GetAtt CognitoUserPool.Arn
       Events:
         CreateLeague:
           Type: Api
@@ -695,6 +708,12 @@ Resources:
             RestApiId: !Ref VocabTrainerApi
             Path: /league/{leagueId}/members
             Method: GET
+        InviteStudent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref VocabTrainerApi
+            Path: /league/{leagueId}/invite
+            Method: POST
         RemoveMember:
           Type: Api
           Properties:

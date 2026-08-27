@@ -156,6 +156,28 @@
           </button>
         </div>
 
+        <!-- Invite Student -->
+        <div class="card mb-6">
+          <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-3">Schüler einladen</h3>
+          <p class="text-sm text-gray-500 dark:text-gray-400 mb-3">
+            Geben Sie die E-Mail-Adresse ein. Der Schüler erhält eine Einladung mit einem temporären Passwort.
+          </p>
+          <form @submit.prevent="inviteStudent" class="flex gap-3">
+            <input
+              v-model="inviteEmail"
+              type="email"
+              placeholder="E-Mail-Adresse"
+              class="input flex-1"
+              :disabled="inviting"
+            />
+            <button type="submit" class="btn-primary text-sm whitespace-nowrap" :disabled="inviting || !inviteEmail.trim()">
+              {{ inviting ? 'Wird gesendet...' : 'Einladen' }}
+            </button>
+          </form>
+          <p v-if="inviteSuccess" class="text-sm text-green-600 dark:text-green-400 mt-2">✓ {{ inviteSuccess }}</p>
+          <p v-if="inviteError" class="text-sm text-red-600 dark:text-red-400 mt-2">{{ inviteError }}</p>
+        </div>
+
         <!-- Manage Members -->
         <div class="card mb-6">
           <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-3">Teilnehmer verwalten</h3>
@@ -331,6 +353,10 @@ const selectedVocabSetIds = ref([])
 const savingVocabSets = ref(false)
 const joinCodeCopied = ref(false)
 const expandedMembers = ref([])
+const inviteEmail = ref('')
+const inviting = ref(false)
+const inviteSuccess = ref('')
+const inviteError = ref('')
 
 const currentUserId = computed(() => authStore.user?.sub || authStore.user?.userId || '')
 
@@ -465,6 +491,32 @@ function toggleMemberDetail(userId) {
     expandedMembers.value.splice(idx, 1)
   } else {
     expandedMembers.value.push(userId)
+  }
+}
+
+async function inviteStudent() {
+  if (!inviteEmail.value.trim()) return
+
+  inviting.value = true
+  inviteSuccess.value = ''
+  inviteError.value = ''
+
+  try {
+    const response = await api.post(`/league/${authStore.leagueId}/invite`, {
+      email: inviteEmail.value.trim(),
+    })
+    inviteSuccess.value = `Einladung an ${inviteEmail.value} gesendet (${response.data.displayName})`
+    inviteEmail.value = ''
+
+    // Refresh members list
+    try {
+      const membersRes = await api.get(`/league/${authStore.leagueId}/members`)
+      members.value = membersRes.data.members || membersRes.data || []
+    } catch (_) { /* ignore refresh errors */ }
+  } catch (err) {
+    inviteError.value = err.response?.data?.error || 'Fehler beim Einladen'
+  } finally {
+    inviting.value = false
   }
 }
 

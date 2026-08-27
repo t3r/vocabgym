@@ -25,6 +25,7 @@ logger.setLevel(os.environ.get('LOG_LEVEL', 'INFO'))
 
 # Initialize AWS clients
 dynamodb = boto3.resource('dynamodb')
+cognito_client = boto3.client('cognito-idp')
 
 # Environment variables
 LEAGUES_TABLE = os.environ['LEAGUES_TABLE']
@@ -33,6 +34,7 @@ USERS_TABLE = os.environ['USERS_TABLE']
 VOCABSETS_TABLE = os.environ['VOCABSETS_TABLE']
 PROGRESS_TABLE = os.environ['PROGRESS_TABLE']
 SESSIONS_TABLE = os.environ['SESSIONS_TABLE']
+USER_POOL_ID = os.environ.get('USER_POOL_ID', '')
 
 
 def lambda_handler(event, context):
@@ -56,6 +58,10 @@ def lambda_handler(event, context):
         # POST /league/join
         if http_method == 'POST' and path.endswith('/league/join'):
             return handle_join(event, user_id)
+
+        # POST /league/{leagueId}/invite (teacher invites student)
+        if http_method == 'POST' and '/invite' in path:
+            return handle_invite_student(event, user_id)
 
         # POST /league (create)
         if http_method == 'POST' and path.endswith('/league'):
@@ -181,6 +187,135 @@ def handle_update_profile(event, user_id):
             logger.warning(f"Failed to update displayName in league members: {e}")
 
     return build_response(200, {'displayName': display_name})
+
+
+def handle_invite_student(event, user_id):
+    """Handle POST /league/{leagueId}/invite - Teacher creates a student account.
+
+    Creates a Cognito user and adds them to the league. Cognito sends an
+    invite email with a temporary password automatically.
+
+    Expected body:
+    {
+        "email": "student@example.com",
+        "displayName": "Max M."  (optional)
+    }
+    """
+    if not _is_teacher(event):
+        return build_response(403, {'error': 'Only teachers can invite students'})
+
+    league_id = get_path_parameter(event, 'leagueId')
+
+    league = _get_league(league_id)
+    if not league:
+        return build_response(404, {'error': 'League not found'})
+
+    if league['teacherUserId'] != user_id:
+        return build_response(403, {'error': 'Only the league teacher can invite students'})
+
+    if not USER_POOL_ID:
+        return build_response(500, {'error': 'User pool not configured'})
+
+    body = parse_body(event)
+    email = body.get('email', '').strip().lower()
+    display_name = body.get('displayName', '').strip()
+
+    if not email:
+        return build_response(400, {'error': 'E-Mail-Adresse ist erforderlich'})
+
+    # Basic email validation
+    if '@' not in email or '.' not in email.split('@')[-1]:
+        return build_response(400, {'error': 'Ungültige E-Mail-Adresse'})
+
+    try:
+        # Create user in Cognito (sends invite email with temporary password)
+        cognito_response = cognito_client.admin_create_user(
+            UserPoolId=USER_POOL_ID,
+            Username=email,
+            UserAttributes=[
+                {'Name': 'email', 'Value': email},
+                {'Name': 'email_verified', 'Value': 'true'},
+            ],
+            DesiredDeliveryMediums=['EMAIL'],
+        )
+
+        # Get the Cognito sub (userId) from the response
+        new_user_id = None
+        for attr in cognito_response['User']['Attributes']:
+            if attr['Name'] == 'sub':
+                new_user_id = attr['Value']
+                break
+
+        if not new_user_id:
+            return build_response(500, {'error': 'Failed to get user ID from Cognito'})
+
+    except cognito_client.exceptions.UsernameExistsException:
+        # User already exists — look up their sub and add to league
+        try:
+            existing = cognito_client.admin_get_user(
+                UserPoolId=USER_POOL_ID,
+                Username=email,
+            )
+            new_user_id = None
+            for attr in existing['UserAttributes']:
+                if attr['Name'] == 'sub':
+                    new_user_id = attr['Value']
+                    break
+            if not new_user_id:
+                return build_response(500, {'error': 'Failed to get existing user ID'})
+        except Exception as e:
+            logger.exception(f"Failed to look up existing user: {e}")
+            return build_response(500, {'error': 'Fehler beim Suchen des bestehenden Nutzers'})
+
+    except Exception as e:
+        logger.exception(f"Failed to create Cognito user: {e}")
+        return build_response(500, {'error': f'Fehler beim Erstellen des Kontos: {str(e)}'})
+
+    # Create/update user record in Users table
+    timestamp = get_timestamp()
+    users_table = dynamodb.Table(USERS_TABLE)
+    users_table.update_item(
+        Key={'userId': new_user_id},
+        UpdateExpression='SET leagueId = :lid, displayName = if_not_exists(displayName, :dn), createdAt = if_not_exists(createdAt, :ts)',
+        ExpressionAttributeValues={
+            ':lid': league_id,
+            ':dn': display_name or email.split('@')[0],
+            ':ts': timestamp,
+        }
+    )
+
+    # Add as league member (skip if already member)
+    members_table = dynamodb.Table(LEAGUE_MEMBERS_TABLE)
+    existing_member = members_table.get_item(
+        Key={'leagueId': league_id, 'userId': new_user_id}
+    )
+    if not existing_member.get('Item'):
+        members_table.put_item(Item={
+            'leagueId': league_id,
+            'userId': new_user_id,
+            'displayName': display_name or email.split('@')[0],
+            'role': 'student',
+            'currentStreak': 0,
+            'totalCorrect': 0,
+            'totalAttempts': 0,
+            'weeklyCorrect': 0,
+            'weekStartDate': '',
+            'lastPracticeDate': '',
+            'joinedAt': timestamp,
+        })
+
+    logger.info(json.dumps({
+        'event': 'student_invited',
+        'leagueId': league_id,
+        'newUserId': new_user_id,
+        'invitedBy': user_id,
+    }))
+
+    return build_response(201, {
+        'userId': new_user_id,
+        'displayName': display_name or email.split('@')[0],
+        'message': 'Einladung wurde gesendet',
+    })
 
 
 def handle_create(event, user_id):
