@@ -99,8 +99,12 @@ def handle_overview(event, user_id):
     total_correct = 0
     total_incorrect = 0
 
+    # Collect weakest words (practiced but low mastery or high error count)
+    weak_items = []
+
     for vs in vocab_sets:
         vocab_set_id = vs['vocabSetId']
+        vocab_set_title = vs.get('title', '')
         total_words += vs.get('itemCount', 0)
 
         # Get progress for this vocab set
@@ -112,11 +116,25 @@ def handle_overview(event, user_id):
 
         for item in progress_items:
             practiced_words += 1
-            mastery = item.get('masteryLevel', 0)
+            mastery = int(item.get('masteryLevel', 0))
             mastery_sum += mastery
             mastery_distribution[mastery] += 1
-            total_correct += item.get('correctCount', 0)
-            total_incorrect += item.get('incorrectCount', 0)
+            correct = int(item.get('correctCount', 0))
+            incorrect = int(item.get('incorrectCount', 0))
+            total_correct += correct
+            total_incorrect += incorrect
+
+            # Track weak items (any word with at least 1 error, or low mastery)
+            if incorrect > 0 or (mastery < 3 and (correct + incorrect) > 0):
+                weak_items.append({
+                    'vocabSetId': vocab_set_id,
+                    'vocabSetTitle': vocab_set_title,
+                    'itemId': item.get('itemId', ''),
+                    'masteryLevel': mastery,
+                    'correctCount': correct,
+                    'incorrectCount': incorrect,
+                    'recentErrors': item.get('recentErrors', []),
+                })
 
     # Calculate averages
     avg_mastery = round(mastery_sum / practiced_words, 1) if practiced_words > 0 else 0
@@ -128,8 +146,35 @@ def handle_overview(event, user_id):
     # Calculate total time spent
     total_time_seconds = sum(s.get('duration', 0) for s in completed_sessions)
 
-    # Calculate practice streak (consecutive days)
+    # Practice streak
     practice_streak = _calculate_streak(completed_sessions)
+
+    # Get top 10 weakest words with their vocab text
+    weak_items.sort(key=lambda x: (x['masteryLevel'], -x['incorrectCount']))
+    top_weak = weak_items[:10]
+
+    # Batch lookup vocab item texts
+    items_table = dynamodb.Table(VOCABITEMS_TABLE)
+    weakest_words = []
+    for w in top_weak:
+        try:
+            item_resp = items_table.get_item(
+                Key={'vocabSetId': w['vocabSetId'], 'itemId': w['itemId']}
+            )
+            vi = item_resp.get('Item', {})
+            total_attempts = w['correctCount'] + w['incorrectCount']
+            accuracy = round(w['correctCount'] / total_attempts * 100) if total_attempts > 0 else 0
+            weakest_words.append({
+                'source': vi.get('source', vi.get('german', '')),
+                'target': vi.get('target', vi.get('french', '')),
+                'vocabSetTitle': w['vocabSetTitle'],
+                'masteryLevel': w['masteryLevel'],
+                'accuracy': accuracy,
+                'incorrectCount': w['incorrectCount'],
+                'recentErrors': [e.get('answer', '') for e in w['recentErrors'][-3:]],
+            })
+        except Exception:
+            pass
 
     # Format recent sessions for response
     recent_sessions = [
@@ -172,6 +217,7 @@ def handle_overview(event, user_id):
             '5': mastery_distribution.get(5, 0),
         },
         'recentSessions': recent_sessions,
+        'weakestWords': weakest_words,
     })
 
 

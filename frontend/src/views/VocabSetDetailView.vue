@@ -57,9 +57,11 @@
       <div class="card mb-6">
         <div class="flex items-center justify-between">
           <h3 class="font-semibold text-gray-900 dark:text-white">Überblick</h3>
-          <span class="text-sm text-gray-500 dark:text-gray-400 dark:text-gray-500">
-            {{ activeCount }} von {{ items.length }} Vokabeln aktiv
-          </span>
+          <div class="flex items-center gap-4 text-sm text-gray-500 dark:text-gray-400">
+            <span>{{ activeCount }} von {{ items.length }} aktiv</span>
+            <span v-if="progressStats.overallAccuracy">·  {{ progressStats.overallAccuracy }}% Genauigkeit</span>
+            <span v-if="progressStats.masteredCount">· {{ progressStats.masteredCount }} beherrscht</span>
+          </div>
         </div>
       </div>
 
@@ -90,9 +92,12 @@
                     class="rounded border-gray-300 text-primary-600 focus:ring-primary-500 dark:border-gray-600 dark:bg-gray-700"
                   />
                 </th>
-                <th class="pb-3 text-sm font-medium text-gray-500 dark:text-gray-400 dark:text-gray-500">#</th>
-                <th class="pb-3 text-sm font-medium text-gray-500 dark:text-gray-400 dark:text-gray-500">Deutsch</th>
-                <th class="pb-3 text-sm font-medium text-gray-500 dark:text-gray-400 dark:text-gray-500">{{ getLanguageName(vocabSet?.targetLanguage || 'fr') }}</th>
+                <th class="pb-3 text-sm font-medium text-gray-500 dark:text-gray-400">#</th>
+                <th class="pb-3 text-sm font-medium text-gray-500 dark:text-gray-400">Deutsch</th>
+                <th class="pb-3 text-sm font-medium text-gray-500 dark:text-gray-400">{{ getLanguageName(vocabSet?.targetLanguage || 'fr') }}</th>
+                <th class="pb-3 text-sm font-medium text-gray-500 dark:text-gray-400 text-center">Level</th>
+                <th class="pb-3 text-sm font-medium text-gray-500 dark:text-gray-400 text-center hidden sm:table-cell">Richtig</th>
+                <th class="pb-3 text-sm font-medium text-gray-500 dark:text-gray-400 hidden md:table-cell">Letzte Fehler</th>
               </tr>
             </thead>
             <tbody>
@@ -113,6 +118,24 @@
                 <td class="py-3 text-sm text-gray-400 dark:text-gray-500">{{ index + 1 }}</td>
                 <td class="py-3 font-medium dark:text-gray-200">{{ item.source || item.german }}</td>
                 <td class="py-3 dark:text-gray-300">{{ item.target || item.french }}</td>
+                <td class="py-3 text-center">
+                  <span v-if="getProgress(item.itemId)" class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium"
+                    :class="masteryClass(getProgress(item.itemId).masteryLevel)">
+                    {{ getProgress(item.itemId).masteryLevel }}/5
+                  </span>
+                  <span v-else class="text-xs text-gray-300 dark:text-gray-600">—</span>
+                </td>
+                <td class="py-3 text-center text-sm hidden sm:table-cell">
+                  <span v-if="getProgress(item.itemId)">
+                    {{ getProgress(item.itemId).accuracy }}%
+                  </span>
+                  <span v-else class="text-gray-300 dark:text-gray-600">—</span>
+                </td>
+                <td class="py-3 text-xs text-gray-400 dark:text-gray-500 hidden md:table-cell">
+                  <template v-if="getProgress(item.itemId)?.recentErrors?.length">
+                    {{ getProgress(item.itemId).recentErrors.map(e => e.answer || e).join(', ') }}
+                  </template>
+                </td>
               </tr>
             </tbody>
           </table>
@@ -157,6 +180,8 @@ const showAddPage = ref(false)
 const addingPage = ref(false)
 const selectionDirty = ref(false)
 const savingSelection = ref(false)
+const progressMap = ref({})
+const progressStats = ref({})
 
 const activeCount = computed(() => items.value.filter(i => i.isActive).length)
 const allSelected = computed(() => items.value.length > 0 && items.value.every(i => i.isActive))
@@ -182,6 +207,17 @@ function deselectAll() {
   selectionDirty.value = true
 }
 
+function getProgress(itemId) {
+  return progressMap.value[itemId] || null
+}
+
+function masteryClass(level) {
+  if (level <= 1) return 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300'
+  if (level === 2) return 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300'
+  if (level === 3) return 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300'
+  return 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300'
+}
+
 async function saveSelection() {
   savingSelection.value = true
   try {
@@ -202,6 +238,22 @@ onMounted(async () => {
     const data = await vocabStore.fetchVocabSet(props.vocabSetId)
     vocabSet.value = data
     items.value = data.items || []
+
+    // Load progress data for this set
+    try {
+      const progRes = await api.get(`/progress/${props.vocabSetId}`)
+      const progData = progRes.data
+      progressStats.value = {
+        overallAccuracy: progData.overallAccuracy,
+        masteredCount: progData.masteredCount,
+      }
+      // Build lookup map by itemId
+      for (const p of (progData.progress || [])) {
+        progressMap.value[p.itemId] = p
+      }
+    } catch {
+      // Progress not available yet — that's fine
+    }
   } catch {
     // Error handled by store
   } finally {

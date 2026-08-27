@@ -7,22 +7,30 @@
 
     <template v-else>
       <!-- Stats Cards -->
-      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+      <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4 mb-8">
         <div class="card text-center">
           <p class="text-3xl font-bold text-primary-600">{{ stats.totalVocabSets || 0 }}</p>
-          <p class="text-sm text-gray-600 mt-1">Vokabelsets</p>
+          <p class="text-sm text-gray-600 dark:text-gray-400 mt-1">Vokabelsets</p>
         </div>
         <div class="card text-center">
           <p class="text-3xl font-bold text-primary-600">{{ stats.totalWords || 0 }}</p>
-          <p class="text-sm text-gray-600 mt-1">Vokabeln gesamt</p>
+          <p class="text-sm text-gray-600 dark:text-gray-400 mt-1">Vokabeln gesamt</p>
         </div>
         <div class="card text-center">
           <p class="text-3xl font-bold text-success">{{ formatPercentage(stats.averageMastery) }}</p>
-          <p class="text-sm text-gray-600 mt-1">Ø Beherrschung</p>
+          <p class="text-sm text-gray-600 dark:text-gray-400 mt-1">Ø Beherrschung</p>
+        </div>
+        <div class="card text-center">
+          <p class="text-3xl font-bold text-blue-500">{{ formatPercentage(stats.overallAccuracy) }}</p>
+          <p class="text-sm text-gray-600 dark:text-gray-400 mt-1">Genauigkeit</p>
         </div>
         <div class="card text-center">
           <p class="text-3xl font-bold text-warning">{{ stats.totalSessions || 0 }}</p>
-          <p class="text-sm text-gray-600 mt-1">Übungssitzungen</p>
+          <p class="text-sm text-gray-600 dark:text-gray-400 mt-1">Übungen</p>
+        </div>
+        <div class="card text-center">
+          <p class="text-3xl font-bold text-orange-500">🔥 {{ stats.practiceStreak || 0 }}</p>
+          <p class="text-sm text-gray-600 dark:text-gray-400 mt-1">Tage-Streak</p>
         </div>
       </div>
 
@@ -34,9 +42,51 @@
           <p v-else class="text-gray-500 text-center py-8">Noch keine Daten vorhanden</p>
         </div>
         <div class="card">
-          <h3 class="text-lg font-semibold mb-4">Übungsaktivität</h3>
+          <h3 class="text-lg font-semibold mb-4">Übungsaktivität & Genauigkeit</h3>
           <ProgressChart v-if="activityData" :data="activityData" type="line" />
           <p v-else class="text-gray-500 text-center py-8">Noch keine Daten vorhanden</p>
+        </div>
+      </div>
+
+      <!-- Weakest Words -->
+      <div v-if="weakestWords.length" class="card mb-8">
+        <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">🎯 Schwierige Wörter</h3>
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead>
+              <tr class="text-left border-b border-gray-200 dark:border-gray-700">
+                <th class="pb-2 font-medium text-gray-500 dark:text-gray-400">Wort</th>
+                <th class="pb-2 font-medium text-gray-500 dark:text-gray-400">Übersetzung</th>
+                <th class="pb-2 font-medium text-gray-500 dark:text-gray-400 text-center">Level</th>
+                <th class="pb-2 font-medium text-gray-500 dark:text-gray-400 text-center">Genauigkeit</th>
+                <th class="pb-2 font-medium text-gray-500 dark:text-gray-400 hidden sm:table-cell">Letzte Fehler</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-100 dark:divide-gray-700">
+              <tr v-for="(word, i) in weakestWords" :key="i" class="hover:bg-gray-50 dark:hover:bg-gray-700/50">
+                <td class="py-2 font-medium text-gray-900 dark:text-white">{{ word.source }}</td>
+                <td class="py-2 text-gray-600 dark:text-gray-300">{{ word.target }}</td>
+                <td class="py-2 text-center">
+                  <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium"
+                    :class="{
+                      'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300': word.masteryLevel <= 1,
+                      'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300': word.masteryLevel === 2,
+                      'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300': word.masteryLevel === 3,
+                    }">
+                    {{ word.masteryLevel }}/5
+                  </span>
+                </td>
+                <td class="py-2 text-center" :class="word.accuracy < 50 ? 'text-red-600 dark:text-red-400' : 'text-yellow-600 dark:text-yellow-400'">
+                  {{ word.accuracy }}%
+                </td>
+                <td class="py-2 text-xs text-gray-400 dark:text-gray-500 hidden sm:table-cell">
+                  <span v-if="word.recentErrors.length">
+                    {{ word.recentErrors.join(', ') }}
+                  </span>
+                </td>
+              </tr>
+            </tbody>
+          </table>
         </div>
       </div>
 
@@ -62,6 +112,7 @@ const stats = ref({})
 const masteryData = ref(null)
 const activityData = ref(null)
 const recentSessions = ref([])
+const weakestWords = ref([])
 
 onMounted(async () => {
   try {
@@ -72,10 +123,13 @@ onMounted(async () => {
       totalVocabSets: data.totalVocabSets || 0,
       totalWords: data.totalWords || 0,
       averageMastery: data.averageMastery || 0,
-      totalSessions: data.totalSessions || 0
+      overallAccuracy: data.overallAccuracy || 0,
+      totalSessions: data.totalSessions || 0,
+      practiceStreak: data.practiceStreak || 0,
     }
 
     recentSessions.value = data.recentSessions || []
+    weakestWords.value = data.weakestWords || []
 
     // Build mastery distribution chart from backend data
     const dist = data.masteryDistribution
@@ -99,26 +153,46 @@ onMounted(async () => {
 
     // Build activity chart from recent sessions (group by date)
     if (recentSessions.value.length > 0) {
-      const sessionsByDate = {}
+      const dateStats = {}
       for (const session of recentSessions.value) {
         if (!session.completedAt) continue
         const date = new Date(Number(session.completedAt) * 1000)
         const key = date.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' })
-        sessionsByDate[key] = (sessionsByDate[key] || 0) + (session.correct || 0)
+        if (!dateStats[key]) {
+          dateStats[key] = { correct: 0, total: 0 }
+        }
+        dateStats[key].correct += (session.correct || 0)
+        dateStats[key].total += (session.total || 0)
       }
 
-      const dates = Object.keys(sessionsByDate)
+      const dates = Object.keys(dateStats)
       if (dates.length > 0) {
         activityData.value = {
           labels: dates,
-          datasets: [{
-            label: 'Richtige Antworten',
-            data: dates.map(d => sessionsByDate[d]),
-            borderColor: '#3b82f6',
-            backgroundColor: 'rgba(59, 130, 246, 0.1)',
-            fill: true,
-            tension: 0.3
-          }]
+          datasets: [
+            {
+              label: 'Richtige Antworten',
+              data: dates.map(d => dateStats[d].correct),
+              borderColor: '#3b82f6',
+              backgroundColor: 'rgba(59, 130, 246, 0.1)',
+              fill: true,
+              tension: 0.3,
+              yAxisID: 'y',
+            },
+            {
+              label: 'Genauigkeit %',
+              data: dates.map(d => {
+                const s = dateStats[d]
+                return s.total > 0 ? Math.round(s.correct / s.total * 100) : 0
+              }),
+              borderColor: '#10b981',
+              backgroundColor: 'rgba(16, 185, 129, 0.1)',
+              borderDash: [5, 5],
+              fill: false,
+              tension: 0.3,
+              yAxisID: 'y1',
+            },
+          ],
         }
       }
     }

@@ -38,21 +38,42 @@ const props = defineProps({
   type: { type: String, default: 'bar', validator: (v) => ['bar', 'line'].includes(v) }
 })
 
-const chartOptions = computed(() => ({
-  responsive: true,
-  maintainAspectRatio: false,
-  plugins: {
-    legend: {
-      display: false
-    }
-  },
-  scales: {
-    y: {
+const hasMultipleDatasets = computed(() => (props.data?.datasets?.length || 0) > 1)
+const hasDualAxis = computed(() => props.data?.datasets?.some(d => d.yAxisID === 'y1'))
+
+const chartOptions = computed(() => {
+  const opts = {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: {
+      legend: {
+        display: hasMultipleDatasets.value,
+        labels: {
+          usePointStyle: true,
+          pointStyle: 'line',
+        },
+      },
+    },
+    scales: {
+      y: {
+        beginAtZero: true,
+        ticks: { precision: 0 },
+      },
+    },
+  }
+
+  if (hasDualAxis.value) {
+    opts.scales.y1 = {
       beginAtZero: true,
+      position: 'right',
+      max: 100,
       ticks: {
-        precision: 0
-      }
+        callback: (v) => v + '%',
+      },
+      grid: { drawOnChartArea: false },
     }
   }
-}))
+
+  return opts
+})
 </script>
