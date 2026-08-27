@@ -8,6 +8,14 @@ ENVIRONMENT="${1:-dev}"
 REGION="eu-central-1"
 STACK_NAME="vocabtrainer-${ENVIRONMENT}"
 
+# Optional: custom domain config (set these env vars or create backend/.env.deploy)
+DEPLOY_ENV_FILE="$(dirname "$0")/backend/.env.deploy"
+if [ -f "${DEPLOY_ENV_FILE}" ]; then
+  source "${DEPLOY_ENV_FILE}"
+fi
+CERTIFICATE_ARN="${CERTIFICATE_ARN:-}"
+HOSTED_ZONE_ID="${HOSTED_ZONE_ID:-}"
+
 echo "🚀 Deploying VocabTrainer (${ENVIRONMENT}) to ${REGION}"
 echo "=================================================="
 
@@ -21,10 +29,19 @@ sam build --use-container
 
 echo ""
 echo "☁️  Deploying backend stack..."
+# Build parameter overrides (only include non-empty values)
+PARAM_OVERRIDES="Environment=${ENVIRONMENT}"
+if [ -n "${CERTIFICATE_ARN}" ]; then
+  PARAM_OVERRIDES="${PARAM_OVERRIDES} CertificateArn=${CERTIFICATE_ARN}"
+fi
+if [ -n "${HOSTED_ZONE_ID}" ]; then
+  PARAM_OVERRIDES="${PARAM_OVERRIDES} HostedZoneId=${HOSTED_ZONE_ID}"
+fi
+
 sam deploy \
   --stack-name "${STACK_NAME}" \
   --region "${REGION}" \
-  --parameter-overrides "Environment=${ENVIRONMENT}" \
+  --parameter-overrides ${PARAM_OVERRIDES} \
   --capabilities CAPABILITY_IAM CAPABILITY_AUTO_EXPAND \
   --no-confirm-changeset \
   --no-fail-on-empty-changeset \
@@ -98,4 +115,8 @@ echo "✅ Deployment complete!"
 echo ""
 echo "   Frontend: ${FRONTEND_URL}"
 echo "   API:      ${API_ENDPOINT}"
+if [ -n "${CERTIFICATE_ARN}" ] && [ -n "${HOSTED_ZONE_ID}" ]; then
+  CUSTOM_DOMAIN=$(get_output "CustomDomain")
+  echo "   Domain:   https://${CUSTOM_DOMAIN}"
+fi
 echo ""

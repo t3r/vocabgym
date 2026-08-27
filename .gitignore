@@ -25,6 +25,7 @@ __pycache__/
 .env.*.local
 .env.development
 .env.production
+.env.deploy
 
 # IDE files
 .vscode/
