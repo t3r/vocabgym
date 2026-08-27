@@ -380,12 +380,6 @@ def handle_complete(event, user_id):
 
     # League score + streak update
     league_update = None
-    logger.info(json.dumps({
-        'event': 'league_update_check',
-        'LEAGUE_MEMBERS_TABLE': LEAGUE_MEMBERS_TABLE,
-        'USERS_TABLE': USERS_TABLE,
-        'will_update': bool(LEAGUE_MEMBERS_TABLE and USERS_TABLE),
-    }, default=str))
     if LEAGUE_MEMBERS_TABLE and USERS_TABLE:
         league_update = _update_league_stats(user_id, correct_count, total)
 
@@ -605,38 +599,23 @@ def _update_item_progress(user_id, vocab_set_id, item_id, is_correct, user_answe
     timestamp = get_timestamp()
 
     try:
-        # Try to update existing record
+        # Step 1: Atomic update of counters
         if is_correct:
             update_expr = (
                 'SET correctCount = if_not_exists(correctCount, :zero) + :one, '
                 'lastPracticedAt = :ts, '
                 'consecutiveCorrect = if_not_exists(consecutiveCorrect, :zero) + :one'
             )
-            expr_values = {
-                ':one': 1,
-                ':zero': 0,
-                ':ts': timestamp,
-            }
+            expr_values = {':one': 1, ':zero': 0, ':ts': timestamp}
         else:
-            # Build error entry for pattern tracking
-            error_entry = {
-                'answer': user_answer or '',
-                'timestamp': timestamp,
-            }
-
+            error_entry = {'answer': user_answer or '', 'timestamp': timestamp}
             update_expr = (
                 'SET incorrectCount = if_not_exists(incorrectCount, :zero) + :one, '
                 'lastPracticedAt = :ts, '
                 'consecutiveCorrect = :zero, '
                 'recentErrors = list_append(if_not_exists(recentErrors, :empty), :newError)'
             )
-            expr_values = {
-                ':one': 1,
-                ':zero': 0,
-                ':ts': timestamp,
-                ':empty': [],
-                ':newError': [error_entry],
-            }
+            expr_values = {':one': 1, ':zero': 0, ':ts': timestamp, ':empty': [], ':newError': [error_entry]}
 
         progress_table.update_item(
             Key={'progressKey': progress_key, 'itemId': item_id},
@@ -644,42 +623,29 @@ def _update_item_progress(user_id, vocab_set_id, item_id, is_correct, user_answe
             ExpressionAttributeValues=expr_values,
         )
 
-        # Trim recentErrors to last 5 entries
-        if not is_correct:
-            response = progress_table.get_item(
-                Key={'progressKey': progress_key, 'itemId': item_id}
-            )
-            item = response.get('Item', {})
-            recent_errors = item.get('recentErrors', [])
-            if len(recent_errors) > 5:
-                progress_table.update_item(
-                    Key={'progressKey': progress_key, 'itemId': item_id},
-                    UpdateExpression='SET recentErrors = :trimmed',
-                    ExpressionAttributeValues={':trimmed': recent_errors[-5:]},
-                )
-
-        # Recalculate mastery level
+        # Step 2: Single read, then compute mastery + trim errors in one write
         response = progress_table.get_item(
             Key={'progressKey': progress_key, 'itemId': item_id}
         )
         item = response.get('Item', {})
-        correct = item.get('correctCount', 0)
-        incorrect = item.get('incorrectCount', 0)
+        correct = int(item.get('correctCount', 0))
+        incorrect = int(item.get('incorrectCount', 0))
         total_attempts = correct + incorrect
+        mastery = min(5, int((correct / total_attempts) * 5)) if total_attempts > 0 else 0
 
-        if total_attempts == 0:
-            mastery = 0
-        else:
-            mastery = min(5, int((correct / total_attempts) * 5))
+        # Build single update for mastery + trimmed errors + userId/vocabSetId
+        update_parts = ['masteryLevel = :mastery', 'userId = :uid', 'vocabSetId = :vsid']
+        final_values = {':mastery': mastery, ':uid': user_id, ':vsid': vocab_set_id}
+
+        recent_errors = item.get('recentErrors', [])
+        if len(recent_errors) > 5:
+            update_parts.append('recentErrors = :trimmed')
+            final_values[':trimmed'] = recent_errors[-5:]
 
         progress_table.update_item(
             Key={'progressKey': progress_key, 'itemId': item_id},
-            UpdateExpression='SET masteryLevel = :mastery, userId = :uid, vocabSetId = :vsid',
-            ExpressionAttributeValues={
-                ':mastery': mastery,
-                ':uid': user_id,
-                ':vsid': vocab_set_id,
-            }
+            UpdateExpression='SET ' + ', '.join(update_parts),
+            ExpressionAttributeValues=final_values,
         )
 
     except Exception as e:
@@ -702,14 +668,6 @@ def _update_league_stats(user_id, correct_count, total_questions):
         users_table = dynamodb.Table(USERS_TABLE)
         user_response = users_table.get_item(Key={'userId': user_id})
         user = user_response.get('Item')
-
-        logger.info(json.dumps({
-            'event': 'league_stats_check',
-            'userId': user_id,
-            'usersTable': USERS_TABLE,
-            'userFound': user is not None,
-            'leagueId': user.get('leagueId') if user else None,
-        }, default=str))
 
         if not user or not user.get('leagueId'):
             return None

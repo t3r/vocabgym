@@ -51,9 +51,7 @@ export const usePracticeStore = defineStore('practice', () => {
         direction: options.direction || 'de-fr',
         startTime: Date.now()
       }
-      questions.value = (response.data.questions || []).map(q => ({
-        ...q,
-      }))
+      questions.value = response.data.questions || []
       currentQuestionIndex.value = 0
       answers.value = []
       sessionResults.value = null

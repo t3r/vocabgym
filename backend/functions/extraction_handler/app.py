@@ -28,31 +28,11 @@ s3_client = boto3.client('s3')
 textract_client = boto3.client('textract')
 bedrock_client = boto3.client('bedrock-runtime')
 dynamodb = boto3.resource('dynamodb')
-secrets_client = boto3.client('secretsmanager')
 
 # Environment variables
 IMAGES_BUCKET = os.environ['IMAGES_BUCKET']
 VOCABSETS_TABLE = os.environ['VOCABSETS_TABLE']
 VOCABITEMS_TABLE = os.environ['VOCABITEMS_TABLE']
-OPENAI_API_KEY_SECRET = os.environ.get('OPENAI_API_KEY_SECRET', '')
-
-# Cache for OpenAI API key
-_openai_api_key = None
-
-
-def get_openai_api_key():
-    """Retrieve OpenAI API key from Secrets Manager."""
-    global _openai_api_key
-    if _openai_api_key:
-        return _openai_api_key
-
-    try:
-        response = secrets_client.get_secret_value(SecretId=OPENAI_API_KEY_SECRET)
-        _openai_api_key = response['SecretString']
-        return _openai_api_key
-    except Exception as e:
-        logger.error(f"Failed to retrieve OpenAI API key: {e}")
-        return None
 
 
 def extract_with_textract(image_key):
@@ -98,96 +78,6 @@ def extract_with_textract(image_key):
     }))
 
     return vocab_pairs, avg_confidence, raw_text
-
-
-def extract_with_openai(image_key):
-    """Fallback: Use OpenAI Vision API to extract vocabulary.
-
-    Args:
-        image_key: S3 object key for the image
-
-    Returns:
-        list: List of {source, target} vocabulary pairs
-    """
-    api_key = get_openai_api_key()
-    if not api_key:
-        logger.error("OpenAI API key not available")
-        return []
-
-    try:
-        import openai
-
-        # Generate a presigned URL for OpenAI to access the image
-        presigned_url = s3_client.generate_presigned_url(
-            'get_object',
-            Params={'Bucket': IMAGES_BUCKET, 'Key': image_key},
-            ExpiresIn=300,
-        )
-
-        client = openai.OpenAI(api_key=api_key)
-
-        response = client.chat.completions.create(
-            model="gpt-4o",
-            messages=[
-                {
-                    "role": "system",
-                    "content": (
-                        "You are analyzing a page from a German school workbook for "
-                        "learning French vocabulary. Extract all vocabulary pairs from "
-                        "any tables or lists on this page."
-                    ),
-                },
-                {
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "text",
-                            "text": (
-                                "Extract all German-French vocabulary pairs from this "
-                                "workbook page. Return ONLY a JSON array with this exact "
-                                "structure:\n"
-                                '[{"source": "das Haus", "target": "la maison"}]\n\n'
-                                "Rules:\n"
-                                "1. Preserve accents and special characters exactly\n"
-                                "2. Ignore headers, page numbers, and instructions\n"
-                                "3. Include articles (der/die/das, le/la/les) if present\n"
-                                "4. Return only the JSON array, no additional text"
-                            ),
-                        },
-                        {
-                            "type": "image_url",
-                            "image_url": {"url": presigned_url},
-                        },
-                    ],
-                },
-            ],
-            max_tokens=4096,
-            temperature=0.1,
-        )
-
-        content = response.choices[0].message.content.strip()
-
-        # Parse JSON from response (handle markdown code blocks)
-        if content.startswith('```'):
-            content = content.split('\n', 1)[1].rsplit('```', 1)[0].strip()
-
-        vocab_pairs = json.loads(content)
-
-        logger.info(json.dumps({
-            'event': 'openai_extraction_complete',
-            'pairsFound': len(vocab_pairs),
-        }))
-
-        # Add confidence score for OpenAI results
-        for pair in vocab_pairs:
-            pair['confidence'] = 0.85  # OpenAI results generally reliable
-
-        return vocab_pairs
-
-    except Exception as e:
-        logger.exception(f"OpenAI extraction failed: {e}")
-        return []
-
 
 
 def extract_with_bedrock_from_text(raw_text, target_language='fr'):

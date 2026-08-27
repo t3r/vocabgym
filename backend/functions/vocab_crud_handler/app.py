@@ -159,10 +159,27 @@ def handle_get(event, user_id):
             KeyConditionExpression=Key('vocabSetId').eq(vocab_set_id)
         )
         sets = query_response.get('Items', [])
-        if sets:
-            vocab_set = sets[0]
-        else:
+        if not sets:
             return build_response(404, {'error': 'Vocabulary set not found'})
+
+        vocab_set = sets[0]
+
+        # Verify user has access via league assignment
+        users_table = dynamodb.Table(os.environ['USERS_TABLE'])
+        user_response = users_table.get_item(Key={'userId': user_id})
+        user = user_response.get('Item', {})
+        league_id = user.get('leagueId')
+
+        if not league_id:
+            return build_response(403, {'error': 'Access denied'})
+
+        leagues_table = dynamodb.Table(os.environ['LEAGUES_TABLE'])
+        league_response = leagues_table.get_item(Key={'leagueId': league_id})
+        league = league_response.get('Item', {})
+        assigned_ids = league.get('vocabSetIds', [])
+
+        if vocab_set_id not in assigned_ids and league.get('teacherUserId') != user_id:
+            return build_response(403, {'error': 'Access denied'})
 
     # Get items
     items_table = dynamodb.Table(VOCABITEMS_TABLE)

@@ -5,8 +5,6 @@ import logging
 import os
 import random
 import string
-import time
-import uuid
 import datetime
 
 import boto3

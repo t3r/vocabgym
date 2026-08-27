@@ -6,7 +6,7 @@ import re
 logger = logging.getLogger(__name__)
 
 # Allowed image MIME types
-ALLOWED_IMAGE_TYPES = {'image/jpeg', 'image/png', 'image/heic'}
+ALLOWED_IMAGE_TYPES = {'image/jpeg', 'image/png'}
 
 # Maximum file size in bytes (10 MB)
 MAX_FILE_SIZE = 10 * 1024 * 1024
@@ -39,7 +39,7 @@ def validate_file_upload(file_name, content_type):
         return False, f"Unsupported file type: {content_type}. Allowed: {', '.join(ALLOWED_IMAGE_TYPES)}"
 
     # Validate file extension
-    valid_extensions = {'.jpg', '.jpeg', '.png', '.heic'}
+    valid_extensions = {'.jpg', '.jpeg', '.png'}
     ext = '.' + file_name.rsplit('.', 1)[-1].lower() if '.' in file_name else ''
     if ext not in valid_extensions:
         return False, f"Invalid file extension. Allowed: {', '.join(valid_extensions)}"

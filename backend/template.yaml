@@ -1,6 +1,6 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
-Description: VocabTrainer Backend - French vocabulary training app for German students
+Description: VocabTrainer Backend - Multi-language vocabulary training app for German students
 
 Parameters:
   Environment:
@@ -9,7 +9,6 @@ Parameters:
     AllowedValues:
       - dev
       - prod
-      - stage
     Description: Deployment environment
 
 Globals:
@@ -335,6 +334,9 @@ Resources:
       FunctionName: !Sub vocabtrainer-vocab-crud-handler-${Environment}
       CodeUri: functions/vocab_crud_handler/
       Handler: app.lambda_handler
+      Environment:
+        Variables:
+          LEAGUES_TABLE: !Ref LeaguesTable
       Policies:
         - DynamoDBCrudPolicy:
             TableName: !Ref VocabSetsTable
@@ -342,6 +344,10 @@ Resources:
             TableName: !Ref VocabItemsTable
         - DynamoDBReadPolicy:
             TableName: !Ref ProgressTable
+        - DynamoDBReadPolicy:
+            TableName: !Ref LeaguesTable
+        - DynamoDBReadPolicy:
+            TableName: !Ref UsersTable
         - S3CrudPolicy:
             BucketName: !Ref ImagesBucket
       Events:
@@ -448,7 +454,7 @@ Resources:
       Handler: app.lambda_handler
       Environment:
         Variables:
-          INVITE_SECRET: !Sub vocabgym-invite-${AWS::AccountId}-s3cr3t
+          INVITE_SECRET: !Sub vocabgym-invite-${AWS::AccountId}-s3cr3t  # TODO: Move to Secrets Manager for production
           FRONTEND_URL: !Sub https://${FrontendDistribution.DomainName}
       Events:
         CreateInvite:
