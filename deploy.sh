@@ -25,12 +25,8 @@ echo ""
 echo "📦 Building backend..."
 cd "$(dirname "$0")/backend"
 
-# Use container build locally (for arm64 native deps), skip in CI
-if [ -n "${CI}" ]; then
-  sam build
-else
-  sam build --use-container
-fi
+# Use container build for arm64 native dependencies (python-Levenshtein etc.)
+sam build --use-container
 
 echo ""
 echo "☁️  Deploying backend stack..."
