@@ -46,6 +46,7 @@ fi
 sam deploy \
   --stack-name "${STACK_NAME}" \
   --region "${REGION}" \
+  --resolve-s3 \
   --parameter-overrides ${PARAM_OVERRIDES} \
   --capabilities CAPABILITY_IAM CAPABILITY_AUTO_EXPAND \
   --no-confirm-changeset \
