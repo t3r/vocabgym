@@ -25,8 +25,12 @@ echo ""
 echo "📦 Building backend..."
 cd "$(dirname "$0")/backend"
 
-# Build backend (x86_64, no container needed)
-sam build
+# Build backend — use container on non-x86 hosts (Apple Silicon etc.)
+if [ "$(uname -m)" = "x86_64" ] || [ -n "${CI}" ]; then
+  sam build
+else
+  sam build --use-container
+fi
 
 echo ""
 echo "☁️  Deploying backend stack..."
