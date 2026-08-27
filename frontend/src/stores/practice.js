@@ -51,12 +51,8 @@ export const usePracticeStore = defineStore('practice', () => {
         direction: options.direction || 'de-fr',
         startTime: Date.now()
       }
-      // Clean correctAnswer: strip phonetic transcriptions in brackets
       questions.value = (response.data.questions || []).map(q => ({
         ...q,
-        correctAnswer: q.correctAnswer
-          ? q.correctAnswer.replace(/\[.*$/g, '').replace(/\(.*$/g, '').trim()
-          : q.correctAnswer
       }))
       currentQuestionIndex.value = 0
       answers.value = []

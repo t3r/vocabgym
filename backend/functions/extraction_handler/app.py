@@ -223,8 +223,13 @@ Regeln:
 3. Behalte Artikel (le/la/les, der/die/das, un/une) bei
 4. Behalte Abkürzungen wie "etw." (etwas), "jdn." (jemanden), "jdm." (jemandem), "qc" (quelque chose), "qn" (quelqu'un) bei
 5. Wenn eine Übersetzung mehrere Bedeutungen hat, fasse sie mit Semikolon zusammen (z.B. "etw. tauschen; etw. austauschen")
-6. Ignoriere: Lautschrift, Beispielsätze, Grammatik-Erklärungen, Konjugationstabellen, Seitenzahlen, Überschriften
+6. Ignoriere: Lautschrift, Beispielsätze, Grammatik-Erklärungen, Konjugationstabellen, Seitenzahlen, Überschriften, Abschnittstitel (z.B. "Des appareils numériques — Digitale Geräte")
 7. Nimm auch bildbasierte Vokabeln auf (z.B. "un ordinateur portable" → "ein Laptop-Computer")
+8. Keine Duplikate — wenn dasselbe Wort mehrfach vorkommt, nimm es nur einmal auf
+9. Korrigiere OCR-Artefakte: z.B. "fun smartphone" → "un smartphone" (das f gehört nicht zum Wort)
+10. Entferne trailing Semikolons aus source und target
+11. Wenn ein Wort mehrere deutsche Übersetzungen hat, fasse sie zusammen (z.B. "jdm. etw. vorstellen; etw. präsentieren" für "présenter qc à qn")
+12. "ne ... que" ist die vollständige Form (nicht nur "ne que")
 
 Antworte NUR mit einem JSON-Array:
 [{{"source": "deutsche Übersetzung", "target": "{lang_name_de} Wort"}}]
@@ -394,8 +399,8 @@ def store_vocab_items(vocab_set_id, vocab_pairs, image_key=None):
             item_data = {
                 'vocabSetId': vocab_set_id,
                 'itemId': item_id,
-                'source': _strip_phonetics(source_text),
-                'target': _strip_phonetics(target_text),
+                'source': source_text,
+                'target': target_text,
                 'notes': pair.get('notes', ''),
                 'order': i + 1,
                 'confidence': int(pair.get('confidence', 0) * 100),
@@ -408,48 +413,6 @@ def store_vocab_items(vocab_set_id, vocab_pairs, image_key=None):
             batch.put_item(Item=item_data)
 
     return len(vocab_pairs)
-
-
-def _strip_phonetics(text):
-    """Remove phonetic transcriptions in brackets from text.
-
-    Handles [phonetics], (phonetics), and various unicode bracket types.
-    Also strips IPA-style transcriptions like /fɔnetik/.
-    """
-    import re
-    if not text:
-        return text
-
-    original = text
-
-    # Remove content between ASCII square brackets
-    text = re.sub(r'\[.*?\]', '', text)
-    # Remove content between ASCII parentheses that look phonetic (no spaces, has special chars)
-    text = re.sub(r'\([^)]*[ēĒõãɛɔ][^)]*\)', '', text)
-    # Remove content between various unicode brackets
-    text = re.sub(r'[\uff3b\u3010\u300c].*?[\uff3d\u3011\u300d]', '', text)
-    # Remove content between forward slashes (IPA)
-    text = re.sub(r'/[^/]+/', '', text)
-    # Fallback: remove anything after a semicolon followed by bracket-like content
-    # Handles cases where ; separates from phonetic: "un mot; [phonetic]"
-
-    # Nuclear option: if none of the above worked, try to detect and strip
-    # phonetic content that starts with common phonetic markers
-    # Pattern: word(s) followed by bracket-like content with phonetic chars
-    text = re.sub(r'\s*[\[\(\{][\s\S]*?[\]\)\}]', '', text)
-
-    # If we still have the same text (nothing was stripped), try to catch
-    # non-ASCII brackets by removing everything after the last letter+space
-    # that's followed by something that looks phonetic
-    if text == original:
-        # Match: any bracket-like start char followed by phonetic-looking content
-        text = re.sub(r'\s*[^\w\s,;:\-\'éèêëàâùûôîïçœæ].*$', '', text)
-
-    # Clean up whitespace and trailing semicolons
-    text = re.sub(r'\s*;\s*$', '', text)
-    text = re.sub(r'\s+', ' ', text).strip()
-
-    return text if text else original  # Don't return empty string
 
 
 
