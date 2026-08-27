@@ -1,110 +1,148 @@
-# VocabTrainer
+# VocabGym 💪
 
-A web-based French vocabulary training application for 9th grade German Gymnasium students. Students scan workbook pages, automatically extract vocabulary using AI/OCR, review and edit the results, and practice with typing-based exercises.
+Vokabeltrainer für deutsche Gymnasialschüler. Workbook-Seiten scannen, Vokabeln per KI extrahieren, mit smarter Wiederholung üben.
 
-## Architecture Overview
+Unterstützte Zielsprachen: 🇫🇷 Französisch · 🇬🇧 Englisch · 🇪🇸 Spanisch · 🇮🇹 Italienisch
 
-- **Frontend**: Vue 3 (Composition API) + Tailwind CSS, built with Vite, deployed to S3 + CloudFront
-- **Backend**: AWS Lambda (Python 3.11+) behind API Gateway
-- **Database**: Amazon DynamoDB
-- **Storage**: Amazon S3 (images and static hosting)
-- **Authentication**: AWS Cognito (OAuth2 with hosted UI)
-- **OCR**: AWS Textract (primary), OpenAI Vision API (fallback)
+## Features
 
-## Prerequisites
+- **KI-Extraktion** — Workbook-Foto hochladen → Textract OCR → Bedrock (Amazon Nova Pro) extrahiert Vokabelpaare automatisch
+- **Smart Repetition** — Schwache Wörter erscheinen häufiger, Fehler-Pattern werden erkannt
+- **Lernhinweise** — Nach jeder Übung: Artikel-Fehler, wiederholte Schwierigkeiten, personalisierte Tipps
+- **Liga-System** — Lehrer erstellen Ligen, Schüler treten per Code bei, Leaderboard mit Streaks 🔥
+- **Invite-Only** — Lehrer laden Schüler per E-Mail ein (kein Self-Signup)
+- **Dark Mode** — Vollständige Unterstützung
+- **Deutsche UI** — Du-Form für Schüler, Sie-Form für Lehrer
+
+## Architektur
+
+→ **[Ausführliches Architekturdiagramm](docs/architecture.md)** (Mermaid)
+
+```
+Vue 3 SPA → CloudFront → API Gateway → Lambda (Python 3.11)
+                              ↓
+              Cognito    DynamoDB (7 Tabellen)    S3
+                              ↓
+              Textract → Bedrock Nova Pro (Vocab-Extraktion)
+```
+
+| Schicht | Technologie |
+|---------|-------------|
+| Frontend | Vue 3, Tailwind CSS, Pinia, Vite |
+| Backend | 7× Lambda (Python 3.11, arm64), SharedLayer |
+| AI/OCR | Textract + Bedrock (Amazon Nova Pro) |
+| Auth | Cognito (OAuth2, teachers-Gruppe, AdminOnly) |
+| DB | DynamoDB (On-Demand), SSM Parameter Store |
+| IaC | AWS SAM, CloudFormation |
+| Domain | vocab.gym.t3r.de (CloudFront + Route 53 + ACM) |
+
+## Projektstruktur
+
+```
+vocabgym/
+├── frontend/                 # Vue 3 SPA
+│   ├── src/
+│   │   ├── components/       # UI-Komponenten (practice/, review/, upload/, ...)
+│   │   ├── views/            # Seiten (Dashboard, Practice, League, Help, ...)
+│   │   ├── stores/           # Pinia Stores (auth, vocab, practice)
+│   │   ├── composables/      # useAuth, useUpload, usePractice
+│   │   ├── services/         # API client, Cognito
+│   │   └── utils/            # fuzzyMatch, languages, validators
+│   └── package.json
+├── backend/                  # AWS SAM
+│   ├── template.yaml         # CloudFormation (alle Ressourcen)
+│   ├── functions/
+│   │   ├── upload_handler/       # S3 Presigned URLs
+│   │   ├── extraction_handler/   # Textract + Bedrock Pipeline
+│   │   ├── vocab_crud_handler/   # CRUD für Vokabelsets
+│   │   ├── practice_handler/     # Übungen + Smart Repetition
+│   │   ├── progress_handler/     # Fortschrittsstatistiken
+│   │   ├── league_handler/       # Liga + Einladungen
+│   │   └── invite_handler/       # Invite-Token
+│   └── layers/shared/           # Gemeinsame Utilities
+├── scripts/                  # Migrationsskripte
+├── docs/                     # Architektur-Dokumentation
+├── deploy.sh                 # Deployment (dev/prod)
+└── .kiro/steering/           # Projekt-Spezifikationen
+```
+
+## Setup
+
+### Voraussetzungen
 
 - Node.js 18+
 - Python 3.11+
-- AWS CLI configured with appropriate credentials
-- AWS SAM CLI (`brew install aws-sam-cli`)
-- Docker (required for `sam local`) — install via `brew install --cask docker`
-- Git
+- AWS CLI + AWS SAM CLI
+- Docker (für `sam build --use-container`)
 
-## Quick Start
-
-### Frontend
+### Frontend (Entwicklung)
 
 ```bash
 cd frontend
 npm install
-npm run dev
+npm run dev          # http://localhost:5173
 ```
 
-The dev server runs at http://localhost:5173.
-
-### Backend
+### Backend (lokal)
 
 ```bash
 cd backend
-python -m venv venv
-source venv/bin/activate
+python -m venv venv && source venv/bin/activate
 pip install -r requirements.txt
-
-# Run locally with SAM
-sam local start-api
+sam local start-api  # http://localhost:3000
 ```
 
-The local API runs at http://localhost:3000.
-
-## Project Structure
-
-```
-vocabgym/
-├── frontend/               # Vue 3 application
-│   ├── src/
-│   │   ├── components/     # Reusable UI components
-│   │   ├── views/          # Page-level components
-│   │   ├── stores/         # Pinia state management
-│   │   ├── services/       # API and auth services
-│   │   ├── composables/    # Composition API utilities
-│   │   ├── router/         # Vue Router configuration
-│   │   └── utils/          # Helper functions
-│   └── package.json
-├── backend/                # Lambda functions + infrastructure
-│   ├── template.yaml       # SAM/CloudFormation template
-│   ├── samconfig.toml      # SAM deployment config
-│   ├── functions/
-│   │   ├── upload_handler/
-│   │   ├── extraction_handler/
-│   │   ├── vocab_crud_handler/
-│   │   ├── practice_handler/
-│   │   └── progress_handler/
-│   ├── layers/             # Shared Lambda layer
-│   └── tests/
-└── README.md
-```
-
-## Deployment
-
-### Backend
+### Deployment
 
 ```bash
-cd backend
-sam build
-sam deploy --guided
+# Einfach:
+./deploy.sh dev
+
+# Mit Custom Domain (optional):
+cat > backend/.env.deploy <<EOF
+CERTIFICATE_ARN=arn:aws:acm:us-east-1:...:certificate/xxx
+HOSTED_ZONE_ID=Z0XXXXXXXXX
+EOF
+./deploy.sh dev
 ```
 
-### Frontend
+`deploy.sh` führt aus: `sam build` → `sam deploy` → Stack-Outputs lesen → Frontend bauen → S3 sync → CloudFront invalidieren.
+
+### Umgebungen
+
+| Stage | Domain | Stack |
+|-------|--------|-------|
+| `dev` | dev.vocab.gym.t3r.de | vocabtrainer-dev |
+| `prod` | vocab.gym.t3r.de | vocabtrainer-prod |
+
+## LLM-Prompts anpassen
+
+Die Extraktions-Prompts liegen im SSM Parameter Store und können ohne Deploy geändert werden:
 
 ```bash
-cd frontend
-npm run build
-aws s3 sync dist/ s3://vocabtrainer-frontend-<env> --delete
-aws cloudfront create-invalidation --distribution-id <ID> --paths "/*"
+aws ssm put-parameter \
+  --name /vocabtrainer/dev/prompts/extraction \
+  --value "$(cat new_prompt.txt)" \
+  --overwrite
 ```
 
-## Environment Variables
+Platzhalter: `$lang_name_de`, `$raw_text` (Extraction) / `$lang_name`, `$pairs_text` (Verification)
 
-### Frontend (.env.local)
+## Nutzerrollen
 
-```
-VITE_API_BASE_URL=https://your-api-id.execute-api.eu-central-1.amazonaws.com/prod
-VITE_COGNITO_USER_POOL_ID=eu-central-1_XXXXXXXXX
-VITE_COGNITO_CLIENT_ID=your-client-id
-VITE_COGNITO_DOMAIN=your-domain.auth.eu-central-1.amazoncognito.com
-VITE_AWS_REGION=eu-central-1
-```
+| Rolle | Zugang | UI-Sprache |
+|-------|--------|------------|
+| **Schüler** | Einladung per E-Mail durch Lehrer | Du-Form |
+| **Lehrer** | Cognito `teachers`-Gruppe | Sie-Form |
 
-## License
+Lehrer können:
+- Ligen erstellen und verwalten
+- Schüler per E-Mail einladen (Cognito admin-create-user)
+- Vokabelsets zuweisen
+- Fortschritt und Leaderboard einsehen
 
-TBD
+## Lizenz
+
+Dieses Projekt ist lizenziert unter der [GNU General Public License v3.0 oder später](LICENSE).
+
+Copyright © 2026 Torsten Raudssus
