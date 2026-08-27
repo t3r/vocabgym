@@ -60,11 +60,18 @@
           <!-- Dark Mode Toggle -->
           <button
             @click="toggleDarkMode"
-            class="p-2 rounded-md text-gray-500 hover:text-gray-900 dark:text-white hover:bg-gray-100 dark:text-gray-400 dark:hover:text-white dark:hover:bg-gray-700 text-lg"
+            class="relative flex items-center w-16 h-8 rounded-full transition-colors duration-300 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 dark:focus:ring-offset-gray-800"
+            :class="isDark ? 'bg-gray-600' : 'bg-gray-200'"
             :aria-label="isDark ? 'Heller Modus' : 'Dunkler Modus'"
-            :title="isDark ? 'Heller Modus' : 'Dunkler Modus'"
+            role="switch"
+            :aria-checked="isDark"
           >
-            {{ isDark ? '☀️' : '🌙' }}
+            <span class="absolute left-1 text-xs">☀️</span>
+            <span class="absolute right-1 text-xs">🌙</span>
+            <span
+              class="absolute w-6 h-6 bg-white dark:bg-gray-300 rounded-full shadow-md transform transition-transform duration-300"
+              :class="isDark ? 'translate-x-9' : 'translate-x-0.5'"
+            ></span>
           </button>
 
           <div v-if="isAuthenticated" class="flex items-center gap-3">
