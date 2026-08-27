@@ -25,8 +25,8 @@ echo ""
 echo "📦 Building backend..."
 cd "$(dirname "$0")/backend"
 
-# Use container build for arm64 native dependencies (python-Levenshtein etc.)
-sam build --use-container
+# Build backend (x86_64, no container needed)
+sam build
 
 echo ""
 echo "☁️  Deploying backend stack..."

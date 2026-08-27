@@ -31,7 +31,7 @@ Globals:
   Function:
     Runtime: python3.11
     Architectures:
-      - arm64
+      - x86_64
     Timeout: 30
     MemorySize: 512
     Environment:
@@ -292,7 +292,7 @@ Resources:
       CompatibleRuntimes:
         - python3.11
       CompatibleArchitectures:
-        - arm64
+        - x86_64
 
   # ============================================================
   # Lambda Functions
