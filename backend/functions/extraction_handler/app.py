@@ -28,11 +28,47 @@ s3_client = boto3.client('s3')
 textract_client = boto3.client('textract')
 bedrock_client = boto3.client('bedrock-runtime')
 dynamodb = boto3.resource('dynamodb')
+ssm_client = boto3.client('ssm')
 
 # Environment variables
 IMAGES_BUCKET = os.environ['IMAGES_BUCKET']
 VOCABSETS_TABLE = os.environ['VOCABSETS_TABLE']
 VOCABITEMS_TABLE = os.environ['VOCABITEMS_TABLE']
+EXTRACTION_PROMPT_PARAM = os.environ.get('EXTRACTION_PROMPT_PARAM', '')
+VERIFICATION_PROMPT_PARAM = os.environ.get('VERIFICATION_PROMPT_PARAM', '')
+
+# Prompt cache (loaded once per Lambda container, survives warm starts)
+_prompt_cache = {}
+
+
+def _get_prompt(param_name, fallback=''):
+    """Load a prompt template from SSM Parameter Store with caching.
+
+    Prompts are cached for the lifetime of the Lambda container (warm starts).
+    To force a reload, update the Lambda environment variable (triggers cold start).
+
+    Args:
+        param_name: SSM Parameter name
+        fallback: Fallback prompt if SSM read fails
+
+    Returns:
+        str: Prompt template text
+    """
+    if param_name in _prompt_cache:
+        return _prompt_cache[param_name]
+
+    if not param_name:
+        return fallback
+
+    try:
+        response = ssm_client.get_parameter(Name=param_name)
+        prompt = response['Parameter']['Value']
+        _prompt_cache[param_name] = prompt
+        logger.info(f"Loaded prompt from SSM: {param_name}")
+        return prompt
+    except Exception as e:
+        logger.warning(f"Failed to load prompt from SSM ({param_name}): {e}")
+        return fallback
 
 
 def extract_with_textract(image_key):
@@ -99,34 +135,18 @@ def extract_with_bedrock_from_text(raw_text, target_language='fr'):
     lang_config = get_language(target_language) or get_language(DEFAULT_TARGET_LANGUAGE)
     lang_name_de = lang_config.get('name', 'Französisch') if lang_config else 'Französisch'
 
-    prompt = f"""Du bekommst den OCR-Text einer Schulbuchseite (Vokabular-Seite). Extrahiere ALLE Vokabelpaare (Deutsch ↔ {lang_name_de}).
-
-Das Layout der Seite kann variieren:
-- Manchmal steht das {lang_name_de} Wort links, die deutsche Übersetzung rechts
-- Manchmal gibt es Lautschrift in Klammern [ʃɑ̃ʒe] — diese IGNORIEREN
-- Manchmal gibt es Beispielsätze — diese NICHT als Vokabelpaar aufnehmen
-- Manchmal steht die Übersetzung in mehreren Teilen (z.B. "etw. tauschen; etw. austauschen")
-
-Regeln:
-1. Extrahiere NUR echte Vokabelpaare — ein {lang_name_de} Wort/Phrase und seine deutsche Übersetzung
-2. "source" = deutsches Wort/Phrase, "target" = {lang_name_de} Wort/Phrase
-3. Behalte Artikel (le/la/les, der/die/das, un/une) bei
-4. Behalte Abkürzungen wie "etw." (etwas), "jdn." (jemanden), "jdm." (jemandem), "qc" (quelque chose), "qn" (quelqu'un) bei
-5. Wenn eine Übersetzung mehrere Bedeutungen hat, fasse sie mit Semikolon zusammen (z.B. "etw. tauschen; etw. austauschen")
-6. Ignoriere: Lautschrift, Beispielsätze, Grammatik-Erklärungen, Konjugationstabellen, Seitenzahlen, Überschriften, Abschnittstitel (z.B. "Des appareils numériques — Digitale Geräte")
-7. Nimm auch bildbasierte Vokabeln auf (z.B. "un ordinateur portable" → "ein Laptop-Computer")
-8. Keine Duplikate — wenn dasselbe Wort mehrfach vorkommt, nimm es nur einmal auf
-9. Korrigiere OCR-Artefakte: z.B. "fun smartphone" → "un smartphone" (das f gehört nicht zum Wort)
-10. Entferne trailing Semikolons aus source und target
-11. Wenn ein Wort mehrere deutsche Übersetzungen hat, fasse sie zusammen (z.B. "jdm. etw. vorstellen; etw. präsentieren" für "présenter qc à qn")
-12. "ne ... que" ist die vollständige Form (nicht nur "ne que")
-
-Antworte NUR mit einem JSON-Array:
-[{{"source": "deutsche Übersetzung", "target": "{lang_name_de} Wort"}}]
-
-Keine Erklärungen, kein Markdown, nur das JSON-Array.
-
-OCR-Text der Seite:
+    # Load prompt template from SSM Parameter Store (cached per Lambda container)
+    prompt_template = _get_prompt(EXTRACTION_PROMPT_PARAM)
+    if prompt_template:
+        from string import Template
+        prompt = Template(prompt_template).safe_substitute(
+            lang_name_de=lang_name_de, raw_text=raw_text
+        )
+    else:
+        # Inline fallback if SSM is unavailable
+        prompt = f"""Du bekommst den OCR-Text einer Schulbuchseite. Extrahiere ALLE Vokabelpaare (Deutsch ↔ {lang_name_de}).
+Antworte NUR mit einem JSON-Array: [{{"source": "deutsch", "target": "{lang_name_de} Wort"}}]
+OCR-Text:
 {raw_text}"""
 
     try:
@@ -194,38 +214,18 @@ def verify_with_bedrock(vocab_pairs, target_language='fr'):
         for i, p in enumerate(vocab_pairs)
     )
 
-    prompt = f"""Du bekommst eine Liste von OCR-extrahierten Einträgen aus einem Schulbuch. Deine Aufgabe ist es, daraus NUR echte Vokabelpaare (Deutsch ↔ {lang_name}) zu extrahieren.
-
-WICHTIG - Ein gültiges Vokabelpaar erfüllt ALLE diese Kriterien:
-- Eine Seite ist Deutsch, die andere Seite ist {lang_name}
-- Es handelt sich um eine Wort-für-Wort oder Phrase-für-Phrase Übersetzung
-- Beide Seiten haben eigenständige Bedeutung als Wort/Phrase
-
-NICHT gültig sind:
-- Erklärungsseiten (z.B. Satzzeichen, Grammatikregeln, Aussprachehinweise)
-- Beispielsätze ohne Übersetzung
-- Einträge wo beide Seiten dieselbe Sprache sind
-- Einträge wo eine Seite nur ein Beispielsatz ist (keine Übersetzung)
-- Buchstaben des Alphabets
-- Überschriften, Seitenzahlen, Übungsanweisungen
-- Unvollständige Einträge (z.B. nur "etw." oder "jdm." ohne den Rest der Übersetzung)
-
-Aufgabe:
-1. Behalte NUR echte Vokabelpaare (Deutsch ↔ {lang_name}).
-2. Wenn ein Eintrag mehrere Übersetzungen enthält, trenne sie mit Semikolon (;).
-3. Entferne Nummerierungen und überflüssige Sonderzeichen.
-4. Korrigiere offensichtliche OCR-Fehler (z.B. fehlende Akzente).
-5. Behalte Artikel (der/die/das, le/la/les etc.) bei.
-6. Wenn eine Übersetzung aus mehreren Teilen besteht die offensichtlich zusammengehören (z.B. "etw." + "tauschen"), füge sie zu einem Eintrag zusammen (z.B. "etw. tauschen").
-7. Behalte Abkürzungen wie "etw." (etwas), "jdn." (jemanden), "jdm." (jemandem) als Teil der Übersetzung bei.
-8. Wenn KEINE gültigen Vokabelpaare vorhanden sind, antworte mit einem leeren Array: []
-
-Antworte NUR mit einem JSON-Array im Format:
-[{{"source": "deutsch", "target": "übersetzung"}}]
-
-Keine Erklärungen, kein Markdown, nur das JSON-Array.
-
-Extrahierte Paare:
+    # Load prompt template from SSM Parameter Store (cached per Lambda container)
+    prompt_template = _get_prompt(VERIFICATION_PROMPT_PARAM)
+    if prompt_template:
+        from string import Template
+        prompt = Template(prompt_template).safe_substitute(
+            lang_name=lang_name, pairs_text=pairs_text
+        )
+    else:
+        # Inline fallback if SSM is unavailable
+        prompt = f"""Extrahiere echte Vokabelpaare (Deutsch ↔ {lang_name}) aus dieser Liste.
+Antworte NUR mit JSON-Array: [{{"source": "deutsch", "target": "übersetzung"}}]
+Paare:
 {pairs_text}"""
 
     try:
