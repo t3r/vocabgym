@@ -2,13 +2,13 @@
 
 ## Project Context
 
-This is the frontend implementation guide for **VocabTrainer**, a web-based French vocabulary training application for 9th grade German Gymnasium students. The application allows students to scan workbook pages, extract vocabulary automatically using AI, review and edit the extracted content, and practice with typing-based exercises.
+This is the frontend implementation guide for **VocabGym**, a web-based vocabulary training application for German students. The application allows students to scan workbook pages, extract vocabulary automatically using AI, review and edit the extracted content, and practice with typing-based exercises. It supports multiple target languages (French, English, Spanish, Italian) with German as the source language. The entire UI is in German, using Du-Form for students and Sie-Form for teachers.
 
 ## Technology Stack
 
 - **Framework**: Vue 3 with Composition API
 - **Build Tool**: Vite
-- **Styling**: Tailwind CSS
+- **Styling**: Tailwind CSS with full dark mode support (`dark:` variants)
 - **State Management**: Pinia
 - **Routing**: Vue Router
 - **HTTP Client**: Axios
@@ -21,20 +21,23 @@ The frontend is a single-page application (SPA) that communicates with a serverl
 
 ### Key User Flows
 
-1. **Authentication Flow**: User clicks login → redirected to Cognito hosted UI → OAuth callback → token stored → redirect to dashboard
-2. **Upload Flow**: User drags/drops workbook image → presigned URL requested → direct upload to S3 → trigger extraction → poll for results
-3. **Review Flow**: Extraction complete → display editable table → user approves/edits → save to backend
-4. **Practice Flow**: User selects vocab set → questions loaded → type answer → immediate feedback → session summary
+1. **Authentication Flow**: User clicks login → redirected to Cognito hosted UI → OAuth callback → token stored → role extracted from `cognito:groups` → redirect to dashboard
+2. **Upload Flow**: User selects target language → drags/drops one or more workbook images → presigned URLs requested → direct upload to S3 → trigger extraction per image → poll for results
+3. **Review Flow**: Extraction complete → display vertical layout with per-image item grouping → user approves/edits inline → save to backend
+4. **Practice Flow**: User selects vocab set → smart repetition loads questions (weak words prioritized) → type answer → immediate feedback → session summary with error pattern analysis (Lernhinweis)
+5. **League Flow**: Teacher creates league → students join with 6-character code → practice earns points → leaderboard shows rankings and streaks
 
 ## Project Structure
 
 ```
-vocab-trainer-frontend/
+frontend/
 ├── public/
 │   └── favicon.ico
 ├── src/
 │   ├── assets/
-│   │   └── logo.svg
+│   │   ├── logo.svg
+│   │   └── styles/
+│   │       └── main.css
 │   ├── components/
 │   │   ├── auth/
 │   │   │   ├── LoginButton.vue
@@ -46,8 +49,7 @@ vocab-trainer-frontend/
 │   │   │   └── Toast.vue
 │   │   ├── dashboard/
 │   │   │   ├── VocabSetCard.vue
-│   │   │   ├── StatsOverview.vue
-│   │   │   └── RecentSessions.vue
+│   │   │   └── StatsOverview.vue
 │   │   ├── upload/
 │   │   │   ├── ImageDropzone.vue
 │   │   │   ├── UploadProgress.vue
@@ -87,15 +89,22 @@ vocab-trainer-frontend/
 │   ├── utils/
 │   │   ├── validators.js
 │   │   ├── formatters.js
-│   │   └── fuzzyMatch.js
+│   │   ├── fuzzyMatch.js
+│   │   └── languages.js
 │   ├── views/
 │   │   ├── LandingView.vue
+│   │   ├── CallbackView.vue
 │   │   ├── DashboardView.vue
 │   │   ├── UploadView.vue
 │   │   ├── ReviewView.vue
 │   │   ├── PracticeView.vue
 │   │   ├── ProgressView.vue
-│   │   └── VocabSetDetailView.vue
+│   │   ├── VocabSetDetailView.vue
+│   │   ├── LeagueView.vue
+│   │   ├── LeagueJoinView.vue
+│   │   ├── InviteView.vue
+│   │   ├── HelpView.vue
+│   │   └── NotFoundView.vue
 │   ├── App.vue
 │   └── main.js
 ├── .env.development
@@ -106,6 +115,31 @@ vocab-trainer-frontend/
 ├── vite.config.js
 └── README.md
 ```
+
+## Multi-Language Support
+
+### utils/languages.js
+
+Defines supported target languages, source language (German), articles, and gender explanations.
+
+**Supported Target Languages:**
+- `fr` — Französisch 🇫🇷
+- `en` — Englisch 🇬🇧
+- `es` — Spanisch 🇪🇸
+- `it` — Italienisch 🇮🇹
+
+**Source Language:** German (`de`) — always the source.
+
+**Exports:**
+- `SUPPORTED_LANGUAGES`: Object keyed by language code, each with `code`, `name` (German), `flag`, `articles`, `articleGenders`
+- `SOURCE_LANGUAGE`: German language config
+- `DEFAULT_TARGET_LANGUAGE`: `'fr'`
+- `getLanguage(code)`: Returns language config
+- `getLanguageName(code)`: Returns German name of language
+- `getLanguageFlag(code)`: Returns flag emoji
+- `getAllArticleGenders(targetCode)`: Merged article-to-gender mappings for source and target
+
+**Data Model Note:** Vocabulary items use `source`/`target` field names (not `german`/`french`). Legacy `german`/`french` fields are still handled for backward compatibility in the review and practice views.
 
 ## Environment Configuration
 
@@ -171,14 +205,26 @@ Axios instance configured for API communication with interceptors for authentica
 - `deleteVocabSet(vocabSetId)`: DELETE vocab set
 
 **Practice:**
-- `startPracticeSession(vocabSetId, options)`: POST to create session
+- `startPracticeSession(vocabSetId, options)`: POST to create session (backend applies smart repetition)
 - `submitAnswer(sessionId, questionId, answer)`: POST answer, get feedback
-- `completeSession(sessionId)`: POST to finalize session
+- `completeSession(sessionId)`: POST to finalize session — returns `leagueUpdate` and `errorPatterns`
 
 **Progress:**
 - `getVocabSetProgress(vocabSetId)`: GET progress stats for vocab set
 - `getOverallProgress()`: GET user's overall statistics
 - `getSessionHistory(limit)`: GET recent practice sessions
+
+**League:**
+- `createLeague(name, scoreMode)`: POST to create a league (teacher only)
+- `joinLeague(joinCode)`: POST to join a league with 6-char code
+- `getLeague(leagueId)`: GET league details
+- `getLeaderboard(leagueId)`: GET league leaderboard
+- `getMembers(leagueId)`: GET league members (teacher only)
+- `updateLeague(leagueId, data)`: PUT to update score mode, assigned vocab sets, etc.
+- `removeMember(leagueId, userId)`: DELETE member from league
+
+**User:**
+- `updateProfile(data)`: PUT `/users/profile` to update display name
 
 ### services/storage.js
 
@@ -196,19 +242,30 @@ Client-side storage utilities for caching and offline capability.
 
 **State:**
 - `user`: Object with user profile (email, displayName, userId)
-- `isAuthenticated`: Boolean
+- `accessToken`: String
+- `idToken`: String
+- `refreshToken`: String
 - `isLoading`: Boolean for auth checks
+- `error`: String or null
+- `role`: String — `'student'` or `'teacher'` (extracted from `cognito:groups` claim in ID token, persisted to localStorage)
+- `leagueId`: String or null (persisted to localStorage)
 
-**Getters:**
-- `userName`: Returns displayName or email
-- `userInitials`: Returns first letters for avatar
+**Computed:**
+- `isAuthenticated`: Boolean — true when accessToken and user both exist
 
 **Actions:**
-- `checkAuth()`: Check if tokens exist and valid
 - `login()`: Initiate Cognito OAuth flow
-- `handleCallback(code)`: Process OAuth callback
-- `logout()`: Clear auth state and redirect
-- `refreshUser()`: Fetch latest user info
+- `handleAuthCallback(code)`: Process OAuth callback, extract role from token, persist tokens
+- `logout()`: Clear all auth state including role and leagueId from localStorage, redirect to Cognito logout
+- `refreshSession()`: Refresh tokens using refresh token
+- `loadUserFromStorage()`: Restore session on page load, extract role from stored ID token
+- `checkTokenExpiry()`: Validates token freshness, auto-refreshes if within 5 minutes of expiry
+- `setLeagueId(id)`: Set/clear league ID (persisted to localStorage)
+- `setRole(newRole)`: Override role (persisted to localStorage)
+
+**Internal:**
+- `_extractRoleFromToken(idToken)`: Decodes JWT payload, checks `cognito:groups` for `'teachers'` group, defaults to `'student'`
+- `persistTokens()`: Syncs all token and user state to localStorage
 
 ### stores/vocab.js
 
@@ -233,25 +290,43 @@ Client-side storage utilities for caching and offline capability.
 ### stores/practice.js
 
 **State:**
-- `currentSession`: Object with session data
-- `questions`: Array of questions for current session
+- `currentSession`: Object with session data (`sessionId`, `vocabSetId`, `direction`, `startTime`)
+- `questions`: Array of questions for current session (populated from backend, which applies smart repetition — weak words are prioritized)
 - `currentQuestionIndex`: Integer
-- `answers`: Array of user answers
-- `sessionResults`: Object with score and detailed results
+- `answers`: Array of answer records
+- `sessionResults`: Object with score, detailed results, `leagueUpdate`, and `errorPatterns` from API
 - `isSessionActive`: Boolean
+- `currentStreak`: Integer — consecutive correct answers in current session
 
 **Getters:**
 - `currentQuestion`: Returns current question object
-- `progress`: Returns {current, total} for progress bar
-- `score`: Returns {correct, total, percentage}
+- `progress`: Returns `{current, total, percentage}` for progress bar
+- `score`: Returns `{correct, total, percentage}`
 
 **Actions:**
-- `startSession(vocabSetId, options)`: Initialize practice session
-- `submitAnswer(answer)`: Submit answer for current question
+- `startSession(vocabSetId, options)`: POST to backend, populate questions array. Backend handles smart repetition (weak words prioritized).
+- `submitAnswer(answer)`: Check answer locally using `checkAnswer` from fuzzyMatch. Returns result with `'exact'`, `'close'`, or `'wrong'`. Pushes answer record.
+- `acceptCloseAnswer()`: Mark last close answer as correct, increment streak
+- `rejectCloseAnswer()`: Mark last close answer as incorrect, reset streak
 - `nextQuestion()`: Move to next question
-- `skipQuestion()`: Skip current question
-- `endSession()`: Finalize and save session results
-- `resetSession()`: Clear session state
+- `skipQuestion()`: Remove current question and re-append at end of queue (will be asked again)
+- `endSession()`: POST results to backend. Captures `leagueUpdate` and `errorPatterns` from response into `sessionResults`.
+- `resetSession()`: Clear all session state
+
+**Answer Record Structure:**
+```javascript
+{
+  questionId: 'string',
+  itemId: 'string',
+  userAnswer: 'string',
+  correctAnswer: 'string',
+  result: 'exact' | 'close' | 'wrong',
+  correct: Boolean, // updated if user accepts/rejects 'close'
+  timestamp: Number
+}
+```
+
+**Note:** No phonetics stripping is performed in the practice store. Answer normalization is handled by `checkAnswer` in `utils/fuzzyMatch.js`.
 
 ### stores/ui.js
 
@@ -276,9 +351,14 @@ Composition function that wraps auth store for component use.
 **Returns:**
 - `user`: Reactive user object
 - `isAuthenticated`: Reactive auth status
+- `isLoading`: Boolean
+- `error`: Error string
+- `userName`: Computed — prioritizes `localStorage.getItem('vocab_trainer_displayName')`, falls back to `user.name`, then empty string
+- `userInitials`: Computed — first letters of userName, uppercase, max 2 chars
 - `login()`: Login function
 - `logout()`: Logout function
-- `checkAuth()`: Check authentication function
+- `handleCallback(code)`: Process OAuth callback
+- `checkAuth()`: Load user from storage
 
 ### composables/useApi.js
 
@@ -297,35 +377,33 @@ const { data, isLoading, error, execute } = useApi(() => api.getVocabSets())
 
 ### composables/useUpload.js
 
-Handles image upload flow including S3 presigned URL and direct upload.
+Handles multi-image upload flow including S3 presigned URLs and direct upload.
 
 **Returns:**
 - `uploadProgress`: Number 0-100
 - `isUploading`: Boolean
 - `error`: Error message
-- `uploadImage(file)`: Async function that returns imageKey
+- `filesProgress`: Ref to array of per-file progress objects (`{name, progress, status}`)
+- `uploadMultipleImages(files, targetLanguage)`: Async function that uploads multiple files, returns `{vocabSetId, imageKeys}`
+- `triggerExtraction(vocabSetId, imageKey)`: Trigger extraction for one image
+- `pollExtractionStatus(vocabSetId)`: Poll until extraction completes
 - `reset()`: Reset upload state
-
-**Implementation:**
-- Request presigned URL from API
-- Upload file directly to S3 with progress tracking
-- Return S3 key for extraction trigger
 
 ### composables/usePractice.js
 
 Practice session logic and answer validation.
 
 **Returns:**
-- `checkAnswer(userAnswer, correctAnswer)`: Boolean with fuzzy matching
+- `checkAnswer(userAnswer, correctAnswer)`: Returns result using fuzzy matching
 - `calculateScore(answers)`: Return score object
 - `formatFeedback(isCorrect, correctAnswer)`: Format feedback message
 
 **Fuzzy Matching Rules:**
 - Ignore case differences
-- Ignore accents (café = cafe)
 - Trim whitespace
 - Accept answers within 1-2 character edit distance for words >5 chars
 - Handle common typos (double letters, transpositions)
+- Three-tier result: `'exact'`, `'close'`, `'wrong'`
 
 ### composables/useToast.js
 
@@ -339,44 +417,70 @@ Toast notification wrapper for UI store.
 
 ## Key Components
 
+### components/common/AppHeader.vue
+
+Application header with navigation, dark mode toggle, display name editor, and help link.
+
+**Features:**
+- VocabGym logo/brand with 💪 emoji
+- Desktop navigation links: Dashboard, Hochladen, Fortschritt, Liga
+- Help icon link (question mark SVG) linking to /help
+- Dark mode toggle button (🌙/☀️)
+- Display name editor (inline popup):
+  - Click username to open editor popup
+  - Text input with save/cancel buttons
+  - Saves to API via `PUT /users/profile` and `localStorage.setItem('vocab_trainer_displayName')`
+- Logout button
+- Mobile hamburger menu with all nav links including Liga and Hilfe
+
+**Dark Mode:**
+- Reads preference from `localStorage.getItem('vocabgym_dark_mode')` or system `prefers-color-scheme`
+- Toggles `dark` class on `document.documentElement`
+- Persists preference to localStorage
+
+**Implementation Notes:**
+- Uses `useAuth` composable for `isAuthenticated` and `userName`
+- All text in German (Hochladen, Fortschritt, Liga, Hilfe, etc.)
+
 ### components/upload/ImageDropzone.vue
 
-Drag-and-drop file upload component with file validation.
+Multi-image drag-and-drop file upload component with file validation.
 
 **Features:**
 - Drag-and-drop zone with hover states
 - Click to browse file picker
-- File type validation (JPG, PNG, HEIC)
-- File size validation (max 10MB)
-- Image preview before upload
-- Progress bar during upload
+- **Multi-file support**: Select and preview multiple images, add more after initial selection
+- Per-image preview thumbnails with remove button
+- File type validation: JPG and PNG only (HEIC not supported)
+- File size validation (max 10MB per image)
+- "Upload" button triggers upload for all selected files
+- Dark mode support for all states
 
 **Props:**
-- `accept`: String of accepted file types (default: 'image/jpeg,image/png,image/heic')
-- `maxSize`: Number in bytes (default: 10485760 = 10MB)
+- `vocabSetId`: String (optional, for adding images to existing set)
 
 **Events:**
-- `@upload-success`: Emitted with imageKey when upload completes
+- `@files-selected`: Emitted with files array when selection changes
+- `@upload-success`: Emitted with `{files, vocabSetId}` when user clicks upload
 - `@upload-error`: Emitted with error message
 
 **Implementation Notes:**
-- Use native drag-and-drop events (dragover, drop)
-- Validate file type and size before upload
-- Use FileReader for image preview
-- Integrate with useUpload composable
-- Show clear error messages for validation failures
+- Uses `isValidFileType` and `isValidFileSize` from `utils/validators.js`
+- `ALLOWED_IMAGE_TYPES` = `['image/jpeg', 'image/png']` — no HEIC
+- Hidden file input with `accept="image/jpeg,image/png"` and `multiple` attribute
+- FileReader for image previews
+- Exposes `clearAll()` method via `defineExpose`
 
 ### components/review/VocabTable.vue
 
 Editable table for reviewing extracted vocabulary.
 
 **Features:**
-- Editable German and French columns
-- Add/remove rows dynamically
-- Reorder rows with drag handles
-- Bulk select for deletion
-- Validation indicators (empty fields highlighted)
-- Metadata form (chapter, page, topic)
+- Editable source (Deutsch) and target columns
+- Column header shows target language name dynamically
+- Add/remove rows per image group
+- Validation indicators (empty fields highlighted with red border)
+- Inline editing with input fields using `.input-field` class
 
 **Props:**
 - `vocabSet`: Object with vocabSetId and items array
@@ -390,80 +494,64 @@ Editable table for reviewing extracted vocabulary.
 ```javascript
 {
   itemId: 'uuid',
-  german: 'das Haus',
-  french: 'la maison',
+  source: 'das Haus',   // German (source language)
+  target: 'la maison',  // Target language
   notes: '',
   order: 1
 }
 ```
 
-**Implementation Notes:**
-- Use v-for with :key="item.itemId"
-- Implement inline editing with input fields
-- Add row: push new empty item to array
-- Delete row: filter out by itemId
-- Reorder: use drag-and-drop library (vue-draggable-next)
-- Validate before emit: ensure no empty German/French pairs
+**Note:** Legacy `german`/`french` fields are still read for backward compatibility. The review view reads `item.source || item.german` and `item.target || item.french`.
 
 ### components/practice/QuestionCard.vue
 
 Main practice interface showing question and answer input.
 
 **Features:**
-- Large, clear question text (German or French)
+- Large, clear question text
 - Text input field for answer
 - "Check" button (also triggered by Enter key)
-- "Reveal Answer" option
-- Visual feedback (green=correct, red=incorrect)
+- Three-tier feedback: exact (correct), close (user decides), wrong (incorrect)
 - Correct answer display when wrong
+- Streak counter display
+- Skip button (moves question to end of queue)
 
 **Props:**
-- `question`: Object with {itemId, german, french, direction}
-- `direction`: String ('de-fr' or 'fr-de')
+- `question`: Object with question data
+- `direction`: String (`'source-target'` or `'target-source'`)
+- `feedback`: Object with feedback state
+- `streak`: Number — current streak count
+- `hintEnabled`: Boolean — enable hints after streak ≥ 2
+- `targetLanguage`: String — language code for display
 
 **Events:**
 - `@submit`: Emitted with user answer
-- `@reveal`: Emitted when user reveals answer
+- `@skip`: Emitted to skip question
 - `@next`: Emitted to move to next question
-
-**State:**
-- `userAnswer`: v-model for input
-- `feedback`: Object with {isCorrect, message, correctAnswer}
-- `isAnswered`: Boolean to show feedback
-
-**Implementation Notes:**
-- Focus input on mount
-- Clear input on next question
-- Handle Enter key for submit
-- Show feedback for 2 seconds before enabling next
-- Use fuzzy matching from usePractice composable
-- Animate feedback appearance (transition)
+- `@accept-close`: Emitted when user accepts a close match
+- `@reject-close`: Emitted when user rejects a close match
 
 ### components/practice/SessionSummary.vue
 
-End-of-session results display with statistics.
+End-of-session results display with statistics, league update, and error pattern analysis.
 
 **Features:**
-- Score display (X/Y correct, percentage)
-- Time taken for session
-- List of all questions with results
-- Accuracy chart (Chart.js pie/donut)
-- "Practice Again" button
-- "Back to Dashboard" button
+- Score display (percentage, X/Y correct)
+- Duration display
+- **League update card**: Shows points earned and current streak (when `results.leagueUpdate` is present)
+- **Lernhinweis (error pattern analysis) card**: Yellow card with 💡 icon showing:
+  - `errorPatterns.summary`: Text summary of common mistakes
+  - `errorPatterns.articleErrors`: List of article mistakes with strikethrough wrong → correct
+  - `errorPatterns.repeatedErrors`: List of words the user repeatedly gets wrong with count
+- Detailed results list with correct/incorrect highlighting
+- "Nochmal üben" and "Zum Dashboard" action buttons
 
 **Props:**
-- `sessionResults`: Object with {score, duration, detailedResults, vocabSetId}
+- `results`: Object with `{score, duration, detailedResults, leagueUpdate, errorPatterns}`
 
-**Computed:**
-- `percentage`: (correct / total) * 100
-- `formattedDuration`: Convert seconds to "X min Y sec"
-- `incorrectItems`: Filter detailedResults for wrong answers
-
-**Implementation Notes:**
-- Use Chart.js for visual score representation
-- Show incorrect items prominently for review
-- Offer to practice only missed words
-- Save results to backend on mount
+**Events:**
+- `@practice-again`: Restart practice
+- `@back`: Navigate to dashboard
 
 ### components/dashboard/VocabSetCard.vue
 
@@ -483,12 +571,6 @@ Card component displaying vocab set summary on dashboard.
 - `@practice`: Emitted to start practice
 - `@view`: Emitted to view details
 - `@delete`: Emitted to delete vocab set
-
-**Implementation Notes:**
-- Use Tailwind card styling
-- Lazy load image thumbnail
-- Show progress as colored bar or circle
-- Confirm before delete with modal
 
 ### components/progress/ProgressChart.vue
 
@@ -516,15 +598,15 @@ Chart component showing progress over time.
 Landing page for unauthenticated users.
 
 **Features:**
-- Hero section with app description
+- Hero section with app description (in German)
 - Key features overview (scan, review, practice)
-- Screenshots/mockups
-- "Get Started" button → login
+- Multi-language support mentioned
+- "Jetzt starten" button → login
 
 **Implementation:**
 - Check auth on mount → redirect to dashboard if authenticated
-- Simple static content with Tailwind styling
-- Responsive design for mobile/tablet/desktop
+- All text in German
+- Dark mode support
 
 ### views/DashboardView.vue
 
@@ -532,74 +614,79 @@ Main dashboard after login.
 
 **Features:**
 - Welcome message with user name
-- Stats overview (total vocab sets, total words, practice streak)
+- Stats overview (total vocab sets, total words)
 - Grid of vocab set cards
-- "Upload New" button (floating action button style)
-- Recent practice sessions list
+- "Hochladen" button for new uploads
+- League vocab sets section (if user has a league)
 
 **Implementation:**
 - Fetch vocab sets on mount
 - Use VocabSetCard component in grid
 - Responsive grid (1 col mobile, 2 col tablet, 3+ col desktop)
 - Handle empty state (no vocab sets yet)
+- All text in German
 
 ### views/UploadView.vue
 
-Image upload and extraction flow.
+Multi-image upload and extraction flow.
 
 **Features:**
-- ImageDropzone component
-- Upload progress display
-- Extraction status polling
-- Auto-redirect to review when complete
+- **Target language selector**: Dropdown with all supported languages from `SUPPORTED_LANGUAGES`
+- ImageDropzone component (multi-file support)
+- Per-file upload progress display with status indicators (✓ done, ✗ error, uploading percentage)
+- Extraction status polling after upload
+- Auto-redirect to ReviewView when complete
 
 **Implementation:**
-- Use useUpload composable
-- After upload, trigger extraction API
-- Poll extraction status every 2 seconds
-- Show extraction progress (processing, extracting, structuring)
-- Handle extraction errors gracefully
-- Redirect to ReviewView with vocabSetId on success
+- Uses `useUpload` composable with `uploadMultipleImages(files, targetLanguage)`
+- Three phases: `'select'` → `'processing'`
+- After all images uploaded, triggers extraction per image sequentially
+- Polls extraction status per image
+- Shows success toast with file count
+- Error display with retry button
+- All text in German
 
 ### views/ReviewView.vue
 
-Review and edit extracted vocabulary.
+Review and edit extracted vocabulary with vertical layout and per-image grouping.
 
 **Features:**
-- Image preview (original uploaded image)
-- VocabTable component
-- Metadata form (chapter, page, topic)
-- "Save" and "Cancel" buttons
-- Validation before save
+- MetadataForm for title, chapter, page number, topic
+- **Per-image grouping**: Items grouped by source image, each group shows:
+  - Image preview (lazy loaded, max height 96)
+  - "Seite N" heading
+  - Editable table with columns: #, Deutsch, [Target Language Name], delete button
+- Inline editing with `.input-field` inputs
+- Delete per row (button visible on hover via `group-hover:opacity-100`)
+- Add row button per image group ("+ Eintrag hinzufügen")
+- "Speichern & Freigeben" and "Abbrechen" buttons in header
+- Validation: empty source/target fields highlighted with red border
 
 **Implementation:**
-- Fetch vocab set by ID from route params
-- Load extraction results if not yet approved
-- Enable editing for pending vocab sets
-- Show readonly view for approved sets
-- Validate all items have German and French values
-- Save to backend on approve
-- Redirect to dashboard on save/cancel
+- Vertical layout (not side-by-side)
+- Reads `item.source || item.german` and `item.target || item.french` for backward compatibility
+- Updates items via `updateItem(item, 'source'|'target', value)` function
+- Target language name shown in column header from `getLanguageName()`
+- All text in German
 
 ### views/PracticeView.vue
 
 Practice session interface.
 
 **Features:**
-- Direction selector (German→French or French→German)
-- Number of questions selector
-- QuestionCard component
+- Direction selector: "Deutsch → [Target Language]" or "[Target Language] → Deutsch" using `getLanguageName()`
+- QuestionCard component with streak and hint support
 - Progress bar at top
-- Exit confirmation if session incomplete
+- Three-tier answer feedback (exact, close, wrong)
+- Exit confirmation if session incomplete (German confirm dialog)
+- SessionSummary with league update and error patterns on completion
 
 **Implementation:**
-- Get vocabSetId from route params
-- Initialize session with practice store
-- Show question by index from questions array
-- Handle answer submission and feedback
-- Move to next question after feedback shown
-- Show SessionSummary when all questions complete
-- Implement beforeRouteLeave guard for exit confirmation
+- Maps `source-target`/`target-source` directions to legacy `de-fr`/`fr-de` for backend API compatibility
+- Loads vocab set metadata to get `targetLanguage` code
+- Backend handles smart repetition (weak words prioritized in returned questions)
+- `onBeforeRouteLeave` guard saves partial progress
+- All text in German
 
 ### views/ProgressView.vue
 
@@ -622,7 +709,7 @@ Overall progress and statistics view.
 Detailed view of single vocab set.
 
 **Features:**
-- Full vocabulary list (read-only table)
+- Full vocabulary list (read-only table with source/target columns)
 - Edit button → ReviewView
 - Practice button → PracticeView
 - Delete button with confirmation
@@ -632,83 +719,144 @@ Detailed view of single vocab set.
 - Fetch vocab set by ID
 - Show all items in scrollable table
 - Action buttons at top
-- Breadcrumb navigation (Dashboard > Vocab Set Name)
+
+### views/LeagueView.vue
+
+League management with three states based on user role and league membership.
+
+**State 1 — Student without league (join form):**
+- Title: "Liga beitreten"
+- Explanation text (Du-Form)
+- 6-character join code input (uppercase, monospace, centered)
+- "Beitreten" button
+- Error display for invalid codes
+
+**State 2 — Teacher without league (create form):**
+- Title: "Liga erstellen"
+- Explanation text (Sie-Form)
+- Name input (e.g., "Klasse 9b Englisch")
+- Score mode selector (Gesamtzahl Richtige, Wöchentlich, Genauigkeit, Kombiniert)
+- "Liga erstellen" button
+- Error display
+
+**State 3 — User with league (dashboard):**
+- League name header with participant count and score mode
+- Own stats banner (rank, score, streak)
+- Leaderboard table (Rang, Name, Score, 🔥 Streak)
+- "Jetzt üben" section: grid of assigned league vocab sets with practice links
+- **Teacher-only management section:**
+  - Join code display with copy button
+  - Score mode editor
+  - Vocab set assignment (checkboxes of teacher's own sets)
+  - Member management with expandable details (stats, last practice, remove button)
+
+**Implementation:**
+- Uses `authStore.leagueId` and `authStore.role` for state determination
+- Loads league data, leaderboard, members, and vocab sets on mount
+- Clears stored leagueId on 404/403 responses
+- All text in German
+
+### views/LeagueJoinView.vue
+
+Separate league join view accessible via `/league/join/:code?`.
+
+**Features:**
+- Join code input pre-populated from route params
+- Join league API call
+- Redirect to League view on success
+
+### views/InviteView.vue
+
+Invite link handler at `/invite/:token`.
+
+**Features:**
+- Handles invite token from URL
+- Auto-joins league if authenticated
+
+### views/HelpView.vue
+
+Help and documentation page with role-based tabs.
+
+**Features:**
+- Tab navigation: "🎓 Für Trainierende" (student) and "👩‍🏫 Für Lehrende" (teacher)
+- **Student tab** (Du-Form):
+  - Welcome section
+  - Step-by-step guide: Anmelden & Namen setzen, Liga beitreten, Üben, Punkte sammeln & Streak halten
+  - Tips: Tippfehler handling, Artikel importance
+  - Multi-language mention (Französisch, Englisch, Spanisch, Italienisch)
+- **Teacher tab** (Sie-Form):
+  - Account setup guide
+  - Liga creation and management
+  - Vocab set upload and assignment workflow
+  - Student management
+
+**Implementation:**
+- `activeTab` state toggles between `'student'` and `'teacher'`
+- Custom prose styling classes (`.section-title`, `.step`, `.tip-card`, etc.)
+- All content in German
+- Does not require authentication (`meta.requiresAuth: false`)
+
+### views/CallbackView.vue
+
+OAuth callback handler for Cognito authentication flow.
+
+### views/NotFoundView.vue
+
+404 page with link back to dashboard.
 
 ## Routing Configuration
 
 ### router/index.js
 
-Vue Router setup with route guards.
+Vue Router setup with route guards. All route titles are in German.
 
 **Routes:**
 ```javascript
 [
-  {
-    path: '/',
-    name: 'Landing',
-    component: LandingView,
-    meta: { requiresAuth: false }
-  },
-  {
-    path: '/callback',
-    name: 'Callback',
-    component: CallbackView, // Handles OAuth callback
-    meta: { requiresAuth: false }
-  },
-  {
-    path: '/dashboard',
-    name: 'Dashboard',
-    component: DashboardView,
-    meta: { requiresAuth: true }
-  },
-  {
-    path: '/upload',
-    name: 'Upload',
-    component: UploadView,
-    meta: { requiresAuth: true }
-  },
-  {
-    path: '/review/:vocabSetId',
-    name: 'Review',
-    component: ReviewView,
-    meta: { requiresAuth: true },
-    props: true
-  },
-  {
-    path: '/practice/:vocabSetId',
-    name: 'Practice',
-    component: PracticeView,
-    meta: { requiresAuth: true },
-    props: true
-  },
-  {
-    path: '/progress',
-    name: 'Progress',
-    component: ProgressView,
-    meta: { requiresAuth: true }
-  },
-  {
-    path: '/vocab/:vocabSetId',
-    name: 'VocabSetDetail',
-    component: VocabSetDetailView,
-    meta: { requiresAuth: true },
-    props: true
-  },
-  {
-    path: '/:pathMatch(.*)*',
-    name: 'NotFound',
-    component: NotFoundView
-  }
+  { path: '/', name: 'Landing', meta: { requiresAuth: false, title: 'Willkommen' } },
+  { path: '/callback', name: 'Callback', meta: { requiresAuth: false, title: 'Anmeldung...' } },
+  { path: '/dashboard', name: 'Dashboard', meta: { requiresAuth: true, title: 'Dashboard' } },
+  { path: '/upload', name: 'Upload', meta: { requiresAuth: true, title: 'Bild hochladen' } },
+  { path: '/review/:vocabSetId', name: 'Review', meta: { requiresAuth: true, title: 'Vokabeln prüfen' }, props: true },
+  { path: '/practice/:vocabSetId', name: 'Practice', meta: { requiresAuth: true, title: 'Üben' }, props: true },
+  { path: '/progress', name: 'Progress', meta: { requiresAuth: true, title: 'Fortschritt' } },
+  { path: '/vocab/:vocabSetId', name: 'VocabSetDetail', meta: { requiresAuth: true, title: 'Vokabelset' }, props: true },
+  { path: '/invite/:token', name: 'Invite', meta: { requiresAuth: false, title: 'Einladung' }, props: true },
+  { path: '/league', name: 'League', meta: { requiresAuth: true, title: 'Liga' } },
+  { path: '/league/join/:code?', name: 'LeagueJoin', meta: { requiresAuth: true, title: 'Liga beitreten' }, props: true },
+  { path: '/help', name: 'Help', meta: { requiresAuth: false, title: 'Hilfe' } },
+  { path: '/:pathMatch(.*)*', name: 'NotFound', meta: { requiresAuth: false, title: 'Nicht gefunden' } }
 ]
 ```
 
 **Navigation Guards:**
 - Global `beforeEach` guard: Check `meta.requiresAuth`
-- If requires auth and not authenticated: redirect to landing/login
+- Updates `document.title` to `"${title} - VocabTrainer"`
+- If requires auth and not authenticated: call `authStore.login()` (redirect to Cognito)
 - If authenticated and on landing: redirect to dashboard
-- Track route changes in analytics (optional)
+- All views except Landing are lazy-loaded with `() => import()`
 
 ## Styling Guidelines
+
+### Dark Mode
+
+Full dark mode support using Tailwind's `dark:` variant. Dark mode is toggled via AppHeader and persisted to `localStorage.getItem('vocabgym_dark_mode')`. Falls back to system `prefers-color-scheme` on first visit.
+
+**Global dark mode styles** in `src/assets/styles/main.css`:
+- Body: `dark:text-gray-100 dark:bg-gray-900`
+- All form inputs (`input[type="text"]`, `select`, `textarea`, etc.): `dark:bg-gray-700 dark:border-gray-600 dark:text-gray-100 dark:placeholder-gray-400`
+
+### Utility Classes (main.css `@layer components`)
+
+- `.btn` — Base button: inline-flex, centered, rounded-md, focus ring with dark offset
+- `.btn-primary` — Primary blue button with dark-compatible focus ring
+- `.btn-secondary` — Gray button: `dark:bg-gray-700 dark:text-gray-100 dark:hover:bg-gray-600`
+- `.btn-danger` — Red error button
+- `.btn-success` — Green success button
+- `.card` — White card: `dark:bg-gray-800 dark:shadow-gray-900/30`
+- `.input-field` — Form input for use inside forms (no explicit border): `dark:bg-gray-700 dark:border-gray-600 dark:text-gray-100`
+- `.input` — Standalone input with explicit border: `dark:bg-gray-700 dark:border-gray-600 dark:text-gray-100`
+- `.label` — Form label: `dark:text-gray-300`
 
 ### Tailwind Configuration
 
@@ -735,35 +883,32 @@ Vue Router setup with route guards.
 
 **Design System:**
 - **Spacing**: Use Tailwind's default scale (4px increments)
-- **Typography**: Base 16px, scale up for headings
+- **Typography**: Base 16px, scale up for headings (h1-h4 styled in `@layer base`)
 - **Radius**: Consistent border-radius (rounded-lg for cards, rounded-md for inputs)
 - **Shadows**: Subtle shadows (shadow-sm, shadow-md)
 - **Transitions**: Use transition-all duration-200 for interactive elements
-
-**Component Patterns:**
-- **Buttons**: `bg-primary-600 hover:bg-primary-700 text-white px-4 py-2 rounded-md transition-colors`
-- **Cards**: `bg-white rounded-lg shadow-md p-6`
-- **Inputs**: `border border-gray-300 rounded-md px-3 py-2 focus:ring-2 focus:ring-primary-500 focus:border-transparent`
+- **Dark mode**: All components use `dark:` variants for backgrounds, text, borders
 
 ### Responsive Design
 
 - **Breakpoints**: Use Tailwind defaults (sm: 640px, md: 768px, lg: 1024px, xl: 1280px)
 - **Mobile-first**: Design for mobile, enhance for larger screens
 - **Touch targets**: Minimum 44x44px for buttons on mobile
-- **Font scaling**: Slightly larger base font on mobile (text-base → text-lg)
+- **Desktop nav**: Horizontal with full links; mobile nav: hamburger menu with slide-down
+- **Content max-width**: `max-w-7xl` for header, `max-w-4xl` for content views, `max-w-2xl` for practice
 
 ## Form Validation
 
 ### Validation Rules
 
 **Upload:**
-- File type: Must be image/jpeg, image/png, or image/heic
-- File size: Maximum 10MB
+- File type: Must be image/jpeg or image/png (HEIC not supported)
+- File size: Maximum 10MB per file
 - Required: At least one file selected
 
 **Review:**
-- German field: Required, 1-100 characters
-- French field: Required, 1-100 characters
+- Source field: Required, 1-100 characters
+- Target field: Required, 1-100 characters
 - Chapter: Optional, max 50 characters
 - Page: Optional, must be positive integer
 - Topic: Optional, max 100 characters
@@ -771,19 +916,23 @@ Vue Router setup with route guards.
 **Practice:**
 - Answer: Required (cannot submit empty)
 
+**League Join:**
+- Join code: Required, 6 characters
+
 ### Validation Implementation
 
-Use VeeValidate or custom validation utilities:
+Custom validation utilities in `utils/validators.js`. All messages in German:
 
-**utils/validators.js:**
 ```javascript
-export const required = (value) => !!value || 'This field is required'
-export const maxLength = (max) => (value) => 
-  !value || value.length <= max || `Maximum ${max} characters`
-export const minLength = (min) => (value) => 
-  !value || value.length >= min || `Minimum ${min} characters`
-export const isPositiveInteger = (value) => 
-  !value || (Number.isInteger(Number(value)) && Number(value) > 0) || 'Must be a positive number'
+export const required = (value) => !!value || 'Dieses Feld ist erforderlich'
+export const maxLength = (max) => (value) =>
+  !value || value.length <= max || `Maximal ${max} Zeichen erlaubt`
+export const minLength = (min) => (value) =>
+  !value || value.length >= min || `Mindestens ${min} Zeichen erforderlich`
+export const isPositiveInteger = (value) =>
+  !value || (Number.isInteger(Number(value)) && Number(value) > 0) || 'Muss eine positive Ganzzahl sein'
+export function isValidFileType(file) // checks against ['image/jpeg', 'image/png']
+export function isValidFileSize(file, maxSize) // default 10MB
 ```
 
 Display validation errors inline below fields with red text.
@@ -792,16 +941,18 @@ Display validation errors inline below fields with red text.
 
 ### Error Types and Responses
 
+All error messages are in German.
+
 **Network Errors:**
-- Show toast: "Connection problem. Please check your internet."
+- Show toast: "Verbindungsproblem. Bitte Internetverbindung prüfen."
 - Retry button for failed requests
 
 **Authentication Errors (401):**
 - Clear tokens
-- Redirect to landing page with message: "Session expired. Please log in again."
+- Redirect to landing page with message: "Sitzung abgelaufen. Bitte erneut anmelden."
 
 **Authorization Errors (403):**
-- Show toast: "You don't have permission to perform this action."
+- Show toast: "Keine Berechtigung für diese Aktion."
 - Redirect to dashboard
 
 **Validation Errors (400):**
@@ -809,12 +960,11 @@ Display validation errors inline below fields with red text.
 - Highlight invalid fields
 
 **Server Errors (500):**
-- Show toast: "Something went wrong. Please try again."
+- Show toast: "Etwas ist schiefgegangen. Bitte erneut versuchen."
 - Log error details to console
-- Optionally send to error tracking service
 
 **Not Found (404):**
-- Show "Resource not found" message
+- Show "Nicht gefunden" message
 - Provide link back to dashboard
 
 ### Error Boundaries
@@ -824,7 +974,6 @@ Implement global error handler in App.vue to catch uncaught errors:
 app.config.errorHandler = (err, instance, info) => {
   console.error('Global error:', err, info)
   // Show generic error toast
-  // Send to monitoring service
 }
 ```
 
@@ -832,15 +981,15 @@ app.config.errorHandler = (err, instance, info) => {
 
 ### Code Splitting
 
-- Lazy load routes: `component: () => import('./views/DashboardView.vue')`
+- All routes except Landing are lazy-loaded: `component: () => import('./views/DashboardView.vue')`
 - Lazy load heavy components (Chart.js) only when needed
 - Dynamic imports for large libraries
 
 ### Image Optimization
 
-- Use lazy loading for vocab set thumbnails: `loading="lazy"`
+- Use lazy loading for vocab set thumbnails and review images: `loading="lazy"`
 - Serve responsive images from S3 with CloudFront
-- Consider WebP format with fallback to JPEG
+- Client-side previews via FileReader
 
 ### API Optimization
 
@@ -850,33 +999,33 @@ app.config.errorHandler = (err, instance, info) => {
 
 ### Bundle Size
 
-- Tree-shake unused Tailwind classes with purge configuration
+- Tree-shake unused Tailwind classes with purge configuration (`content` in tailwind.config.js)
 - Minimize dependencies (check bundle analyzer)
-- Use CDN for large libraries if beneficial
 
 ## Testing Strategy
 
 ### Unit Tests (Vitest)
 
 **Priority Components:**
-- Validators (utils/validators.js)
-- Fuzzy matching logic (utils/fuzzyMatch.js)
-- Composables (useApi, usePractice)
+- Validators (utils/validators.js) — German error messages
+- Fuzzy matching logic (utils/fuzzyMatch.js) — three-tier results
+- Language utilities (utils/languages.js)
+- Composables (useApi, usePractice, useAuth)
 - Pinia stores (actions and getters)
 
 **Example Test Pattern:**
 ```javascript
 describe('fuzzyMatch', () => {
-  it('should match exact strings', () => {
-    expect(fuzzyMatch('café', 'café')).toBe(true)
+  it('should return exact for matching strings', () => {
+    expect(checkAnswer('la maison', 'la maison')).toBe('exact')
   })
-  
-  it('should match ignoring accents', () => {
-    expect(fuzzyMatch('cafe', 'café')).toBe(true)
+
+  it('should return close for minor typos', () => {
+    expect(checkAnswer('la maisom', 'la maison')).toBe('close')
   })
-  
-  it('should allow minor typos', () => {
-    expect(fuzzyMatch('maison', 'maisom')).toBe(true)
+
+  it('should return wrong for completely different strings', () => {
+    expect(checkAnswer('le chat', 'la maison')).toBe('wrong')
   })
 })
 ```
@@ -884,33 +1033,19 @@ describe('fuzzyMatch', () => {
 ### Component Tests (Vue Test Utils)
 
 **Priority Components:**
-- QuestionCard.vue (answer submission, feedback display)
-- VocabTable.vue (editing, adding/removing rows)
-- ImageDropzone.vue (file validation, upload trigger)
-
-**Test Pattern:**
-```javascript
-describe('QuestionCard', () => {
-  it('should emit submit event with answer', async () => {
-    const wrapper = mount(QuestionCard, {
-      props: { question: mockQuestion }
-    })
-    
-    await wrapper.find('input').setValue('la maison')
-    await wrapper.find('button').trigger('click')
-    
-    expect(wrapper.emitted('submit')).toBeTruthy()
-    expect(wrapper.emitted('submit')[0][0]).toBe('la maison')
-  })
-})
-```
+- QuestionCard.vue (answer submission, three-tier feedback, accept/reject close)
+- VocabTable.vue (editing, adding/removing rows with source/target fields)
+- ImageDropzone.vue (multi-file validation, upload trigger)
+- SessionSummary.vue (league update display, error pattern rendering)
+- AppHeader.vue (display name editor, dark mode toggle)
 
 ### E2E Tests (Playwright)
 
 **Critical User Flows:**
 1. Authentication: Login → Dashboard → Logout
-2. Upload: Login → Upload image → Review → Save → Dashboard
-3. Practice: Login → Select vocab set → Complete session → View results
+2. Upload: Login → Select language → Upload multiple images → Review → Save → Dashboard
+3. Practice: Login → Select vocab set → Complete session → View summary with error patterns
+4. League: Teacher creates league → Student joins → Practice → Check leaderboard
 
 **Test Environment:**
 - Use staging environment with test Cognito user pool
@@ -923,37 +1058,35 @@ describe('QuestionCard', () => {
 
 - **Keyboard Navigation**: All interactive elements accessible via keyboard (Tab, Enter, Esc)
 - **Screen Reader Support**: Proper ARIA labels, landmarks, and announcements
-- **Color Contrast**: WCAG AA compliance (4.5:1 for normal text)
-- **Focus Indicators**: Clear focus outlines on all interactive elements
+- **Color Contrast**: WCAG AA compliance (4.5:1 for normal text) — verified in both light and dark modes
+- **Focus Indicators**: Clear focus outlines on all interactive elements (Tailwind `focus:ring-2`)
 - **Alt Text**: All images have descriptive alt attributes
 
 ### Implementation Checklist
 
 - Use semantic HTML (button, nav, main, article)
 - Add `role` attributes where semantic HTML insufficient
-- Use `aria-label` for icon buttons
+- Use `aria-label` for icon buttons (e.g., "Hilfe", "Heller Modus"/"Dunkler Modus", "Menü öffnen", "Zeile löschen")
 - Announce dynamic content changes with `aria-live` regions
-- Implement skip links ("Skip to main content")
 - Test with keyboard only (no mouse)
-- Test with screen reader (VoiceOver on Mac, NVDA on Windows)
+- Test with screen reader (VoiceOver on Mac)
 
 **Example Patterns:**
 ```vue
-<!-- Icon button with label -->
-<button aria-label="Delete vocabulary set" @click="deleteVocabSet">
-  <TrashIcon />
+<!-- Help link in header -->
+<router-link to="/help" title="Hilfe" aria-label="Hilfe">
+  <svg>...</svg>
+</router-link>
+
+<!-- Dark mode toggle -->
+<button :aria-label="isDark ? 'Heller Modus' : 'Dunkler Modus'">
+  {{ isDark ? '☀️' : '🌙' }}
 </button>
 
-<!-- Live region for dynamic feedback -->
-<div aria-live="polite" aria-atomic="true">
-  {{ feedbackMessage }}
-</div>
-
-<!-- Modal with focus trap -->
-<dialog role="dialog" aria-labelledby="modal-title" aria-modal="true">
-  <h2 id="modal-title">Confirm Deletion</h2>
-  <!-- ... -->
-</dialog>
+<!-- Delete row button -->
+<button aria-label="Zeile löschen" @click="deleteItem(item)">
+  <svg>...</svg>
+</button>
 ```
 
 ## Deployment
@@ -974,7 +1107,7 @@ describe('QuestionCard', () => {
 - Enable static website hosting
 - Set index document: `index.html`
 - Set error document: `index.html` (for SPA routing)
-- Bucket policy: Public read access for website content
+- Bucket policy: Allow CloudFront access only
 
 **Upload Process:**
 ```bash
@@ -984,4 +1117,6 @@ aws s3 sync dist/ s3://vocab-trainer-frontend --delete
 **CloudFront Configuration:**
 - Origin: S3 bucket website endpoint
 - Default root object: `index.html`
-- Custom error responses: 404 → /index.html
+- Custom error responses: 403, 404 → /index.html (HTTP 200) for SPA routing
+- HTTPS only with TLS 1.2+
+- Compress objects: Enabled (gzip/brotli)

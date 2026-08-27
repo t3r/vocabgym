@@ -2,7 +2,13 @@
 
 ## Project Context
 
-VocabTrainer is a web-based French vocabulary learning application for 9th grade German Gymnasium students. The core feature is extracting vocabulary from scanned workbook images using AI/OCR, then providing typing-based practice sessions. The application must be fully serverless on AWS to minimize operational overhead and costs.
+VocabTrainer is a web-based vocabulary learning application for German Gymnasium students. The core feature is extracting vocabulary from scanned workbook pages using AI/OCR (Textract + Bedrock), then providing typing-based practice sessions with smart repetition and error pattern analysis. The application supports multiple target languages (French, Spanish, etc.) and includes a league system for class-based competition managed by teachers.
+
+The entire infrastructure runs on AWS using serverless architecture.
+
+- **Region:** eu-central-1
+- **Account:** 730335610692
+- **Stack naming:** vocabtrainer-{stage} (e.g. vocabtrainer-dev, vocabtrainer-prod)
 
 ## Architecture Overview
 
@@ -27,20 +33,30 @@ VocabTrainer is a web-based French vocabulary learning application for 9th grade
              ▼
 ┌─────────────────────────────────────────────────────────────────┐
 │                      API Gateway (REST API)                     │
-│                     JWT Authorizer (Cognito)                    │
+│                     Cognito User Pool Authorizer                │
 └────────────┬────────────────────────────────────────────────────┘
              │
              ├──────────► Lambda: upload_handler
              ├──────────► Lambda: extraction_handler
              ├──────────► Lambda: vocab_crud_handler
              ├──────────► Lambda: practice_handler
-             └──────────► Lambda: progress_handler
+             ├──────────► Lambda: progress_handler
+             └──────────► Lambda: league_handler
                           │
-                          ├──────► DynamoDB Tables
+                          ├──────► DynamoDB (7 tables)
                           ├──────► S3 Bucket (Images)
-                          ├──────► AWS Textract
-                          └──────► OpenAI Vision API (fallback)
+                          ├──────► AWS Textract (OCR)
+                          └──────► Amazon Bedrock (LLM extraction)
 ```
+
+### Design Principles
+
+1. **Serverless First**: Use managed services to minimize operational overhead
+2. **Pay-per-use**: No fixed costs, scale to zero when not in use
+3. **Security by Default**: Least privilege IAM roles, encrypted storage
+4. **Stateless Functions**: Each Lambda invocation is independent
+5. **Multi-language**: VocabSets use source/target fields with a targetLanguage attribute
+6. **DynamoDB Decimal handling**: Always use `default=str` in `json.dumps` calls
 
 ### Authentication Flow
 
@@ -48,347 +64,763 @@ VocabTrainer is a web-based French vocabulary learning application for 9th grade
 User → CloudFront → Cognito Hosted UI → Authorization Code
      → Exchange Code for JWT → Store JWT in localStorage
      → All API requests include JWT in Authorization header
-     → API Gateway validates JWT via Cognito User Pool
+     → API Gateway validates JWT via Cognito User Pool Authorizer
+     → Lambda reads userId from 'sub' claim, groups from 'cognito:groups' claim
 ```
 
 ## AWS Services Configuration
 
 ### 1. Amazon Cognito User Pool
 
-**Purpose:** Authentication and user management with OAuth2 hosted UI
+**Purpose:** Authentication, user management, and role-based access (teachers group)
 
 **Configuration:**
-- **User Pool Name:** `vocabtrainer-users-prod`
+- **User Pool Name:** `vocabtrainer-users-{stage}`
 - **Authentication Flow:** OAuth 2.0 Authorization Code Grant
-- **Hosted UI:** Enabled with custom domain
+- **Hosted UI:** Enabled
+- **Username Attributes:** email
 - **User Attributes:**
   - email (required, verified)
-  - preferred_username (optional)
 - **Password Policy:**
   - Minimum length: 8 characters
   - Require uppercase, lowercase, numbers
-  - No special characters required (user-friendly for students)
+  - No special characters required (student-friendly)
+- **Account Recovery:** verified_email
 - **App Client:**
-  - Name: `vocabtrainer-web-client`
-  - Token expiration: 
-    - Access token: 1 hour
-    - Refresh token: 30 days
+  - Name: `vocabtrainer-web-client-{stage}`
+  - Generate secret: No (public web client)
+  - Explicit auth flows: ALLOW_USER_PASSWORD_AUTH, ALLOW_REFRESH_TOKEN_AUTH, ALLOW_USER_SRP_AUTH
   - OAuth flows: Authorization code grant
   - OAuth scopes: openid, email, profile
-  - Callback URLs: `https://vocabtrainer.yourdomain.com/callback`, `http://localhost:5173/callback` (development)
-  - Sign-out URLs: `https://vocabtrainer.yourdomain.com/`, `http://localhost:5173/`
+  - Callback URLs: `http://localhost:5173/callback`, `https://{CloudFront}/callback`
+  - Sign-out URLs: `http://localhost:5173`, `https://{CloudFront}`
+- **Token Expiration:**
+  - Access token: 1 hour
+  - Refresh token: 30 days
 
-**Triggers:** None required for MVP
+**Groups:**
+- **teachers**: Cognito group for teacher accounts. Backend reads `cognito:groups` claim from the JWT to check membership. Teachers can create/manage leagues and are filtered from leaderboards.
+
+**Domain:**
+- `vocabtrainer-{stage}-{accountId}.auth.{region}.amazoncognito.com`
 
 ### 2. Amazon S3 Buckets
 
 #### Frontend Bucket
 
-**Bucket Name:** `vocabtrainer-frontend-prod`
+**Bucket Name:** `vocabtrainer-frontend-{stage}-{accountId}`
 
 **Configuration:**
-- Static website hosting: Enabled
-- Default document: `index.html`
-- Error document: `index.html` (for SPA routing)
-- Public access: Blocked (served via CloudFront only)
-- Bucket Policy: Allow CloudFront Origin Access Identity
-
-**CORS Configuration:**
-```json
-[
-  {
-    "AllowedHeaders": ["*"],
-    "AllowedMethods": ["GET", "HEAD"],
-    "AllowedOrigins": ["https://vocabtrainer.yourdomain.com"],
-    "ExposeHeaders": [],
-    "MaxAgeSeconds": 3600
-  }
-]
-```
+- Static website hosting: via CloudFront (not S3 website endpoint)
+- Public access: Blocked (served via CloudFront OAC only)
+- Bucket Policy: Allow CloudFront service principal
 
 #### Images Bucket
 
-**Bucket Name:** `vocabtrainer-images-prod`
+**Bucket Name:** `vocabtrainer-images-{stage}-{accountId}`
 
 **Configuration:**
-- Versioning: Disabled (workbook images are immutable once uploaded)
-- Encryption: Server-side encryption with S3-managed keys (SSE-S3)
-- Lifecycle policy:
-  - Transition to Glacier after 90 days
-  - Delete after 365 days (or user-controlled retention)
 - Public access: Blocked (presigned URLs only)
-
-**CORS Configuration:**
-```json
-[
-  {
-    "AllowedHeaders": ["*"],
-    "AllowedMethods": ["PUT", "POST"],
-    "AllowedOrigins": ["https://vocabtrainer.yourdomain.com", "http://localhost:5173"],
-    "ExposeHeaders": ["ETag"],
-    "MaxAgeSeconds": 3600
-  }
-]
-```
+- Encryption: SSE-S3 (AES-256)
+- Versioning: Disabled
+- Lifecycle policy: Delete after 90 days
+- CORS: Allow PUT/POST/GET from all origins
 
 **Folder Structure:**
 ```
-/{userId}/
-  /uploads/
-    /{vocabSetId}/
-      /original.jpg
-      /thumbnail.jpg (optional, generated later)
+/images/{userId}/{vocabSetId}/{timestamp}-original.{ext}
 ```
 
-### 3. Amazon DynamoDB Tables
+### 3. Amazon DynamoDB Tables (7 tables)
 
-#### Users Table
+All tables use on-demand billing (PAY_PER_REQUEST) and are named `vocabtrainer-{tablename}-{stage}`.
 
-**Table Name:** `vocabtrainer-users-prod`
+#### Table 1: Users
 
-**Configuration:**
-- Partition Key: `userId` (String) - Cognito sub identifier
-- Billing Mode: On-demand (pay per request)
-- Point-in-time recovery: Enabled
-- Encryption: AWS owned keys
+**Table Name:** `vocabtrainer-users-{stage}`
 
-**Attributes:**
 ```
-userId (PK) - String
-email - String
-displayName - String
-createdAt - Number (Unix timestamp)
-lastLoginAt - Number (Unix timestamp)
-preferences - Map
-  └─ defaultDirection - String ("de-fr" or "fr-de")
-  └─ sessionLength - Number (default 20)
+userId (PK) - String (Cognito sub)
+
+Attributes:
+  - email: String
+  - displayName: String
+  - role: String ("student" | "teacher")
+  - leagueId: String (quick lookup for current league membership)
+  - createdAt: Number (Unix timestamp)
+  - lastLoginAt: Number
+  - preferences: Map
+    └─ defaultDirection: String
+    └─ sessionLength: Number (default 20)
 ```
 
-**Global Secondary Indexes:** None required
+#### Table 2: VocabSets
 
-#### VocabSets Table
+**Table Name:** `vocabtrainer-vocabsets-{stage}`
 
-**Table Name:** `vocabtrainer-vocabsets-prod`
-
-**Configuration:**
-- Partition Key: `vocabSetId` (String) - UUID
-- Sort Key: `userId` (String)
-- Billing Mode: On-demand
-- GSI: `userId-createdAt-index`
-  - Partition Key: `userId`
-  - Sort Key: `createdAt` (Number, descending)
-  - Projection: ALL
-
-**Attributes:**
 ```
 vocabSetId (PK) - String (UUID)
 userId (SK) - String
-title - String
-sourceImageKey - String (S3 key)
-extractionStatus - String ("pending" | "processing" | "review" | "approved")
-metadata - Map
-  └─ chapter - String
-  └─ pageNumber - Number
-  └─ topic - String
-  └─ notes - String
-createdAt - Number (Unix timestamp)
-updatedAt - Number (Unix timestamp)
-itemCount - Number
+
+Attributes:
+  - title: String
+  - sourceImageKey: String (S3 key, first image)
+  - imageKeys: List<String> (all image S3 keys for multi-page sets)
+  - targetLanguage: String (e.g. "fr", "es", "en")
+  - extractionStatus: String ("pending" | "processing" | "review" | "approved" | "failed")
+  - extractionMethod: String ("textract" | "bedrock_from_text")
+  - metadata: Map
+    └─ chapter: String
+    └─ pageNumber: Number
+    └─ topic: String
+    └─ notes: String
+    └─ tags: List<String>
+  - createdAt: Number
+  - updatedAt: Number
+  - itemCount: Number
+
+GSI: userId-createdAt-index
+  Partition Key: userId
+  Sort Key: createdAt (Number)
+  Projection: ALL
 ```
 
-#### VocabItems Table
+#### Table 3: VocabItems
 
-**Table Name:** `vocabtrainer-vocabitems-prod`
+**Table Name:** `vocabtrainer-vocabitems-{stage}`
 
-**Configuration:**
-- Partition Key: `vocabSetId` (String)
-- Sort Key: `itemId` (String) - UUID
-- Billing Mode: On-demand
-
-**Attributes:**
 ```
 vocabSetId (PK) - String
 itemId (SK) - String (UUID)
-german - String
-french - String
-notes - String (optional)
-order - Number (for display ordering)
-createdAt - Number
+
+Attributes:
+  - source: String (German word/phrase)
+  - target: String (target language word/phrase)
+  - notes: String (optional)
+  - order: Number (display ordering)
+  - confidence: Number (0-100, extraction confidence)
+  - imageKey: String (S3 key of the source image for this item)
+  - createdAt: Number
+  - updatedAt: Number
+  - isActive: Boolean (soft delete)
 ```
 
-#### PracticeSessions Table
+**Note:** Fields are `source` and `target`, not `german` and `french`. The target language is determined by the parent VocabSet's `targetLanguage` field.
 
-**Table Name:** `vocabtrainer-sessions-prod`
+#### Table 4: PracticeSessions
 
-**Configuration:**
-- Partition Key: `userId` (String)
-- Sort Key: `sessionId` (String) - ISO timestamp + random suffix
-- Billing Mode: On-demand
-- TTL: `expiresAt` attribute (delete after 90 days)
+**Table Name:** `vocabtrainer-sessions-{stage}`
 
-**Attributes:**
 ```
 userId (PK) - String
-sessionId (SK) - String
-vocabSetId - String
-direction - String ("de-fr" | "fr-de")
-totalQuestions - Number
-correctAnswers - Number
-duration - Number (seconds)
-detailedResults - List of Maps
-  [
-    {
-      itemId: String,
-      question: String,
-      correctAnswer: String,
-      userAnswer: String,
-      correct: Boolean,
-      timeSpent: Number
-    }
-  ]
-completedAt - Number (Unix timestamp)
-expiresAt - Number (Unix timestamp, for TTL)
+sessionId (SK) - String (UUID)
+
+Attributes:
+  - vocabSetId: String
+  - direction: String ("de-fr" | "fr-de" | "source-target" | "target-source")
+  - totalQuestions: Number
+  - correctAnswers: Number
+  - score: Number (percentage)
+  - duration: Number (seconds)
+  - status: String ("active" | "completed")
+  - startedAt: Number
+  - completedAt: Number
+  - questions: List<Map> (full question data with answers)
+  - detailedResults: List<Map>
+    [
+      {
+        questionId: String,
+        itemId: String,
+        question: String,
+        correctAnswer: String,
+        userAnswer: String,
+        correct: Boolean,
+        answeredAt: Number
+      }
+    ]
+  - expiresAt: Number (TTL, 90 days after creation)
+
+GSI: vocabSetId-completedAt-index
+  Partition Key: vocabSetId
+  Sort Key: completedAt (Number)
+  Projection: ALL
+
+TTL: expiresAt
 ```
 
-#### Progress Table
+#### Table 5: Progress
 
-**Table Name:** `vocabtrainer-progress-prod`
+**Table Name:** `vocabtrainer-progress-{stage}`
 
-**Configuration:**
-- Partition Key: `progressKey` (String) - Format: `{userId}#{vocabSetId}`
-- Sort Key: `itemId` (String)
-- Billing Mode: On-demand
-
-**Attributes:**
 ```
-progressKey (PK) - String
+progressKey (PK) - String (format: "{userId}#{vocabSetId}")
 itemId (SK) - String
-correctCount - Number
-incorrectCount - Number
-lastPracticedAt - Number (Unix timestamp)
-masteryLevel - Number (0-5, calculated field)
-consecutiveCorrect - Number (for spaced repetition future feature)
+
+Attributes:
+  - userId: String
+  - vocabSetId: String
+  - correctCount: Number
+  - incorrectCount: Number
+  - lastPracticedAt: Number
+  - masteryLevel: Number (0-5, calculated)
+  - consecutiveCorrect: Number
+  - recentErrors: List<Map> (last 5 wrong answers for error pattern detection)
+    [
+      {
+        answer: String,
+        timestamp: Number
+      }
+    ]
 ```
+
+**recentErrors:** Trimmed to the last 5 entries. Used by `_analyze_error_patterns` in the practice handler to detect article/gender errors and repeated mistakes on the same words.
+
+#### Table 6: Leagues
+
+**Table Name:** `vocabtrainer-leagues-{stage}`
+
+```
+leagueId (PK) - String (UUID)
+
+Attributes:
+  - name: String (e.g. "Klasse 9b Französisch")
+  - teacherUserId: String (Cognito sub of the creating teacher)
+  - joinCode: String (6-char alphanumeric, e.g. "ABC123")
+  - scoreMode: String ("total" | "weekly" | "accuracy" | "combined")
+  - vocabSetIds: List<String> (assigned vocab sets)
+  - createdAt: Number
+  - updatedAt: Number
+
+GSI: joinCode-index
+  Partition Key: joinCode
+  Projection: ALL
+```
+
+#### Table 7: LeagueMembers
+
+**Table Name:** `vocabtrainer-league-members-{stage}`
+
+```
+leagueId (PK) - String
+userId (SK) - String
+
+Attributes:
+  - displayName: String
+  - role: String ("student")
+  - currentStreak: Number
+  - totalCorrect: Number
+  - totalAttempts: Number
+  - weeklyCorrect: Number
+  - weekStartDate: String (ISO date)
+  - lastPracticeDate: String
+  - joinedAt: Number
+```
+
+**Note:** The teacher is NOT a member of LeagueMembers. The teacher is identified via `Leagues.teacherUserId` and is filtered from leaderboard results.
 
 ### 4. Amazon API Gateway
 
-**API Name:** `vocabtrainer-api-prod`
+**API Name:** `vocabtrainer-api-{stage}`
 
 **Type:** REST API
 
 **Configuration:**
-- Endpoint Type: Regional (CloudFront will handle edge caching)
-- Authorization: Cognito User Pool Authorizer
-- Binary Media Types: `image/jpeg`, `image/png`, `image/heic`
-- CORS: Enabled for all origins during development, restricted in production
-
-**Authorizer Configuration:**
-- Name: `CognitoAuthorizer`
-- Type: Cognito User Pools
-- User Pool: `vocabtrainer-users-prod`
-- Token Source: `Authorization` header
-- Token Validation: Automatic via Cognito
-
-**Stages:**
-- `prod` - Production deployment
-- `dev` - Development/testing deployment
+- Endpoint Type: Regional
+- Authorization: Cognito User Pool Authorizer (default for all endpoints)
+- CORS: Allow GET, POST, PUT, DELETE, OPTIONS; Content-Type + Authorization headers; all origins
 
 **API Resources & Methods:**
 
 ```
-/vocab
-  POST - upload (generate presigned URL)
-  GET - list (get all vocab sets for user)
-  
-  /process
-    POST - trigger extraction
-  
-  /extraction/{vocabSetId}
-    GET - get extraction results
-  
-  /{vocabSetId}
-    GET - get specific vocab set details
-    PUT - update/approve vocab set
-    DELETE - delete vocab set
+POST   /vocab/upload                          → upload_handler
+POST   /vocab/process                         → extraction_handler
+GET    /vocab/extraction/{vocabSetId}         → extraction_handler
+GET    /vocab                                 → vocab_crud_handler
+GET    /vocab/{vocabSetId}                    → vocab_crud_handler
+PUT    /vocab/{vocabSetId}                    → vocab_crud_handler
+DELETE /vocab/{vocabSetId}                    → vocab_crud_handler
 
-/practice
-  /start
-    POST - start practice session
-  
-  /submit
-    POST - submit answer for current question
-  
-  /complete
-    POST - complete session and save results
+POST   /practice/start                        → practice_handler
+POST   /practice/submit                       → practice_handler
+POST   /practice/complete                     → practice_handler
 
-/progress
-  /overview
-    GET - get overall user progress
-  
-  /{vocabSetId}
-    GET - get progress for specific vocab set
+GET    /progress/overview                     → progress_handler
+GET    /progress/{vocabSetId}                 → progress_handler
+
+POST   /league                                → league_handler (create)
+POST   /league/join                           → league_handler (join)
+GET    /league/{leagueId}                     → league_handler (get)
+PUT    /league/{leagueId}                     → league_handler (update)
+DELETE /league/{leagueId}                     → league_handler (delete)
+GET    /league/{leagueId}/leaderboard         → league_handler
+GET    /league/{leagueId}/members             → league_handler
+DELETE /league/{leagueId}/members/{memberId}  → league_handler (remove)
+PUT    /users/profile                         → league_handler (update displayName)
+
+POST   /invite                                → invite_handler (create)
+GET    /invite/{token}                        → invite_handler (validate, no auth)
 ```
 
-**Request/Response Models:**
+### 5. AWS Lambda Functions (7 functions + SharedLayer)
+
+#### General Configuration
+
+**Runtime:** Python 3.11
+**Architecture:** arm64 (Graviton2)
+**Default Memory:** 512 MB
+**Default Timeout:** 30 seconds
+
+**Environment Variables (all functions via Globals):**
+```
+ENVIRONMENT={stage}
+USERS_TABLE=vocabtrainer-users-{stage}
+VOCABSETS_TABLE=vocabtrainer-vocabsets-{stage}
+VOCABITEMS_TABLE=vocabtrainer-vocabitems-{stage}
+SESSIONS_TABLE=vocabtrainer-sessions-{stage}
+PROGRESS_TABLE=vocabtrainer-progress-{stage}
+IMAGES_BUCKET=vocabtrainer-images-{stage}-{accountId}
+LEAGUES_TABLE=vocabtrainer-leagues-{stage}
+LEAGUE_MEMBERS_TABLE=vocabtrainer-league-members-{stage}
+REGION={AWS::Region}
+```
+
+**SharedLayer:**
+- Layer Name: `vocabtrainer-shared-{stage}`
+- Contains shared Python modules under `python/lib/`:
+  - `utils.py` — build_response, build_error_response, get_user_id_from_event, generate_uuid, get_timestamp, parse_body, get_path_parameter
+  - `validation.py` — validate_uuid, validate_file_upload, validate_practice_options
+  - `languages.py` — get_language, DEFAULT_TARGET_LANGUAGE, language config (name, nameEnglish per code)
+  - `auth.py` — auth utilities
+- Compatible with python3.11 and arm64
+
+#### Function 1: upload_handler
+
+**Function Name:** `vocabtrainer-upload-handler-{stage}`
+**Trigger:** POST /vocab/upload
+
+**Purpose:** Generate S3 presigned PUT URL for direct client upload and create/update VocabSet record.
+
+**Logic:**
+1. Extract userId from Cognito JWT claims
+2. If `vocabSetId` provided in body, verify ownership and append image; otherwise generate new vocabSetId
+3. Construct S3 key: `images/{userId}/{vocabSetId}/{timestamp}-original.{ext}`
+4. Generate presigned PUT URL (5-minute expiration)
+5. Create initial VocabSet record with `imageKeys` list and status "pending", or append to existing `imageKeys`
+6. Return presigned URL, vocabSetId, imageKey
+
+**IAM Permissions:**
+- S3: PutObject, GetObject, DeleteObject on images bucket
+- DynamoDB: CRUD on VocabSets table
+
+#### Function 2: extraction_handler
+
+**Function Name:** `vocabtrainer-extraction-handler-{stage}`
+**Memory:** 1024 MB
+**Timeout:** 300 seconds (5 minutes)
+**Trigger:** POST /vocab/process, GET /vocab/extraction/{vocabSetId}
+
+**Purpose:** Two-stage vocabulary extraction pipeline: Textract OCR → Bedrock LLM extraction.
+
+**Extraction Pipeline:**
+
+1. **Stage 1 — Textract OCR:**
+   - Call `textract.analyze_document` with `FeatureTypes=['TABLES']`
+   - Parse response via `TextractParser` class to extract table-based vocabulary pairs and raw OCR text (all LINE blocks)
+   - Returns `(vocab_pairs, confidence, raw_text)`
+
+2. **Stage 2 — Bedrock LLM Extraction:**
+   - Always prefer Bedrock extraction from raw text when raw text has >50 chars
+   - Call `extract_with_bedrock_from_text(raw_text, target_language)` using Amazon Nova Pro (`eu.amazon.nova-pro-v1:0`) via the Converse API
+   - The LLM prompt instructs extraction of source/target vocabulary pairs from the raw OCR text, handling free-text layouts, lautschrift, OCR artifacts, etc.
+   - If Bedrock returns >= as many pairs as Textract table parsing, use Bedrock results (extraction_method = "bedrock_from_text")
+   - If extraction came from Textract table parsing, additionally verify/clean with `verify_with_bedrock()`
+
+3. **Store results:** Batch write VocabItems to DynamoDB. Update VocabSet status and itemCount (ADD for multi-page support).
+
+**Bedrock Configuration:**
+```python
+bedrock_client.converse(
+    modelId='eu.amazon.nova-pro-v1:0',
+    messages=[{'role': 'user', 'content': [{'text': prompt}]}],
+    inferenceConfig={'maxTokens': 4096}
+)
+```
+
+**IAM Permissions:**
+- S3: GetObject on images bucket
+- DynamoDB: CRUD on VocabSets, VocabItems
+- Textract: AnalyzeDocument, DetectDocumentText
+- Bedrock: InvokeModel on foundation-model/* and inference-profile/*
+
+**Note:** The OpenAI fallback code still exists in the codebase for legacy reasons but is not the primary path. Bedrock is the production extraction method.
+
+#### Function 3: vocab_crud_handler
+
+**Function Name:** `vocabtrainer-vocab-crud-handler-{stage}`
+**Trigger:** GET/PUT/DELETE /vocab, /vocab/{vocabSetId}
+
+**Purpose:** CRUD operations on vocabulary sets and items.
+
+**Operations:**
+- **GET /vocab:** Query GSI userId-createdAt-index, return all sets sorted by date
+- **GET /vocab/{vocabSetId}:** Get set metadata + query all VocabItems
+- **PUT /vocab/{vocabSetId}:** Update metadata, batch write updated items, update status
+- **DELETE /vocab/{vocabSetId}:** Delete VocabSet + all VocabItems + S3 images + progress records
+
+**IAM Permissions:**
+- DynamoDB: CRUD on VocabSets, VocabItems; Read on Progress
+- S3: CRUD on images bucket
+
+#### Function 4: practice_handler
+
+**Function Name:** `vocabtrainer-practice-handler-{stage}`
+**Trigger:** POST /practice/start, /practice/submit, /practice/complete
+
+**Purpose:** Manage practice sessions with smart repetition, answer validation, error pattern tracking, and league stat updates.
+
+**Key Features:**
+
+**Smart Repetition (`_prioritize_items`):**
+- On session start, fetches progress data for all items in the vocab set
+- Calculates priority score per item based on:
+  - Low mastery level → higher priority
+  - Recent errors (from `recentErrors` list) → boost by 1.5 per error (max 3)
+  - High error rate → boost by up to 2.0
+  - Never practiced → medium priority (5.0)
+  - High consecutive correct → penalty (-0.5 per streak, max 3)
+- Adds random factor (0–1.5) to avoid identical ordering
+- Sorts descending by priority: weakest words appear first
+
+**Error Pattern Tracking (`_update_item_progress`):**
+- On incorrect answer: appends `{answer, timestamp}` to `recentErrors` in Progress table
+- Trims `recentErrors` to last 5 entries
+- On correct answer: resets `consecutiveCorrect` counter is incremented (on error it resets to 0)
+- Recalculates `masteryLevel = min(5, int((correct / total) * 5))`
+
+**Error Pattern Analysis (`_analyze_error_patterns`):**
+- Called after session completion for wrong answers
+- Detects **article errors**: same word body but different article (e.g. "le maison" vs "la maison")
+- Detects **repeated mistakes**: items where `recentErrors` has ≥ 2 entries
+- Returns German-language summary text for the student
+
+**League Stats Update (`_update_league_stats`):**
+- After session completion, checks if user is in a league
+- Updates LeagueMembers stats: totalCorrect, totalAttempts, weeklyCorrect, currentStreak, lastPracticeDate
+
+**Answer Checking:**
+- Uses `answer_checker.py` module with fuzzy matching
+- Normalize: lowercase, trim, strip accents, remove punctuation
+- Levenshtein distance ≤ 2 for minor typos
+
+**IAM Permissions:**
+- DynamoDB: CRUD on VocabItems, PracticeSessions, Progress, LeagueMembers; Read on Users
+
+#### Function 5: progress_handler
+
+**Function Name:** `vocabtrainer-progress-handler-{stage}`
+**Trigger:** GET /progress/overview, GET /progress/{vocabSetId}
+
+**Purpose:** Calculate and return progress statistics.
+
+**Operations:**
+
+**GET /progress/overview:**
+- Query all VocabSets for user
+- Aggregate Progress records across all sets
+- Calculate: total words, practiced words, average mastery, total sessions, total time
+- Return recent sessions list
+
+**GET /progress/{vocabSetId}:**
+- Query Progress records by compositeKey (userId#vocabSetId)
+- Join with VocabItems for word details
+- Calculate per-word statistics: accuracy, mastery level, times practiced
+- Identify mastered vs in-progress vs not-practiced counts
+
+**IAM Permissions:**
+- DynamoDB: Read on Progress, PracticeSessions, VocabSets, VocabItems
+
+#### Function 6: league_handler
+
+**Function Name:** `vocabtrainer-league-handler-{stage}`
+**Trigger:** Multiple league and profile routes (see API Gateway section)
+
+**Purpose:** Manage leagues (Liga) — CRUD, join, leaderboard, members, remove, profile update.
+
+**Operations:**
+
+- **POST /league** — Teacher creates a league. Requires `cognito:groups` containing "teachers". Generates 6-char join code.
+- **POST /league/join** — Student joins a league by join code. Checks user not already in a league. Creates LeagueMembers record.
+- **GET /league/{leagueId}** — Get league details + caller's member stats. Requires membership or teacher.
+- **PUT /league/{leagueId}** — Teacher updates league (name, scoreMode, vocabSetIds). Teacher-only.
+- **DELETE /league/{leagueId}** — Teacher deletes league. Clears leagueId from all member Users. Batch deletes all LeagueMembers. Teacher-only.
+- **GET /league/{leagueId}/leaderboard** — Get ranked leaderboard. Teacher filtered out by `teacherUserId`. Scores calculated by `scoreMode` (total, weekly, accuracy, combined). Weekly stats auto-reset on new week (Berlin timezone).
+- **GET /league/{leagueId}/members** — Teacher gets all members with stats. Teacher-only.
+- **DELETE /league/{leagueId}/members/{memberId}** — Teacher removes a member. Clears leagueId from user. Teacher-only.
+- **PUT /users/profile** — Update user's displayName (also propagates to LeagueMembers).
+
+**Teacher Detection:**
+```python
+def _is_teacher(event):
+    claims = event.get('requestContext', {}).get('authorizer', {}).get('claims', {})
+    groups = claims.get('cognito:groups', '')
+    if isinstance(groups, str):
+        return 'teachers' in [g.strip() for g in groups.split(',')]
+    return False
+```
+
+**IAM Permissions:**
+- DynamoDB: CRUD on Leagues, LeagueMembers, Users; Read on VocabSets, Progress, PracticeSessions
+
+#### Function 7: invite_handler
+
+**Function Name:** `vocabtrainer-invite-handler-{stage}`
+**Trigger:** POST /invite, GET /invite/{token} (GET has no auth)
+
+**Purpose:** Create and validate invite tokens for controlled signup.
+
+### 6. Amazon Bedrock
+
+**Purpose:** Vocabulary extraction from raw OCR text (primary extraction method) and verification/cleaning of Textract table-parsed results.
+
+**Model:** Amazon Nova Pro (`eu.amazon.nova-pro-v1:0`)
+
+**API:** Converse API (`bedrock-runtime.converse`)
+
+**Usage in extraction pipeline:**
+1. `extract_with_bedrock_from_text()` — Takes raw OCR text from Textract, sends to Nova Pro with a detailed German-language prompt to extract source/target vocabulary pairs. Handles free-text layouts, lautschrift, OCR artifacts, compound translations.
+2. `verify_with_bedrock()` — Takes Textract table-parsed pairs and cleans them: removes non-vocabulary entries (headers, instructions), formats multiple meanings with semicolons, corrects OCR errors.
+
+**IAM Permission:**
+```yaml
+- Effect: Allow
+  Action:
+    - bedrock:InvokeModel
+  Resource:
+    - 'arn:aws:bedrock:*::foundation-model/*'
+    - !Sub 'arn:aws:bedrock:*:${AWS::AccountId}:inference-profile/*'
+```
+
+### 7. AWS Textract
+
+**Purpose:** OCR — extract raw text and table structures from workbook images.
+
+**API:** `analyze_document` with `FeatureTypes=['TABLES']`
+
+**Input:** S3 object reference (bucket + key)
+
+**Output used:**
+- LINE blocks → concatenated into raw text for Bedrock extraction
+- TABLE/CELL blocks → parsed by `TextractParser` for table-based vocabulary pairs with confidence scores
+
+**Role in pipeline:** Textract is the OCR stage only. The LLM (Bedrock) handles the intelligent extraction of vocabulary pairs from the raw text. This two-stage approach handles free-text layouts that don't use strict table structures.
+
+### 8. Amazon CloudFront
+
+**Distribution for frontend SPA.**
+
+**Origin:** S3 bucket via Origin Access Control (OAC), not OAI.
+
+**Configuration:**
+- Default root object: `index.html`
+- Viewer protocol: Redirect HTTP to HTTPS
+- Compress: Yes
+- Price class: PriceClass_100 (US, Canada, Europe)
+- Custom error responses: 403 → /index.html (200), 404 → /index.html (200) — for SPA routing
+
+### 9. CloudWatch Logging & Monitoring
+
+**Log Groups:**
+- `/aws/lambda/vocabtrainer-upload-handler-{stage}`
+- `/aws/lambda/vocabtrainer-extraction-handler-{stage}`
+- `/aws/lambda/vocabtrainer-vocab-crud-handler-{stage}`
+- `/aws/lambda/vocabtrainer-practice-handler-{stage}`
+- `/aws/lambda/vocabtrainer-progress-handler-{stage}`
+- `/aws/lambda/vocabtrainer-league-handler-{stage}`
+- `/aws/lambda/vocabtrainer-invite-handler-{stage}`
+
+**Retention:** 7 days (dev), 30 days (prod)
+
+**Structured Logging:** All handlers use Python `logging` with `json.dumps` for structured log events. Always use `default=str` for DynamoDB Decimal serialization.
+
+**Key Metrics:**
+- API latency (p50, p95, p99)
+- Lambda invocation count and error rate
+- DynamoDB consumed capacity
+- Textract and Bedrock API call counts (cost monitoring)
+- Extraction success rate (textract vs bedrock_from_text)
+
+**Alarms:**
+- Lambda errors > 5 in 5 minutes
+- API Gateway 5xx errors > 10 in 5 minutes
+- Textract/Bedrock throttling
+- Lambda duration > 80% of timeout
+
+## Infrastructure as Code
+
+### AWS SAM Template
+
+**Location:** `backend/template.yaml`
+
+**Project Structure:**
+```
+backend/
+├── template.yaml
+├── samconfig.toml
+├── functions/
+│   ├── upload_handler/
+│   │   ├── app.py
+│   │   └── requirements.txt
+│   ├── extraction_handler/
+│   │   ├── app.py
+│   │   ├── textract_parser.py
+│   │   └── requirements.txt
+│   ├── vocab_crud_handler/
+│   │   ├── app.py
+│   │   └── requirements.txt
+│   ├── practice_handler/
+│   │   ├── app.py
+│   │   ├── answer_checker.py
+│   │   └── requirements.txt
+│   ├── progress_handler/
+│   │   ├── app.py
+│   │   └── requirements.txt
+│   ├── league_handler/
+│   │   ├── app.py
+│   │   └── requirements.txt
+│   └── invite_handler/
+│       ├── app.py
+│       └── requirements.txt
+├── layers/
+│   └── shared/
+│       └── python/
+│           └── lib/
+│               ├── __init__.py
+│               ├── utils.py
+│               ├── validation.py
+│               ├── languages.py
+│               └── auth.py
+└── tests/
+```
+
+**Deployment:**
+```bash
+cd backend
+sam build
+sam deploy --config-env default   # dev
+sam deploy --config-env prod      # prod
+```
+
+**samconfig.toml:**
+- Default region: eu-central-1
+- Dev stack: vocabtrainer-dev
+- Prod stack: vocabtrainer-prod
+- Capabilities: CAPABILITY_IAM CAPABILITY_AUTO_EXPAND
+
+## Security Implementation
+
+### IAM Roles and Policies
+
+Each Lambda function has its own execution role with minimal permissions via SAM policy templates:
+- `S3CrudPolicy` / `S3ReadPolicy` for images bucket
+- `DynamoDBCrudPolicy` / `DynamoDBReadPolicy` per table
+- Explicit statements for Textract and Bedrock
+
+### Encryption
+
+- **At rest:** DynamoDB encrypted with AWS managed keys; S3 with SSE-S3
+- **In transit:** HTTPS only (CloudFront + API Gateway); TLS 1.2 minimum
+
+### Input Validation
+
+- Shared `validation.py` module validates UUIDs, file uploads (type, size), practice options
+- Each handler validates ownership (userId from JWT matches DynamoDB record)
+- File upload: JPG, PNG, HEIC only; max 10 MB
+
+### DynamoDB Decimal Handling
+
+DynamoDB returns numbers as `Decimal` type in Python. Always use `json.dumps(data, default=str)` to serialize responses. This is enforced across all handlers.
+
+## Performance Optimization
+
+### Lambda
+
+- arm64 architecture for faster cold starts and better price/performance
+- Global-scope AWS client initialization for connection reuse across invocations
+- SharedLayer for common dependencies to reduce per-function package size
+
+### DynamoDB
+
+- On-demand billing for unpredictable traffic
+- GSIs for user-based lookups (userId-createdAt-index, joinCode-index, vocabSetId-completedAt-index)
+- Composite keys for Progress table to enable efficient per-user-per-set queries
+- TTL on PracticeSessions (90 days)
+
+### Extraction
+
+- Two-stage pipeline avoids expensive retries: Textract handles OCR reliably, Bedrock handles intelligent extraction
+- Bedrock extraction preferred when raw text available (handles free-text layouts better than Textract table parsing)
+- Multi-page support: ADD for itemCount to accumulate across multiple image extractions
+
+## Request/Response Models
+
+### Upload
 
 ```json
-// POST /vocab - Upload Request
+// POST /vocab/upload - Request
 {
-  "fileName": "string",
-  "contentType": "string"
+  "fileName": "workbook_page.jpg",
+  "contentType": "image/jpeg",
+  "vocabSetId": "uuid"  // optional - adds to existing set
 }
 
 // Response
 {
   "vocabSetId": "uuid",
   "uploadUrl": "presigned-s3-url",
+  "imageKey": "images/{userId}/{vocabSetId}/{timestamp}-original.jpg",
   "expiresIn": 300
 }
+```
 
-// POST /vocab/process - Extraction Request
+### Extraction
+
+```json
+// POST /vocab/process - Request
 {
   "vocabSetId": "uuid",
-  "imageKey": "s3-object-key"
+  "imageKey": "s3-key"  // optional, fetched from DB if missing
 }
 
 // Response
 {
   "vocabSetId": "uuid",
-  "status": "processing"
+  "status": "review",
+  "itemCount": 24,
+  "extractionMethod": "bedrock_from_text"
 }
 
-// GET /vocab/extraction/{vocabSetId} - Extraction Results
+// GET /vocab/extraction/{vocabSetId} - Response
 {
   "vocabSetId": "uuid",
   "status": "review",
+  "itemCount": 24,
   "items": [
     {
       "itemId": "uuid",
-      "german": "das Haus",
-      "french": "la maison",
-      "confidence": 0.95
+      "source": "das Haus",
+      "target": "la maison",
+      "notes": "",
+      "confidence": 90,
+      "order": 1
     }
   ]
 }
+```
 
-// PUT /vocab/{vocabSetId} - Update Vocab Set
-{
-  "title": "Chapter 3: At Home",
-  "metadata": {
-    "chapter": "3",
-    "pageNumber": 42,
-    "topic": "Household"
-  },
-  "items": [
-    {
-      "itemId": "uuid",
-      "german": "das Haus",
-      "french": "la maison"
-    }
-  ]
-}
+### Practice
 
-// POST /practice/start
+```json
+// POST /practice/start - Request
 {
   "vocabSetId": "uuid",
   "direction": "de-fr",
@@ -397,627 +829,70 @@ consecutiveCorrect - Number (for spaced repetition future feature)
 
 // Response
 {
-  "sessionId": "string",
+  "sessionId": "uuid",
+  "vocabSetId": "uuid",
+  "direction": "de-fr",
+  "totalQuestions": 20,
   "questions": [
     {
-      "questionId": "string",
+      "questionId": "uuid",
       "itemId": "uuid",
       "question": "das Haus",
+      "correctAnswer": "la maison",
       "questionNumber": 1,
       "totalQuestions": 20
     }
   ]
 }
 
-// POST /practice/submit
+// POST /practice/complete - Response (includes error patterns)
 {
-  "sessionId": "string",
-  "questionId": "string",
-  "answer": "la maison"
-}
-
-// Response
-{
-  "correct": true,
-  "correctAnswer": "la maison",
-  "nextQuestion": {
-    "questionId": "string",
-    "itemId": "uuid",
-    "question": "die Schule",
-    "questionNumber": 2,
-    "totalQuestions": 20
+  "sessionId": "uuid",
+  "score": 85,
+  "correct": 17,
+  "total": 20,
+  "duration": 245,
+  "detailedResults": [...],
+  "leagueUpdate": { ... },
+  "errorPatterns": {
+    "articleErrors": [
+      {"word": "la maison", "yourArticle": "le", "correctArticle": "la"}
+    ],
+    "repeatedErrors": [
+      {"word": "l'école", "timesWrong": 4, "lastAnswers": ["le ecole", "lecole", "l'ecole"]}
+    ],
+    "summary": "Artikel-Fehler bei 1 Wort — achte auf das grammatische Geschlecht! 1 Wörter bereiten dir wiederholt Schwierigkeiten: l'école"
   }
 }
 ```
 
-### 5. AWS Lambda Functions
+### League
 
-#### General Lambda Configuration
-
-**Runtime:** Python 3.11
-
-**Architecture:** arm64 (Graviton2 for cost savings)
-
-**Memory Allocation:**
-- upload_handler: 256 MB
-- extraction_handler: 1024 MB (for Textract processing)
-- vocab_crud_handler: 512 MB
-- practice_handler: 512 MB
-- progress_handler: 512 MB
-
-**Timeout:**
-- upload_handler: 10 seconds
-- extraction_handler: 60 seconds
-- vocab_crud_handler: 30 seconds
-- practice_handler: 30 seconds
-- progress_handler: 30 seconds
-
-**Environment Variables (all functions):**
-```
-USERS_TABLE=vocabtrainer-users-prod
-VOCABSETS_TABLE=vocabtrainer-vocabsets-prod
-VOCABITEMS_TABLE=vocabtrainer-vocabitems-prod
-SESSIONS_TABLE=vocabtrainer-sessions-prod
-PROGRESS_TABLE=vocabtrainer-progress-prod
-IMAGES_BUCKET=vocabtrainer-images-prod
-OPENAI_API_KEY=<stored-in-secrets-manager>
-REGION=us-east-1
-```
-
-**IAM Role Permissions (shared execution role):**
 ```json
+// POST /league - Request (teacher only)
 {
-  "Version": "2012-10-17",
-  "Statement": [
+  "name": "Klasse 9b Französisch",
+  "scoreMode": "weekly"
+}
+
+// POST /league/join - Request
+{
+  "joinCode": "ABC123"
+}
+
+// GET /league/{leagueId}/leaderboard - Response
+{
+  "leagueId": "uuid",
+  "scoreMode": "weekly",
+  "leaderboard": [
     {
-      "Effect": "Allow",
-      "Action": [
-        "dynamodb:GetItem",
-        "dynamodb:PutItem",
-        "dynamodb:UpdateItem",
-        "dynamodb:DeleteItem",
-        "dynamodb:Query",
-        "dynamodb:Scan",
-        "dynamodb:BatchGetItem",
-        "dynamodb:BatchWriteItem"
-      ],
-      "Resource": [
-        "arn:aws:dynamodb:*:*:table/vocabtrainer-*"
-      ]
-    },
-    {
-      "Effect": "Allow",
-      "Action": [
-        "s3:GetObject",
-        "s3:PutObject",
-        "s3:DeleteObject"
-      ],
-      "Resource": [
-        "arn:aws:s3:::vocabtrainer-images-prod/*"
-      ]
-    },
-    {
-      "Effect": "Allow",
-      "Action": [
-        "textract:AnalyzeDocument",
-        "textract:DetectDocumentText"
-      ],
-      "Resource": "*"
-    },
-    {
-      "Effect": "Allow",
-      "Action": [
-        "secretsmanager:GetSecretValue"
-      ],
-      "Resource": [
-        "arn:aws:secretsmanager:*:*:secret:vocabtrainer/*"
-      ]
-    },
-    {
-      "Effect": "Allow",
-      "Action": [
-        "logs:CreateLogGroup",
-        "logs:CreateLogStream",
-        "logs:PutLogEvents"
-      ],
-      "Resource": "arn:aws:logs:*:*:*"
+      "userId": "...",
+      "displayName": "Max M.",
+      "score": 42,
+      "currentStreak": 5,
+      "role": "student",
+      "rank": 1
     }
   ]
 }
 ```
-
-#### Function: upload_handler
-
-**Trigger:** API Gateway POST /vocab
-
-**Purpose:** Generate S3 presigned URL for direct client upload
-
-**Handler:** `upload_handler.lambda_handler`
-
-**Logic:**
-1. Extract userId from Cognito JWT claims
-2. Generate unique vocabSetId (UUID4)
-3. Construct S3 key: `{userId}/uploads/{vocabSetId}/original.jpg`
-4. Generate presigned POST URL with 5-minute expiration
-5. Create initial record in VocabSets table with status "pending"
-6. Return presigned URL and vocabSetId to client
-
-**Dependencies:**
-- boto3 (AWS SDK)
-- uuid (standard library)
-
-**Error Handling:**
-- Invalid userId → 401 Unauthorized
-- S3 bucket access error → 500 Internal Server Error
-- DynamoDB write failure → 500 Internal Server Error
-
-#### Function: extraction_handler
-
-**Trigger:** API Gateway POST /vocab/process
-
-**Purpose:** Extract vocabulary from uploaded image using AWS Textract
-
-**Handler:** `extraction_handler.lambda_handler`
-
-**Logic:**
-1. Validate vocabSetId ownership (userId from JWT matches DynamoDB record)
-2. Update VocabSets status to "processing"
-3. Call AWS Textract `analyze_document` with TABLES feature
-4. Parse Textract response:
-   - Identify table structures
-   - Extract cells and organize into rows
-   - Detect German-French column pairs (heuristics: left=German, right=French)
-   - Handle merged cells and annotations
-5. If Textract confidence < 0.7 for table detection, fallback to OpenAI Vision API:
-   - Send image to GPT-4 Vision
-   - Prompt: "Extract vocabulary table from this German school workbook. Return JSON array of {german, french} pairs."
-   - Parse JSON response
-6. Create VocabItems records in DynamoDB
-7. Update VocabSets status to "review", set itemCount
-8. Return extracted items with confidence scores
-
-**Dependencies:**
-- boto3 (Textract, S3, DynamoDB)
-- openai (Python SDK)
-- json (standard library)
-
-**Textract API Call:**
-```python
-response = textract.analyze_document(
-    Document={'S3Object': {'Bucket': bucket, 'Name': key}},
-    FeatureTypes=['TABLES']
-)
-```
-
-**OpenAI Fallback Prompt:**
-```
-You are analyzing a page from a German school workbook for learning French vocabulary.
-
-Extract all vocabulary pairs from any tables or lists on this page. The format is typically:
-- Left column: German word/phrase
-- Right column: French translation
-
-Return a JSON array with this exact structure:
-[
-  {"german": "das Haus", "french": "la maison"},
-  {"german": "die Schule", "french": "l'école"}
-]
-
-Rules:
-1. Preserve accents and special characters exactly
-2. Ignore headers, page numbers, and instructions
-3. Ignore handwritten annotations unless they're clearly vocabulary additions
-4. If unclear which column is German vs French, use context (German articles: der/die/das)
-5. Return only the JSON array, no additional text
-```
-
-**Error Handling:**
-- Image not found in S3 → 404 Not Found
-- Textract service error → Retry once, then fallback to OpenAI
-- OpenAI API error → 500 with error details
-- Parsing errors → Return partial results with warning flag
-
-#### Function: vocab_crud_handler
-
-**Trigger:** API Gateway GET/PUT/DELETE /vocab/{vocabSetId}
-
-**Purpose:** CRUD operations on vocabulary sets
-
-**Handler:** `vocab_crud_handler.lambda_handler`
-
-**Operations:**
-
-**GET /vocab (list all):**
-1. Query VocabSets GSI `userId-createdAt-index` with userId from JWT
-2. Sort by createdAt descending
-3. Return array of vocab sets with metadata
-
-**GET /vocab/{vocabSetId}:**
-1. Validate ownership
-2. Get VocabSets record
-3. Query VocabItems by vocabSetId, sort by order
-4. Return combined data
-
-**PUT /vocab/{vocabSetId}:**
-1. Validate ownership
-2. Update VocabSets metadata (title, chapter, etc.)
-3. Batch write updated VocabItems
-4. Update status to "approved"
-5. Recalculate itemCount
-
-**DELETE /vocab/{vocabSetId}:**
-1. Validate ownership
-2. Delete VocabSets record
-3. Query and batch delete all VocabItems
-4. Delete associated image from S3
-5. Delete associated progress records
-
-**Dependencies:**
-- boto3 (DynamoDB, S3)
-
-**Error Handling:**
-- Unauthorized access → 403 Forbidden
-- Resource not found → 404 Not Found
-- Validation errors → 400 Bad Request
-
-#### Function: practice_handler
-
-**Trigger:** API Gateway POST /practice/start, /practice/submit, /practice/complete
-
-**Purpose:** Manage practice sessions and answer validation
-
-**Handler:** `practice_handler.lambda_handler`
-
-**Operations:**
-
-**POST /practice/start:**
-1. Validate vocabSetId ownership
-2. Query VocabItems for the set
-3. Shuffle items
-4. Limit to requested questionCount (default 20)
-5. Create session record in DynamoDB with status "active"
-6. Return first question
-
-**POST /practice/submit:**
-1. Validate sessionId ownership
-2. Retrieve correct answer from VocabItems
-3. Normalize both answers (lowercase, strip accents for comparison)
-4. Check correctness with fuzzy matching (Levenshtein distance ≤ 2)
-5. Update session's detailedResults array
-6. Update Progress table (increment correct/incorrect counts)
-7. Return feedback and next question
-
-**POST /practice/complete:**
-1. Validate sessionId ownership
-2. Calculate final score
-3. Update session record with completedAt timestamp
-4. Update Progress masteryLevel for each item (algorithm: `min(5, correctCount / (correctCount + incorrectCount) * 5)`)
-5. Return session summary with statistics
-
-**Answer Normalization Logic:**
-```python
-def normalize(text):
-    # Remove leading/trailing whitespace
-    text = text.strip().lower()
-    # Remove accents for fuzzy matching
-    import unicodedata
-    text = ''.join(c for c in unicodedata.normalize('NFD', text) 
-                   if unicodedata.category(c) != 'Mn')
-    # Remove common punctuation
-    text = text.replace('.', '').replace(',', '').replace('!', '').replace('?', '')
-    return text
-
-def is_correct(user_answer, correct_answer):
-    norm_user = normalize(user_answer)
-    norm_correct = normalize(correct_answer)
-    
-    # Exact match
-    if norm_user == norm_correct:
-        return True
-    
-    # Fuzzy match (Levenshtein distance ≤ 2)
-    from Levenshtein import distance
-    if distance(norm_user, norm_correct) <= 2:
-        return True
-    
-    return False
-```
-
-**Dependencies:**
-- boto3 (DynamoDB)
-- python-Levenshtein (fuzzy matching)
-- uuid, random (standard library)
-
-**Error Handling:**
-- Invalid session → 404 Not Found
-- Session already completed → 400 Bad Request
-- Missing required fields → 400 Bad Request
-
-#### Function: progress_handler
-
-**Trigger:** API Gateway GET /progress/overview, /progress/{vocabSetId}
-
-**Purpose:** Calculate and return progress statistics
-
-**Handler:** `progress_handler.lambda_handler`
-
-**Operations:**
-
-**GET /progress/overview:**
-1. Query all VocabSets for user
-2. For each set, aggregate Progress records
-3. Calculate:
-   - Total words across all sets
-   - Total practiced words (progress records exist)
-   - Average mastery level
-   - Total practice sessions (query Sessions table)
-   - Total time spent
-4. Return summary object
-
-**GET /progress/{vocabSetId}:**
-1. Validate ownership
-2. Query Progress records for vocabSetId
-3. Join with VocabItems to get word details
-4. Calculate per-word statistics:
-   - Accuracy percentage
-   - Times practiced
-   - Last practiced date
-   - Mastery level
-5. Return detailed progress array
-
-**Response Format:**
-```json
-// Overview
-{
-  "totalVocabSets": 5,
-  "totalWords": 247,
-  "practicedWords": 183,
-  "averageMastery": 3.2,
-  "totalSessions": 42,
-  "totalTimeMinutes": 380,
-  "recentSessions": [
-    {
-      "sessionId": "...",
-      "vocabSetTitle": "Chapter 3",
-      "score": "18/20",
-      "completedAt": 1703012345
-    }
-  ]
-}
-
-// Vocab Set Detail
-{
-  "vocabSetId": "...",
-  "title": "Chapter 3",
-  "progress": [
-    {
-      "itemId": "...",
-      "german": "das Haus",
-      "french": "la maison",
-      "correctCount": 12,
-      "incorrectCount": 3,
-      "accuracy": 0.8,
-      "masteryLevel": 4,
-      "lastPracticedAt": 1703012345
-    }
-  ],
-  "overallAccuracy": 0.82,
-  "masteredCount": 15,
-  "inProgressCount": 8,
-  "notPracticedCount": 2
-}
-```
-
-**Dependencies:**
-- boto3 (DynamoDB)
-
-**Error Handling:**
-- Invalid vocabSetId → 404 Not Found
-- No progress data → Return empty progress with metadata
-
-### 6. Amazon CloudFront
-
-**Distribution Name:** `vocabtrainer-cdn-prod`
-
-**Origin Configuration:**
-- Origin 1: S3 bucket `vocabtrainer-frontend-prod`
-  - Origin Access Identity: Create new OAI
-  - Protocol: HTTPS only
-- Origin 2: API Gateway `vocabtrainer-api-prod`
-  - Custom origin, HTTPS only
-  - Origin path: `/prod`
-
-**Behavior Configuration:**
-- Default behavior: Origin 1 (frontend)
-  - Viewer protocol: Redirect HTTP to HTTPS
-  - Allowed HTTP methods: GET, HEAD, OPTIONS
-  - Cache policy: CachingOptimized
-  - Compress objects: Yes
-- Path pattern `/api/*`: Origin 2 (API Gateway)
-  - Viewer protocol: HTTPS only
-  - Allowed HTTP methods: GET, HEAD, OPTIONS, PUT, POST, PATCH, DELETE
-  - Cache policy: CachingDisabled (all requests hit API)
-  - Origin request policy: Include all query strings, headers, cookies
-
-**Custom Error Responses:**
-- 403 Forbidden → Return /index.html (HTTP 200) for SPA routing
-- 404 Not Found → Return /index.html (HTTP 200) for SPA routing
-
-**SSL Certificate:**
-- ACM certificate for `vocabtrainer.yourdomain.com`
-- Must be in us-east-1 region for CloudFront
-
-**Security Headers (via Lambda@Edge or CloudFront Functions):**
-```
-Strict-Transport-Security: max-age=31536000; includeSubDomains
-X-Content-Type-Options: nosniff
-X-Frame-Options: DENY
-X-XSS-Protection: 1; mode=block
-Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'
-```
-
-### 7. AWS Textract
-
-**Usage:** Document analysis for vocabulary extraction
-
-**API Call:** `analyze_document` with `FeatureTypes=['TABLES']`
-
-**Input:** S3 object reference (bucket + key)
-
-**Output:** JSON structure containing:
-- Blocks (WORD, LINE, TABLE, CELL types)
-- Relationships between blocks
-- Confidence scores
-
-**Cost Optimization:**
-- Only process pages with tables (pre-check with `detect_document_text` first, cheaper)
-- Cache results in DynamoDB to avoid reprocessing
-- Set max document size limit (5 MB) to prevent abuse
-
-**Fallback Strategy:**
-If Textract fails or confidence < 70%:
-1. Log failure reason
-2. Call OpenAI Vision API with the same image
-3. Use structured prompt for JSON output
-4. Flag extraction as "AI-assisted" in metadata
-
-### 8. CloudWatch Logging & Monitoring
-
-**Log Groups:**
-- `/aws/lambda/vocabtrainer-upload-handler-prod`
-- `/aws/lambda/vocabtrainer-extraction-handler-prod`
-- `/aws/lambda/vocabtrainer-vocab-crud-handler-prod`
-- `/aws/lambda/vocabtrainer-practice-handler-prod`
-- `/aws/lambda/vocabtrainer-progress-handler-prod`
-- `/aws/apigateway/vocabtrainer-api-prod`
-
-**Retention:** 7 days (reduce costs, extend to 30 days for production)
-
-**Alarms:**
-- Lambda errors > 5 in 5 minutes
-- API Gateway 5xx errors > 10 in 5 minutes
-- Textract throttling errors
-- DynamoDB throttling (should not occur with on-demand)
-- Lambda duration > 80% of timeout
-
-**Metrics to Track:**
-- API latency (p50, p95, p99)
-- Lambda invocation count
-- DynamoDB read/write capacity units
-- S3 request count
-- Textract API call count (cost monitoring)
-- OpenAI API call count (cost monitoring)
-
-**Dashboard Widgets:**
-- API request rate over time
-- Lambda error rate
-- Extraction success rate (Textract vs OpenAI fallback ratio)
-- User registration trend
-- Active practice sessions
-
-## Infrastructure as Code
-
-### Recommended Approach: AWS SAM (Serverless Application Model)
-
-**Project Structure:**
-```
-vocabtrainer-backend/
-├── template.yaml (SAM template)
-├── samconfig.toml (deployment config)
-├── functions/
-│   ├── upload_handler/
-│   │   ├── app.py
-│   │   └── requirements.txt
-│   ├── extraction_handler/
-│   │   ├── app.py
-│   │   └── requirements.txt
-│   ├── vocab_crud_handler/
-│   │   ├── app.py
-│   │   └── requirements.txt
-│   ├── practice_handler/
-│   │   ├── app.py
-│   │   └── requirements.txt
-│   └── progress_handler/
-│       ├── app.py
-│       └── requirements.txt
-└── layers/
-    └── common/
-        └── python/
-            └── utils.py (shared utilities)
-```
-
-**SAM Template Highlights:**
-
-```yaml
-AWSTemplateFormatVersion: '2010-09-09'
-Transform: AWS::Serverless-2016-10-31
-
-Globals:
-  Function:
-    Runtime: python3.11
-    Architecture: arm64
-    Timeout: 30
-    MemorySize: 512
-    Environment:
-      Variables:
-        USERS_TABLE: !Ref UsersTable
-        VOCABSETS_TABLE: !Ref VocabSetsTable
-        VOCABITEMS_TABLE: !Ref VocabItemsTable
-        SESSIONS_TABLE: !Ref SessionsTable
-        PROGRESS_TABLE: !Ref ProgressTable
-        IMAGES_BUCKET: !Ref ImagesBucket
-        REGION: !Ref AWS::Region
-
-Parameters:
-  Environment:
-    Type: String
-    Default: prod
-    AllowedValues:
-      - dev
-      - prod
-  OpenAIApiKeySecretArn:
-    Type: String
-    Description: ARN of the Secrets Manager secret containing OpenAI API key
-
-Resources:
-  # Cognito User Pool
-  UserPool:
-    Type: AWS::Cognito::UserPool
-    Properties:
-      UserPoolName: !Sub vocabtrainer-users-${Environment}
-      AutoVerifiedAttributes:
-        - email
-      Schema:
-        - Name: email
-          Required: true
-          Mutable: false
-      Policies:
-        PasswordPolicy:
-          MinimumLength: 8
-          RequireUppercase: true
-          RequireLowercase: true
-          RequireNumbers: true
-          RequireSymbols: false
-
-  UserPoolClient:
-    Type: AWS::Cognito::UserPoolClient
-    Properties:
-      ClientName: !Sub vocabtrainer-web-client-${Environment}
-      UserPoolId: !Ref UserPool
-      GenerateSecret: false
-      AllowedOAuthFlows:
-        - code
-      AllowedOAuthScopes:
-        - openid
-        - email
-        - profile
-      CallbackURLs:
-        - !If [IsProd, 'https://vocabtrainer.yourdomain.com/callback', 'http://localhost:5173/callback']
-      LogoutURLs:
-        - !If [IsProd, 'https://vocabtrainer.yourdomain.com/', 'http://localhost:5173/']
-      SupportedIdentityProviders:
-        - COGNITO
-
-  UserPoolDomain:
-    Type: AWS::Cognito::UserPoolDomain
-    Properties
