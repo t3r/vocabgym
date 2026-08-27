@@ -156,6 +156,71 @@
           </button>
         </div>
 
+        <!-- Learning Goal for League -->
+        <div class="card mb-6">
+          <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-3">Lernziel für Liga</h3>
+          <p class="text-sm text-gray-500 dark:text-gray-400 mb-4">
+            Erstellen Sie ein Lernziel für Ihre Liga. Alle Teilnehmer sehen das Ziel und ihren Fortschritt.
+          </p>
+          <div class="space-y-4">
+            <div>
+              <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Titel</label>
+              <input
+                v-model="leagueGoalForm.title"
+                type="text"
+                placeholder="z.B. Vokabeltest Kapitel 3"
+                class="input w-full"
+              />
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Deadline</label>
+              <input
+                v-model="leagueGoalForm.deadline"
+                type="date"
+                :min="tomorrowDate"
+                class="input w-full"
+              />
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Ziel-Level</label>
+              <select v-model.number="leagueGoalForm.targetMastery" class="input w-full">
+                <option :value="3">3 — Grundkenntnisse</option>
+                <option :value="4">4 — Sicher</option>
+                <option :value="5">5 — Perfekt</option>
+              </select>
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Vokabelsets auswählen</label>
+              <div v-if="selectedVocabSetIds.length === 0" class="text-sm text-gray-500 dark:text-gray-400">
+                Bitte weisen Sie zuerst Vokabelsets zu.
+              </div>
+              <div v-else class="space-y-2 max-h-48 overflow-y-auto border border-gray-200 dark:border-gray-700 rounded-lg p-2">
+                <label
+                  v-for="set in assignedVocabSetsForGoal"
+                  :key="set.vocabSetId"
+                  class="flex items-center gap-3 p-1.5 rounded hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer"
+                >
+                  <input
+                    type="checkbox"
+                    :value="set.vocabSetId"
+                    v-model="leagueGoalForm.vocabSetIds"
+                    class="rounded border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500"
+                  />
+                  <span class="text-sm text-gray-900 dark:text-white">{{ set.title || 'Unbenanntes Set' }}</span>
+                  <span class="text-xs text-gray-500 dark:text-gray-400">({{ set.itemCount || 0 }} Wörter)</span>
+                </label>
+              </div>
+            </div>
+          </div>
+          <button
+            @click="createLeagueGoal"
+            class="btn-primary text-sm mt-4"
+            :disabled="creatingLeagueGoal || !leagueGoalForm.title.trim() || !leagueGoalForm.deadline || leagueGoalForm.vocabSetIds.length === 0"
+          >
+            {{ creatingLeagueGoal ? 'Erstellt...' : 'Lernziel erstellen' }}
+          </button>
+        </div>
+
         <!-- Invite Student -->
         <div class="card mb-6">
           <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-3">Schüler einladen</h3>
@@ -358,6 +423,26 @@ const inviting = ref(false)
 const inviteSuccess = ref('')
 const inviteError = ref('')
 
+// League goal state
+const leagueGoalForm = ref({
+  title: '',
+  deadline: '',
+  targetMastery: 4,
+  vocabSetIds: []
+})
+const creatingLeagueGoal = ref(false)
+
+const tomorrowDate = computed(() => {
+  const d = new Date()
+  d.setDate(d.getDate() + 1)
+  return d.toISOString().split('T')[0]
+})
+
+const assignedVocabSetsForGoal = computed(() => {
+  // Show only the sets that are currently assigned to the league
+  return leagueVocabSets.value
+})
+
 const currentUserId = computed(() => authStore.user?.sub || authStore.user?.userId || '')
 
 const ownEntry = computed(() => {
@@ -470,6 +555,27 @@ async function saveAssignedSets() {
     showToastError('Fehler beim Speichern der Zuweisungen')
   } finally {
     savingVocabSets.value = false
+  }
+}
+
+async function createLeagueGoal() {
+  const form = leagueGoalForm.value
+  if (!form.title.trim() || !form.deadline || form.vocabSetIds.length === 0) return
+  creatingLeagueGoal.value = true
+  try {
+    await api.post('/goals', {
+      title: form.title.trim(),
+      vocabSetIds: form.vocabSetIds,
+      deadline: form.deadline,
+      targetMastery: form.targetMastery,
+      leagueId: authStore.leagueId
+    })
+    showSuccess('Lernziel für Liga erstellt!')
+    leagueGoalForm.value = { title: '', deadline: '', targetMastery: 4, vocabSetIds: [] }
+  } catch (err) {
+    showToastError(err.response?.data?.error || 'Fehler beim Erstellen des Lernziels')
+  } finally {
+    creatingLeagueGoal.value = false
   }
 }
 

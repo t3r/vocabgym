@@ -27,6 +27,9 @@
       </div>
     </div>
 
+    <!-- Goal Banner -->
+    <GoalBanner />
+
     <!-- League Vocab Sets -->
     <div v-if="authStore.leagueId && leagueVocabSets.length" class="mb-8">
       <h2 class="text-xl font-semibold text-gray-900 dark:text-white mb-4">Liga-Vokabeln</h2>
@@ -132,6 +135,7 @@ import { useToast } from '@/composables/useToast'
 import api from '@/services/api'
 import VocabSetCard from '@/components/dashboard/VocabSetCard.vue'
 import StatsOverview from '@/components/dashboard/StatsOverview.vue'
+import GoalBanner from '@/components/dashboard/GoalBanner.vue'
 import LoadingSpinner from '@/components/common/LoadingSpinner.vue'
 
 const router = useRouter()

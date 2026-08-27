@@ -21,6 +21,9 @@
           <button @click="showAddPage = !showAddPage" class="btn-secondary">
             📄 Seite hinzufügen
           </button>
+          <button @click="showGoalModal = true" class="btn-secondary">
+            🎯 Lernziel
+          </button>
           <router-link
             :to="{ name: 'Review', params: { vocabSetId } }"
             class="btn-secondary"
@@ -153,6 +156,54 @@
       <p class="text-gray-600 dark:text-gray-300">Vokabelset nicht gefunden.</p>
       <router-link to="/dashboard" class="btn-primary mt-4">Zum Dashboard</router-link>
     </div>
+
+    <!-- Goal Modal -->
+    <div v-if="showGoalModal" class="fixed inset-0 bg-black/50 dark:bg-black/70 flex items-center justify-center z-50 p-4" @click.self="showGoalModal = false">
+      <div class="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full p-6">
+        <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">🎯 Lernziel erstellen</h3>
+        <p class="text-sm text-gray-500 dark:text-gray-400 mb-4">Das Vokabelset wird zum Lernziel hinzugefügt.</p>
+
+        <div class="space-y-4">
+          <div>
+            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Titel</label>
+            <input
+              v-model="goalForm.title"
+              type="text"
+              placeholder="z.B. Vokabeltest Kapitel 3"
+              class="input w-full"
+            />
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Deadline</label>
+            <input
+              v-model="goalForm.deadline"
+              type="date"
+              :min="tomorrowDate"
+              class="input w-full"
+            />
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Ziel-Level</label>
+            <select v-model.number="goalForm.targetMastery" class="input w-full">
+              <option :value="3">3 — Grundkenntnisse</option>
+              <option :value="4">4 — Sicher</option>
+              <option :value="5">5 — Perfekt</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="flex justify-end gap-3 mt-6">
+          <button @click="showGoalModal = false" class="btn-secondary">Abbrechen</button>
+          <button
+            @click="createGoal"
+            class="btn-primary"
+            :disabled="creatingGoal || !goalForm.title.trim() || !goalForm.deadline"
+          >
+            {{ creatingGoal ? 'Erstellt...' : 'Lernziel erstellen' }}
+          </button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -182,6 +233,21 @@ const selectionDirty = ref(false)
 const savingSelection = ref(false)
 const progressMap = ref({})
 const progressStats = ref({})
+
+// Goal modal state
+const showGoalModal = ref(false)
+const creatingGoal = ref(false)
+const goalForm = ref({
+  title: '',
+  deadline: '',
+  targetMastery: 4
+})
+
+const tomorrowDate = computed(() => {
+  const d = new Date()
+  d.setDate(d.getDate() + 1)
+  return d.toISOString().split('T')[0]
+})
 
 const activeCount = computed(() => items.value.filter(i => i.isActive).length)
 const allSelected = computed(() => items.value.length > 0 && items.value.every(i => i.isActive))
@@ -230,6 +296,26 @@ async function saveSelection() {
     showError('Fehler beim Speichern der Auswahl')
   } finally {
     savingSelection.value = false
+  }
+}
+
+async function createGoal() {
+  if (!goalForm.value.title.trim() || !goalForm.value.deadline) return
+  creatingGoal.value = true
+  try {
+    await api.post('/goals', {
+      title: goalForm.value.title.trim(),
+      vocabSetIds: [props.vocabSetId],
+      deadline: goalForm.value.deadline,
+      targetMastery: goalForm.value.targetMastery
+    })
+    showSuccess('Lernziel erstellt!')
+    showGoalModal.value = false
+    goalForm.value = { title: '', deadline: '', targetMastery: 4 }
+  } catch (err) {
+    showError(err.response?.data?.error || 'Fehler beim Erstellen des Lernziels')
+  } finally {
+    creatingGoal.value = false
   }
 }
 

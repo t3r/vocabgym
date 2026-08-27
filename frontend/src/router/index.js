@@ -62,6 +62,13 @@ const routes = [
     props: true
   },
   {
+    path: '/goals/:goalId',
+    name: 'GoalDetail',
+    component: () => import('@/views/GoalDetailView.vue'),
+    props: true,
+    meta: { requiresAuth: true, title: 'Lernziel' }
+  },
+  {
     path: '/league',
     name: 'League',
     component: () => import('@/views/LeagueView.vue'),

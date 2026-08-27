@@ -45,6 +45,7 @@ Globals:
         IMAGES_BUCKET: !Ref ImagesBucket
         LEAGUES_TABLE: !Ref LeaguesTable
         LEAGUE_MEMBERS_TABLE: !Ref LeagueMembersTable
+        GOALS_TABLE: !Ref LearningGoalsTable
         REGION: !Ref AWS::Region
     Layers:
       - !Ref SharedLayer
@@ -550,6 +551,29 @@ Resources:
         - AttributeName: userId
           KeyType: RANGE
 
+  LearningGoalsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub vocabtrainer-goals-${Environment}
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: goalId
+          AttributeType: S
+        - AttributeName: userId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: goalId
+          KeyType: HASH
+        - AttributeName: userId
+          KeyType: RANGE
+      GlobalSecondaryIndexes:
+        - IndexName: userId-index
+          KeySchema:
+            - AttributeName: userId
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+
   # ============================================================
   # Prompt Templates (SSM Parameter Store)
   # ============================================================
@@ -726,6 +750,68 @@ Resources:
             RestApiId: !Ref VocabTrainerApi
             Path: /users/profile
             Method: PUT
+
+  # ============================================================
+  # Goal Handler Lambda Function
+  # ============================================================
+  GoalHandlerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub vocabtrainer-goal-handler-${Environment}
+      CodeUri: functions/goal_handler/
+      Handler: app.lambda_handler
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref LearningGoalsTable
+        - DynamoDBReadPolicy:
+            TableName: !Ref ProgressTable
+        - DynamoDBReadPolicy:
+            TableName: !Ref VocabSetsTable
+        - DynamoDBReadPolicy:
+            TableName: !Ref VocabItemsTable
+        - DynamoDBReadPolicy:
+            TableName: !Ref UsersTable
+        - DynamoDBReadPolicy:
+            TableName: !Ref LeagueMembersTable
+        - DynamoDBReadPolicy:
+            TableName: !Ref LeaguesTable
+      Events:
+        CreateGoal:
+          Type: Api
+          Properties:
+            RestApiId: !Ref VocabTrainerApi
+            Path: /goals
+            Method: POST
+        ListGoals:
+          Type: Api
+          Properties:
+            RestApiId: !Ref VocabTrainerApi
+            Path: /goals
+            Method: GET
+        GetGoal:
+          Type: Api
+          Properties:
+            RestApiId: !Ref VocabTrainerApi
+            Path: /goals/{goalId}
+            Method: GET
+        UpdateGoal:
+          Type: Api
+          Properties:
+            RestApiId: !Ref VocabTrainerApi
+            Path: /goals/{goalId}
+            Method: PUT
+        DeleteGoal:
+          Type: Api
+          Properties:
+            RestApiId: !Ref VocabTrainerApi
+            Path: /goals/{goalId}
+            Method: DELETE
+        GetGoalMemberProgress:
+          Type: Api
+          Properties:
+            RestApiId: !Ref VocabTrainerApi
+            Path: /goals/{goalId}/members
+            Method: GET
 
   # ============================================================
   # Frontend Hosting
