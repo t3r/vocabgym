@@ -14,7 +14,7 @@
             Vokabeln lernen — Französisch, Englisch, Spanisch, Italienisch
           </h1>
           <p class="mt-6 text-lg sm:text-xl text-primary-50 max-w-2xl mx-auto drop-shadow">
-            Scanne deine Arbeitsbuchseiten, extrahiere Vokabeln automatisch und übe mit
+            Scanne deine Arbeitsbuchseiten, extrahiere Vokabeln automatisch und trainiere mit
             interaktiven Übungen. Perfekt für die 9. Klasse.
           </p>
           <div class="mt-10">
@@ -81,7 +81,7 @@
           Bereit loszulegen?
         </h2>
         <p class="text-gray-600 dark:text-gray-300 mb-8">
-          Erstelle jetzt dein kostenloses Konto und beginne sofort mit dem Lernen.
+          Lass Dich einladen und Du kannst dich sofort registrieren.
         </p>
         <LoginButton />
       </div>
