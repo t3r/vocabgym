@@ -39,7 +39,7 @@
             <span class="step-number">1</span>
             <div>
               <h3 class="step-title">Anmelden & Namen setzen</h3>
-              <p>Melde dich mit deiner E-Mail-Adresse an. Klick dann oben rechts auf deinen Namen (oder „Name setzen") und gib dir einen Anzeigenamen — der wird in der Liga-Rangliste angezeigt. Deine E-Mail sieht niemand.</p>
+              <p>Deine Lehrkraft lädt dich per E-Mail ein — darin findest du dein erstes (temporäres) Passwort. Melde dich damit an und vergib beim ersten Login ein eigenes Passwort. Klick dann oben rechts auf deinen Namen (oder „Name setzen") und gib dir einen Anzeigenamen — der wird in der Liga-Rangliste angezeigt. Deine E-Mail sieht niemand.</p>
             </div>
           </div>
           <div class="step">
@@ -147,7 +147,7 @@
             <span class="step-number">1</span>
             <div>
               <h3 class="step-title">Konto einrichten</h3>
-              <p>Registrieren Sie sich mit Ihrer E-Mail-Adresse. Ihre Lehrkraft-Rolle wird vom Administrator freigeschaltet (Cognito-Gruppe „teachers"). Setzen Sie anschließend Ihren Anzeigenamen über den Klick auf Ihren Namen oben rechts.</p>
+              <p>Ihr Konto wird vom Administrator angelegt und für die Lehrkraft-Rolle freigeschaltet (Cognito-Gruppe „teachers"). Sie erhalten eine Einladungs-E-Mail mit einem temporären Passwort. Nach dem ersten Login setzen Sie Ihren Anzeigenamen über den Klick auf Ihren Namen oben rechts.</p>
             </div>
           </div>
           <div class="step">
@@ -225,6 +225,17 @@
           </div>
         </div>
         <p class="mt-4 text-sm text-gray-500 dark:text-gray-400">Der Score-Modus kann jederzeit in der Liga-Verwaltung geändert werden.</p>
+      </section>
+
+      <section class="mb-10">
+        <h2 class="section-title">Nutzer einladen & onboarden</h2>
+        <p>Der Zugang zu VocabGym erfolgt ausschließlich auf Einladung — es gibt keine offene Selbstregistrierung. Neue Nutzer:innen legen Sie als Lehrkraft an; sie erhalten automatisch eine E-Mail mit einem temporären Passwort und können sich damit anmelden.</p>
+        <p class="mt-3">Es gibt zwei Wege:</p>
+        <ul class="list-disc list-inside space-y-2 mt-2 text-gray-700 dark:text-gray-300">
+          <li><strong>Ohne Liga (Onboarding vorab)</strong> — Auf dem <strong>Dashboard</strong> über die Schaltfläche „✉️ Nutzer einladen". Geben Sie E-Mail-Adresse und optional einen Anzeigenamen ein. So können Sie Ihre Klasse bereits anlegen, bevor eine Liga existiert.</li>
+          <li><strong>Direkt in eine Liga</strong> — In der Liga-Ansicht über „Schüler einladen". Die Person wird angelegt <em>und</em> gleich der Liga hinzugefügt.</li>
+        </ul>
+        <p class="mt-3 text-sm text-gray-500 dark:text-gray-400">Ist eine E-Mail-Adresse bereits registriert, wird kein zweites Konto erstellt. Der Anzeigename kann von der Person später jederzeit selbst geändert werden.</p>
       </section>
 
       <section class="mb-10">
