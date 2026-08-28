@@ -885,6 +885,72 @@ Resources:
             Method: POST
 
   # ============================================================
+  # CloudWatch Log Groups (retention: 7 days dev / 90 days prod)
+  # ============================================================
+  UploadHandlerLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Delete
+    Properties:
+      LogGroupName: !Sub /aws/lambda/vocabtrainer-upload-handler-${Environment}
+      RetentionInDays: !If [IsProd, 90, 7]
+
+  ExtractionHandlerLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Delete
+    Properties:
+      LogGroupName: !Sub /aws/lambda/vocabtrainer-extraction-handler-${Environment}
+      RetentionInDays: !If [IsProd, 90, 7]
+
+  VocabCrudHandlerLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Delete
+    Properties:
+      LogGroupName: !Sub /aws/lambda/vocabtrainer-vocab-crud-handler-${Environment}
+      RetentionInDays: !If [IsProd, 90, 7]
+
+  PracticeHandlerLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Delete
+    Properties:
+      LogGroupName: !Sub /aws/lambda/vocabtrainer-practice-handler-${Environment}
+      RetentionInDays: !If [IsProd, 90, 7]
+
+  ProgressHandlerLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Delete
+    Properties:
+      LogGroupName: !Sub /aws/lambda/vocabtrainer-progress-handler-${Environment}
+      RetentionInDays: !If [IsProd, 90, 7]
+
+  InviteHandlerLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Delete
+    Properties:
+      LogGroupName: !Sub /aws/lambda/vocabtrainer-invite-handler-${Environment}
+      RetentionInDays: !If [IsProd, 90, 7]
+
+  LeagueHandlerLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Delete
+    Properties:
+      LogGroupName: !Sub /aws/lambda/vocabtrainer-league-handler-${Environment}
+      RetentionInDays: !If [IsProd, 90, 7]
+
+  GoalHandlerLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Delete
+    Properties:
+      LogGroupName: !Sub /aws/lambda/vocabtrainer-goal-handler-${Environment}
+      RetentionInDays: !If [IsProd, 90, 7]
+
+  PollyHandlerLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Delete
+    Properties:
+      LogGroupName: !Sub /aws/lambda/vocabtrainer-polly-handler-${Environment}
+      RetentionInDays: !If [IsProd, 90, 7]
+
+  # ============================================================
   # Frontend Hosting
   # ============================================================
   FrontendBucket:
