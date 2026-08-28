@@ -773,6 +773,12 @@ Resources:
             RestApiId: !Ref VocabTrainerApi
             Path: /users/profile
             Method: PUT
+        GetProfile:
+          Type: Api
+          Properties:
+            RestApiId: !Ref VocabTrainerApi
+            Path: /users/profile
+            Method: GET
 
   # ============================================================
   # Goal Handler Lambda Function

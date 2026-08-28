@@ -55,6 +55,10 @@ def lambda_handler(event, context):
         if http_method == 'PUT' and '/users/profile' in path:
             return handle_update_profile(event, user_id)
 
+        # GET /users/profile
+        if http_method == 'GET' and '/users/profile' in path:
+            return handle_get_profile(event, user_id)
+
         # POST /league/join
         if http_method == 'POST' and path.endswith('/league/join'):
             return handle_join(event, user_id)
@@ -146,6 +150,17 @@ def _get_league(league_id):
     table = dynamodb.Table(LEAGUES_TABLE)
     response = table.get_item(Key={'leagueId': league_id})
     return response.get('Item')
+
+
+def handle_get_profile(event, user_id):
+    """Handle GET /users/profile - Return the user's stored profile.
+
+    Returns the displayName persisted in the Users table (empty string if the
+    user has not set one yet).
+    """
+    user = _get_user(user_id)
+    display_name = (user or {}).get('displayName', '') or ''
+    return build_response(200, {'displayName': display_name})
 
 
 def handle_update_profile(event, user_id):
