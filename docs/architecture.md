@@ -29,7 +29,6 @@ graph TB
             PH["practice_handler"]
             PRH["progress_handler"]
             LH["league_handler"]
-            IH["invite_handler"]
             GH["goal_handler"]
             POH["polly_handler"]
         end
@@ -68,7 +67,7 @@ graph TB
     FE -->|"Authorization: Bearer JWT"| GW
     FE -->|OAuth2 Flow| UP
     GW -->|Validate JWT| UP
-    GW --> UH & EH & VH & PH & PRH & LH & IH & GH & POH
+    GW --> UH & EH & VH & PH & PRH & LH & GH & POH
 
     UH -->|Presigned URL| S3I
     EH -->|Analyze Document| TX
@@ -253,6 +252,14 @@ flowchart LR
     style League fill:#fef3c7,stroke:#f59e0b
 ```
 
+**Einladungen (invite-only):** Der Userpool erlaubt keine Selbstregistrierung
+(`AdminCreateUserOnly`). Konten werden ausschließlich von Lehrkräften angelegt;
+das Backend erzeugt den Cognito-User via `admin_create_user` (Cognito versendet
+die Einladungsmail mit temporärem Passwort). Zwei Wege, beide teacher-only im
+`league_handler`:
+- `POST /users/invite` — Onboarding **ohne** Liga (Konto anlegen)
+- `POST /league/{leagueId}/invite` — Konto anlegen **und** der Liga hinzufügen
+
 ## DynamoDB-Schema
 
 ```mermaid
@@ -353,7 +360,7 @@ erDiagram
 | **CDN** | CloudFront + S3 (custom domain via Route 53) |
 | **Auth** | Cognito User Pool (OAuth2, teachers Group, AdminOnly Signup) |
 | **API** | API Gateway (REST) + Cognito Authorizer |
-| **Backend** | 9× Lambda (Python 3.11, x86_64) + SharedLayer |
+| **Backend** | 8× Lambda (Python 3.11, x86_64) + SharedLayer |
 | **AI/OCR** | Textract (OCR) → Bedrock Nova Pro (Vocab Extraction) |
 | **Sprachausgabe** | Polly (Text-to-Speech, Standard-Engine, MP3-Cache in S3) |
 | **Datenbank** | DynamoDB (9 Tabellen, On-Demand Billing) |

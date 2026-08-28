@@ -59,8 +59,12 @@
     <div class="flex items-center justify-between mb-6">
       <h2 class="text-xl font-semibold text-gray-900 dark:text-white">Meine Vokabelsets</h2>
       <div class="flex items-center gap-3">
-        <button @click="generateInvite" class="btn-secondary text-sm">
-          🎉 Freunde einladen
+        <button
+          v-if="authStore.role === 'teacher'"
+          @click="showInvite = !showInvite"
+          class="btn-secondary text-sm"
+        >
+          ✉️ Nutzer einladen
         </button>
         <router-link to="/upload" class="btn-primary">
           <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -71,26 +75,39 @@
       </div>
     </div>
 
-    <!-- Invite Link Panel -->
-    <div v-if="inviteUrl" class="card mb-6 bg-blue-50 border-blue-200 dark:border-blue-800">
-      <div class="flex items-center justify-between">
-        <div>
-          <p class="font-medium text-blue-900">Einladungslink</p>
-          <p class="text-xs text-blue-700 mt-1">Gültig für 7 Tage</p>
-        </div>
-        <button @click="inviteUrl = null" class="text-blue-400 hover:text-blue-600 text-lg">✕</button>
+    <!-- Teacher: invite a new user (no league required) -->
+    <div v-if="authStore.role === 'teacher' && showInvite" class="card mb-6">
+      <div class="flex items-center justify-between mb-2">
+        <h3 class="font-semibold text-gray-900 dark:text-white">Nutzer einladen</h3>
+        <button @click="showInvite = false" class="text-gray-400 hover:text-gray-600 text-lg">✕</button>
       </div>
-      <div class="mt-3 flex gap-2">
+      <p class="text-sm text-gray-500 dark:text-gray-400 mb-3">
+        Legen Sie ein Konto für eine:n neue:n Nutzer:in an. Die Person erhält per
+        E-Mail eine Einladung mit einem temporären Passwort — auch ohne Liga.
+      </p>
+      <form @submit.prevent="inviteUser" class="flex flex-col sm:flex-row gap-3">
         <input
-          type="text"
-          :value="inviteUrl"
-          readonly
-          class="flex-1 text-sm bg-white border border-blue-200 rounded px-3 py-2 text-gray-700"
+          v-model="inviteEmail"
+          type="email"
+          placeholder="E-Mail-Adresse"
+          class="input flex-1"
+          :disabled="inviting"
         />
-        <button @click="copyInviteLink" class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm font-medium">
-          {{ copied ? '✓ Kopiert!' : 'Kopieren' }}
+        <input
+          v-model="inviteName"
+          type="text"
+          placeholder="Anzeigename (optional)"
+          class="input flex-1"
+          :disabled="inviting"
+        />
+        <button
+          type="submit"
+          class="btn-primary text-sm whitespace-nowrap"
+          :disabled="inviting || !inviteEmail.trim()"
+        >
+          {{ inviting ? 'Wird gesendet...' : 'Einladen' }}
         </button>
-      </div>
+      </form>
     </div>
 
     <!-- Loading State -->
@@ -150,8 +167,32 @@ const { showError, showSuccess } = useToast()
 
 const userName = computed(() => authStore.user?.name || authStore.user?.given_name || '')
 const appVersion = import.meta.env.VITE_APP_VERSION || 'dev'
-const inviteUrl = ref(null)
-const copied = ref(false)
+
+// Teacher: invite a new user (no league required)
+const showInvite = ref(false)
+const inviteEmail = ref('')
+const inviteName = ref('')
+const inviting = ref(false)
+
+async function inviteUser() {
+  const email = inviteEmail.value.trim()
+  if (!email) return
+  inviting.value = true
+  try {
+    await api.post('/users/invite', {
+      email,
+      displayName: inviteName.value.trim(),
+    })
+    showSuccess('Einladung wurde gesendet.')
+    inviteEmail.value = ''
+    inviteName.value = ''
+    showInvite.value = false
+  } catch (err) {
+    showError(err.response?.data?.error || 'Fehler beim Einladen')
+  } finally {
+    inviting.value = false
+  }
+}
 
 // League data
 const leagueBanner = ref(null)
@@ -192,27 +233,6 @@ async function loadLeagueData() {
   } catch {
     // League data load failure is non-critical
     leagueBanner.value = null
-  }
-}
-
-async function generateInvite() {
-  try {
-    const response = await api.post('/invite')
-    inviteUrl.value = response.data.inviteUrl
-    copied.value = false
-  } catch (err) {
-    showError('Fehler beim Erstellen des Einladungslinks')
-  }
-}
-
-async function copyInviteLink() {
-  try {
-    await navigator.clipboard.writeText(inviteUrl.value)
-    copied.value = true
-    showSuccess('Link in die Zwischenablage kopiert!')
-    setTimeout(() => { copied.value = false }, 3000)
-  } catch {
-    showError('Kopieren fehlgeschlagen')
   }
 }
 

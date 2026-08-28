@@ -55,13 +55,6 @@ const routes = [
     props: true
   },
   {
-    path: '/invite/:token',
-    name: 'Invite',
-    component: () => import('@/views/InviteView.vue'),
-    meta: { requiresAuth: false, title: 'Einladung' },
-    props: true
-  },
-  {
     path: '/goals/:goalId',
     name: 'GoalDetail',
     component: () => import('@/views/GoalDetailView.vue'),

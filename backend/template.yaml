@@ -505,35 +505,6 @@ Resources:
             Path: /progress/{vocabSetId}
             Method: GET
 
-  InviteHandlerFunction:
-    Type: AWS::Serverless::Function
-    Properties:
-      FunctionName: !Sub vocabtrainer-invite-handler-${Environment}
-      CodeUri: functions/invite_handler/
-      Handler: app.lambda_handler
-      Environment:
-        Variables:
-          INVITE_SECRET: !Sub vocabgym-invite-${AWS::AccountId}-s3cr3t  # TODO: Move to Secrets Manager for production
-          FRONTEND_URL: !If
-            - HasCertificate
-            - !If [IsProd, 'https://vocab.gym.t3r.de', !Sub 'https://${Environment}.vocab.gym.t3r.de']
-            - !Sub https://${FrontendDistribution.DomainName}
-      Events:
-        CreateInvite:
-          Type: Api
-          Properties:
-            RestApiId: !Ref VocabTrainerApi
-            Path: /invite
-            Method: POST
-        ValidateInvite:
-          Type: Api
-          Properties:
-            RestApiId: !Ref VocabTrainerApi
-            Path: /invite/{token}
-            Method: GET
-            Auth:
-              Authorizer: NONE
-
   # ============================================================
   # League Tables
   # ============================================================
@@ -779,6 +750,12 @@ Resources:
             RestApiId: !Ref VocabTrainerApi
             Path: /users/profile
             Method: GET
+        InviteUser:
+          Type: Api
+          Properties:
+            RestApiId: !Ref VocabTrainerApi
+            Path: /users/invite
+            Method: POST
 
   # ============================================================
   # Goal Handler Lambda Function
@@ -920,13 +897,6 @@ Resources:
     DeletionPolicy: Delete
     Properties:
       LogGroupName: !Sub /aws/lambda/vocabtrainer-progress-handler-${Environment}
-      RetentionInDays: !If [IsProd, 90, 7]
-
-  InviteHandlerLogGroup:
-    Type: AWS::Logs::LogGroup
-    DeletionPolicy: Delete
-    Properties:
-      LogGroupName: !Sub /aws/lambda/vocabtrainer-invite-handler-${Environment}
       RetentionInDays: !If [IsProd, 90, 7]
 
   LeagueHandlerLogGroup:

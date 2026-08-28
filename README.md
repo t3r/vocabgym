@@ -32,7 +32,7 @@ Vue 3 SPA → CloudFront → API Gateway → Lambda (Python 3.11)
 | Schicht | Technologie |
 |---------|-------------|
 | Frontend | Vue 3, Tailwind CSS, Pinia, Vite |
-| Backend | 9× Lambda (Python 3.11, x86_64), SharedLayer |
+| Backend | 8× Lambda (Python 3.11, x86_64), SharedLayer |
 | AI/OCR | Textract + Bedrock (Amazon Nova Pro) |
 | Sprachausgabe | Amazon Polly (Text-to-Speech, Standard-Engine) |
 | Auth | Cognito (OAuth2, teachers-Gruppe, AdminOnly) |
@@ -61,8 +61,7 @@ vocabgym/
 │   │   ├── vocab_crud_handler/   # CRUD für Vokabelsets
 │   │   ├── practice_handler/     # Übungen + Smart Repetition
 │   │   ├── progress_handler/     # Fortschrittsstatistiken
-│   │   ├── league_handler/       # Liga + Einladungen
-│   │   ├── invite_handler/       # Invite-Token
+│   │   ├── league_handler/       # Liga, Profil & Einladungen (admin-create-user)
 │   │   ├── goal_handler/         # Lernziele + Deadline-Tracking
 │   │   └── polly_handler/        # Aussprache (Polly TTS)
 │   └── layers/shared/           # Gemeinsame Utilities
