@@ -113,9 +113,17 @@
         class="mt-4 p-3 bg-blue-50 dark:bg-blue-900/40 border border-blue-200 dark:border-blue-700 rounded-lg text-center"
       >
         <p class="text-xs text-blue-700 dark:text-blue-300 mb-1">💡 Lösung</p>
-        <p class="text-2xl font-bold text-blue-900 dark:text-blue-100 break-words">
-          {{ correctAnswerText }}
-        </p>
+        <div class="flex items-center justify-center gap-2">
+          <p class="text-2xl font-bold text-blue-900 dark:text-blue-100 break-words">
+            {{ correctAnswerText }}
+          </p>
+          <PronounceButton
+            v-if="answerIsTarget && question.itemId && question.vocabSetId"
+            :vocab-set-id="question.vocabSetId"
+            :item-id="question.itemId"
+            :lang="targetLanguage"
+          />
+        </div>
       </div>
     </transition>
   </div>
