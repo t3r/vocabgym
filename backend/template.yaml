@@ -1109,7 +1109,6 @@ Resources:
   BackupRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: !Sub vocabtrainer-backup-role-${Environment}
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
         Statement:
@@ -1184,7 +1183,6 @@ Resources:
     Type: AWS::IAM::Role
     Condition: IsProd
     Properties:
-      RoleName: vocabtrainer-restore-backup-role-prod
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
         Statement:
@@ -1200,7 +1198,6 @@ Resources:
     Type: AWS::IAM::Role
     Condition: IsProd
     Properties:
-      RoleName: vocabtrainer-restore-test-automation-prod
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
         Statement:
@@ -1396,7 +1393,6 @@ Resources:
     Type: AWS::IAM::Role
     Condition: IsProd
     Properties:
-      RoleName: vocabtrainer-restore-schedule-role-prod
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
         Statement:
