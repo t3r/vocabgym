@@ -9,6 +9,8 @@ Unterstützte Zielsprachen: 🇫🇷 Französisch · 🇬🇧 Englisch · 🇪�
 - **KI-Extraktion** — Workbook-Foto hochladen → Textract OCR → Bedrock (Amazon Nova Pro) extrahiert Vokabelpaare automatisch
 - **Smart Repetition** — Schwache Wörter erscheinen häufiger, Fehler-Pattern werden erkannt
 - **Lernhinweise** — Nach jeder Übung: Artikel-Fehler, wiederholte Schwierigkeiten, personalisierte Tipps
+- **Aussprache** — Fremdsprach-Wörter per Amazon Polly anhören; Akzent & Stimme wählbar; neue Wörter werden sofort vorgesagt
+- **Lernziele** — Ziele mit Deadline & Mastery-Level, Fortschritts- und Tempo-Tracking (auch pro Liga)
 - **Liga-System** — Lehrer erstellen Ligen, Schüler treten per Code bei, Leaderboard mit Streaks 🔥
 - **Invite-Only** — Lehrer laden Schüler per E-Mail ein (kein Self-Signup)
 - **Dark Mode** — Vollständige Unterstützung
@@ -21,16 +23,18 @@ Unterstützte Zielsprachen: 🇫🇷 Französisch · 🇬🇧 Englisch · 🇪�
 ```
 Vue 3 SPA → CloudFront → API Gateway → Lambda (Python 3.11)
                               ↓
-              Cognito    DynamoDB (7 Tabellen)    S3
+              Cognito    DynamoDB (9 Tabellen)    S3
                               ↓
               Textract → Bedrock Nova Pro (Vocab-Extraktion)
+              Polly (Aussprache, MP3-Cache in S3)
 ```
 
 | Schicht | Technologie |
 |---------|-------------|
 | Frontend | Vue 3, Tailwind CSS, Pinia, Vite |
-| Backend | 7× Lambda (Python 3.11, arm64), SharedLayer |
+| Backend | 9× Lambda (Python 3.11, x86_64), SharedLayer |
 | AI/OCR | Textract + Bedrock (Amazon Nova Pro) |
+| Sprachausgabe | Amazon Polly (Text-to-Speech, Standard-Engine) |
 | Auth | Cognito (OAuth2, teachers-Gruppe, AdminOnly) |
 | DB | DynamoDB (On-Demand), SSM Parameter Store |
 | IaC | AWS SAM, CloudFormation |
@@ -46,7 +50,7 @@ vocabgym/
 │   │   ├── views/            # Seiten (Dashboard, Practice, League, Help, ...)
 │   │   ├── stores/           # Pinia Stores (auth, vocab, practice)
 │   │   ├── composables/      # useAuth, useUpload, usePractice
-│   │   ├── services/         # API client, Cognito
+│   │   ├── services/         # API client, Cognito, TTS (Polly)
 │   │   └── utils/            # fuzzyMatch, languages, validators
 │   └── package.json
 ├── backend/                  # AWS SAM
@@ -58,7 +62,9 @@ vocabgym/
 │   │   ├── practice_handler/     # Übungen + Smart Repetition
 │   │   ├── progress_handler/     # Fortschrittsstatistiken
 │   │   ├── league_handler/       # Liga + Einladungen
-│   │   └── invite_handler/       # Invite-Token
+│   │   ├── invite_handler/       # Invite-Token
+│   │   ├── goal_handler/         # Lernziele + Deadline-Tracking
+│   │   └── polly_handler/        # Aussprache (Polly TTS)
 │   └── layers/shared/           # Gemeinsame Utilities
 ├── scripts/                  # Migrationsskripte
 ├── docs/                     # Architektur-Dokumentation
