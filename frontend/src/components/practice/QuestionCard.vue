@@ -30,9 +30,12 @@
       <p class="text-sm text-gray-600 dark:text-gray-300">
         Deine Antwort: <span class="font-medium">{{ feedback.userAnswer }}</span>
       </p>
-      <p class="text-sm text-gray-600 mt-1">
-        Richtig wäre: <span class="font-medium text-green-700 dark:text-green-300">{{ feedback.correctAnswer }}</span>
-      </p>
+      <div class="mt-2">
+        <p class="text-xs text-gray-500 dark:text-gray-400">Richtig wäre</p>
+        <p class="text-3xl font-bold text-green-700 dark:text-green-300 break-words">
+          {{ feedback.correctAnswer }}
+        </p>
+      </div>
       <!-- Gender Error Explanation -->
       <div v-if="genderError" class="mt-3 p-2 bg-yellow-100 dark:bg-yellow-900/30 border border-yellow-300 dark:border-yellow-700 rounded text-left">
         <p class="text-sm font-medium text-yellow-800 dark:text-yellow-200">⚠️ Genus-Fehler (falscher Artikel)</p>

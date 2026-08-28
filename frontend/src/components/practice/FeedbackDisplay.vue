@@ -19,12 +19,17 @@
       </span>
     </div>
 
+    <!-- Correct word: always shown, at least as large as the source word, so it sticks -->
+    <div class="mt-2 mb-1">
+      <p class="text-xs text-gray-500 dark:text-gray-400">Richtige Antwort</p>
+      <p class="text-3xl font-bold text-green-700 dark:text-green-300 break-words">
+        {{ correctAnswer }}
+      </p>
+    </div>
+
     <div v-if="!correct" class="mt-2">
       <p class="text-sm text-gray-600 dark:text-gray-300">
         Deine Antwort: <span class="font-medium text-red-700 dark:text-red-300">{{ userAnswer }}</span>
-      </p>
-      <p class="text-sm text-gray-600 mt-1">
-        Richtige Antwort: <span class="font-medium text-green-700 dark:text-green-300">{{ correctAnswer }}</span>
       </p>
 
       <!-- Gender/Article Error Explanation -->
