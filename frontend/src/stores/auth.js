@@ -91,6 +91,10 @@ export const useAuthStore = defineStore('auth', () => {
       // Await so a stale/expiring token is refreshed (and persisted) before
       // any protected view fires its first API request.
       await checkTokenExpiry()
+
+      // Refresh the persisted displayName from the backend in the background
+      // (keeps the header name correct even if localStorage was cleared).
+      loadProfile()
     }
   }
 
@@ -183,6 +187,24 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
+  /**
+   * Load the persisted profile (displayName) from the backend and apply it.
+   * Ensures the name survives logout/login on any device, since it lives in
+   * DynamoDB, not just localStorage. Imported lazily to avoid an import cycle.
+   */
+  async function loadProfile() {
+    try {
+      const { default: api } = await import('@/services/api')
+      const resp = await api.get('/users/profile')
+      const name = resp?.data?.displayName
+      if (name) {
+        setDisplayName(name)
+      }
+    } catch {
+      // Non-fatal: fall back to any locally stored name / Cognito name.
+    }
+  }
+
   // Call persistTokens when state changes
   const originalLogin = handleAuthCallback
   const wrappedHandleAuthCallback = async (code) => {
@@ -191,6 +213,11 @@ export const useAuthStore = defineStore('auth', () => {
       _extractRoleFromToken(idToken.value)
     }
     persistTokens()
+    if (result) {
+      // Fetch the persisted displayName from the backend so it survives
+      // logout/login (it lives in DynamoDB, not just localStorage).
+      await loadProfile()
+    }
     return result
   }
 
@@ -225,6 +252,7 @@ export const useAuthStore = defineStore('auth', () => {
     refreshSession,
     loadUserFromStorage,
     checkTokenExpiry,
+    loadProfile,
     setLeagueId,
     setRole,
     setDisplayName
