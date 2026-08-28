@@ -32,9 +32,17 @@
       </p>
       <div class="mt-2">
         <p class="text-xs text-gray-500 dark:text-gray-400">Richtig wäre</p>
-        <p class="text-3xl font-bold text-green-700 dark:text-green-300 break-words">
-          {{ feedback.correctAnswer }}
-        </p>
+        <div class="flex items-center justify-center gap-2">
+          <p class="text-3xl font-bold text-green-700 dark:text-green-300 break-words">
+            {{ feedback.correctAnswer }}
+          </p>
+          <PronounceButton
+            v-if="question.itemId && question.vocabSetId && answerIsTarget"
+            :vocab-set-id="question.vocabSetId"
+            :item-id="question.itemId"
+            :lang="targetLanguage"
+          />
+        </div>
       </div>
       <!-- Gender Error Explanation -->
       <div v-if="genderError" class="mt-3 p-2 bg-yellow-100 dark:bg-yellow-900/30 border border-yellow-300 dark:border-yellow-700 rounded text-left">
@@ -60,6 +68,7 @@
       :item-id="question.itemId"
       :vocab-set-id="question.vocabSetId || ''"
       :target-language="targetLanguage"
+      :answer-is-target="answerIsTarget"
     />
 
     <!-- Actions -->
@@ -115,6 +124,7 @@
 import { ref, computed } from 'vue'
 import AnswerInput from './AnswerInput.vue'
 import FeedbackDisplay from './FeedbackDisplay.vue'
+import PronounceButton from './PronounceButton.vue'
 import { getLanguageName, getAllArticleGenders } from '@/utils/languages'
 
 const props = defineProps({
@@ -130,6 +140,13 @@ defineEmits(['submit', 'skip', 'next', 'accept-close', 'reject-close'])
 
 const showingHint = ref(false)
 let hintTimeout = null
+
+// The correct answer is the target-language word only when translating
+// Deutsch -> Fremdsprache. In the reverse direction it is the German word,
+// which must not be pronounced with a foreign voice.
+const answerIsTarget = computed(() =>
+  props.direction === 'de-fr' || props.direction === 'source-target'
+)
 
 const correctAnswerText = computed(() => {
   return props.question.correctAnswer

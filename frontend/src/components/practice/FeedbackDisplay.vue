@@ -22,9 +22,17 @@
     <!-- Correct word: always shown, at least as large as the source word, so it sticks -->
     <div class="mt-2 mb-1">
       <p class="text-xs text-gray-500 dark:text-gray-400">Richtige Antwort</p>
-      <p class="text-3xl font-bold text-green-700 dark:text-green-300 break-words">
-        {{ correctAnswer }}
-      </p>
+      <div class="flex items-center justify-center gap-2">
+        <p class="text-3xl font-bold text-green-700 dark:text-green-300 break-words">
+          {{ correctAnswer }}
+        </p>
+        <PronounceButton
+          v-if="itemId && vocabSetId && answerIsTarget"
+          :vocab-set-id="vocabSetId"
+          :item-id="itemId"
+          :lang="targetLanguage"
+        />
+      </div>
     </div>
 
     <div v-if="!correct" class="mt-2">
@@ -69,6 +77,7 @@
 import { ref, computed } from 'vue'
 import api from '@/services/api'
 import { getAllArticleGenders } from '@/utils/languages'
+import PronounceButton from '@/components/practice/PronounceButton.vue'
 
 const props = defineProps({
   correct: { type: Boolean, required: true },
@@ -76,7 +85,8 @@ const props = defineProps({
   userAnswer: { type: String, default: '' },
   itemId: { type: String, default: '' },
   vocabSetId: { type: String, default: '' },
-  targetLanguage: { type: String, default: 'fr' }
+  targetLanguage: { type: String, default: 'fr' },
+  answerIsTarget: { type: Boolean, default: true }
 })
 
 const showNoteInput = ref(false)

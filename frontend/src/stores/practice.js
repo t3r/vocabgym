@@ -51,7 +51,12 @@ export const usePracticeStore = defineStore('practice', () => {
         direction: options.direction || 'de-fr',
         startTime: Date.now()
       }
-      questions.value = response.data.questions || []
+      // Ensure every question carries its vocabSetId (used e.g. by the
+      // pronunciation button, which requests TTS by vocabSetId + itemId).
+      questions.value = (response.data.questions || []).map((q) => ({
+        ...q,
+        vocabSetId: q.vocabSetId || vocabSetId,
+      }))
       currentQuestionIndex.value = 0
       answers.value = []
       sessionResults.value = null
