@@ -2,6 +2,44 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Self-hosted Inter font (no external Google Fonts request — DSGVO-friendly).
+   Files live in public/fonts/ and are served from our own distribution. */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 300;
+  font-display: swap;
+  src: url('/fonts/inter-300.ttf') format('truetype');
+}
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/fonts/inter-400.ttf') format('truetype');
+}
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url('/fonts/inter-500.ttf') format('truetype');
+}
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url('/fonts/inter-600.ttf') format('truetype');
+}
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('/fonts/inter-700.ttf') format('truetype');
+}
+
 @layer base {
   body {
     @apply text-gray-900 bg-gray-50 dark:text-gray-100 dark:bg-gray-900;
