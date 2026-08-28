@@ -1,5 +1,14 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 
+// Minimal localStorage mock (jsdom in this project doesn't expose one globally)
+const _ls = {}
+globalThis.localStorage = {
+  getItem: (k) => (k in _ls ? _ls[k] : null),
+  setItem: (k, v) => { _ls[k] = String(v) },
+  removeItem: (k) => { delete _ls[k] },
+  clear: () => { Object.keys(_ls).forEach((k) => delete _ls[k]) },
+}
+
 // Mock the api client used by the service
 vi.mock('@/services/api', () => ({
   default: {
@@ -9,11 +18,12 @@ vi.mock('@/services/api', () => ({
 }))
 
 import api from '@/services/api'
-import { getVoices, synthesize, pronounce, playAudio, _clearCache } from '@/services/tts'
+import { getVoices, synthesize, pronounce, playAudio, resolveVoiceId, pronounceWithStoredVoice, _clearCache } from '@/services/tts'
 
 describe('tts service', () => {
   beforeEach(() => {
     _clearCache()
+    localStorage.clear()
     api.get.mockReset()
     api.post.mockReset()
   })
@@ -82,6 +92,51 @@ describe('tts service', () => {
       expect(global.Audio).toHaveBeenCalledWith('https://s3/x.mp3')
       expect(playSpy).toHaveBeenCalled()
       global.Audio = OriginalAudio
+    })
+  })
+
+  describe('resolveVoiceId', () => {
+    it('uses the voice stored in localStorage', async () => {
+      localStorage.setItem('vocabgym_tts_en', JSON.stringify({ accent: 'en-GB', voiceId: 'Brian' }))
+      const id = await resolveVoiceId('en')
+      expect(id).toBe('Brian')
+      expect(api.get).not.toHaveBeenCalled()
+    })
+
+    it('falls back to the first backend voice when nothing stored', async () => {
+      api.get.mockResolvedValue({ data: { accents: [
+        { languageCode: 'fr-FR', voices: [{ voiceId: 'Celine' }] },
+      ] } })
+      const id = await resolveVoiceId('fr')
+      expect(id).toBe('Celine')
+    })
+
+    it('returns null when no voices available', async () => {
+      api.get.mockResolvedValue({ data: { accents: [] } })
+      const id = await resolveVoiceId('it')
+      expect(id).toBeNull()
+    })
+  })
+
+  describe('pronounceWithStoredVoice', () => {
+    it('resolves the voice then synthesizes', async () => {
+      localStorage.setItem('vocabgym_tts_en', JSON.stringify({ accent: 'en-US', voiceId: 'Joanna' }))
+      api.post.mockResolvedValue({ data: { audioUrl: 'https://s3/x.mp3' } })
+      const playSpy = vi.fn().mockResolvedValue()
+      const OriginalAudio = global.Audio
+      global.Audio = vi.fn().mockImplementation(() => ({ play: playSpy }))
+      await pronounceWithStoredVoice({ vocabSetId: 'vs', itemId: 'it', lang: 'en' })
+      expect(api.post).toHaveBeenCalledWith('/tts/synthesize', {
+        vocabSetId: 'vs', itemId: 'it', voiceId: 'Joanna',
+      })
+      global.Audio = OriginalAudio
+    })
+
+    it('throws when no voice is available', async () => {
+      api.get.mockResolvedValue({ data: { accents: [] } })
+      await expect(
+        pronounceWithStoredVoice({ vocabSetId: 'vs', itemId: 'it', lang: 'it' })
+      ).rejects.toThrow()
     })
   })
 })

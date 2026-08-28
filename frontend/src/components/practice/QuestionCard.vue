@@ -82,14 +82,14 @@
           Überspringen
         </button>
         <button
-          v-if="!feedback && hintEnabled"
+          v-if="!feedback && (hintEnabled || question.isNew)"
           @click="showHint"
           class="text-sm text-primary-600 hover:text-primary-700 font-medium"
         >
-          💡 Vorsagen
+          {{ question.isNew ? '💡 Neues Wort — Lösung zeigen' : '💡 Vorsagen' }}
         </button>
         <span
-          v-if="!feedback && !hintEnabled"
+          v-if="!feedback && !hintEnabled && !question.isNew"
           class="text-xs text-gray-400 italic"
         >
           💡 Vorsagen ab 2 richtigen
@@ -126,6 +126,8 @@ import AnswerInput from './AnswerInput.vue'
 import FeedbackDisplay from './FeedbackDisplay.vue'
 import PronounceButton from './PronounceButton.vue'
 import { getLanguageName, getAllArticleGenders } from '@/utils/languages'
+import { pronounceWithStoredVoice } from '@/services/tts'
+import { useToast } from '@/composables/useToast'
 
 const props = defineProps({
   question: { type: Object, required: true },
@@ -137,6 +139,8 @@ const props = defineProps({
 })
 
 defineEmits(['submit', 'skip', 'next', 'accept-close', 'reject-close'])
+
+const { showError } = useToast()
 
 const showingHint = ref(false)
 let hintTimeout = null
@@ -190,6 +194,22 @@ function showHint() {
   hintTimeout = setTimeout(() => {
     showingHint.value = false
   }, 5000)
+
+  // Also play the pronunciation when the solution is the target-language word
+  // (Deutsch -> Fremdsprache). Uses the voice/accent stored by PronounceButton.
+  if (answerIsTarget.value && props.question.vocabSetId && props.question.itemId) {
+    pronounceWithStoredVoice({
+      vocabSetId: props.question.vocabSetId,
+      itemId: props.question.itemId,
+      lang: props.targetLanguage,
+    }).catch((e) => {
+      const status = e?.response?.status
+      if (status === 429) {
+        showError('Zu viele Aussprache-Anfragen, bitte kurz warten.')
+      }
+      // Silent otherwise — the text hint is still shown.
+    })
+  }
 }
 </script>
 

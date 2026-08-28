@@ -73,4 +73,41 @@ export function _clearCache() {
   _urlCache.clear()
 }
 
-export default { getVoices, synthesize, playAudio, pronounce, _clearCache }
+/**
+ * Resolve the voice to use for a language: the one stored in localStorage,
+ * otherwise the first voice of the first accent returned by the backend.
+ * @param {string} lang
+ * @returns {Promise<string|null>} voiceId or null if none available
+ */
+export async function resolveVoiceId(lang) {
+  try {
+    const raw = localStorage.getItem(`vocabgym_tts_${lang}`)
+    if (raw) {
+      const stored = JSON.parse(raw)
+      if (stored && stored.voiceId) return stored.voiceId
+    }
+  } catch {
+    // ignore
+  }
+  // Fall back to the first available voice
+  try {
+    const data = await getVoices(lang)
+    const first = (data.accents || [])[0]
+    return first?.voices?.[0]?.voiceId || null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Pronounce a vocab item using the stored/default voice for the language.
+ * Convenience for the "Vorsagen" hint (auto-play).
+ * @param {{vocabSetId: string, itemId: string, lang: string}} req
+ */
+export async function pronounceWithStoredVoice({ vocabSetId, itemId, lang }) {
+  const voiceId = await resolveVoiceId(lang)
+  if (!voiceId) throw new Error('Keine Stimme verfügbar')
+  return pronounce({ vocabSetId, itemId, voiceId })
+}
+
+export default { getVoices, synthesize, playAudio, pronounce, resolveVoiceId, pronounceWithStoredVoice, _clearCache }
