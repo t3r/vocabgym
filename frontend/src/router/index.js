@@ -88,6 +88,12 @@ const routes = [
     meta: { requiresAuth: false, title: 'Hilfe' }
   },
   {
+    path: '/datenschutz',
+    name: 'Privacy',
+    component: () => import('@/views/PrivacyView.vue'),
+    meta: { requiresAuth: false, title: 'Datenschutz' }
+  },
+  {
     path: '/:pathMatch(.*)*',
     name: 'NotFound',
     component: () => import('@/views/NotFoundView.vue'),
