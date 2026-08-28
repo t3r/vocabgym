@@ -77,8 +77,17 @@
         <button
           v-if="!feedback"
           @click="$emit('skip')"
-          class="text-sm text-gray-500 hover:text-gray-700"
+          type="button"
+          aria-label="Frage überspringen"
+          title="Frage überspringen"
+          class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-gray-300 dark:border-gray-600 text-sm font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-700 hover:bg-gray-100 dark:hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-primary-500"
         >
+          <!-- skip-forward icon (double chevron + bar) -->
+          <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true">
+            <path d="M4.5 4.2a1 1 0 0 0-1.5.87v9.86a1 1 0 0 0 1.5.87l6-4.93a1 1 0 0 0 0-1.74l-6-4.93z" />
+            <path d="M11 4.2a1 1 0 0 0-1.5.87v9.86a1 1 0 0 0 1.5.87l6-4.93a1 1 0 0 0 0-1.74l-6-4.93z" />
+            <rect x="16.5" y="4" width="1.8" height="12" rx="0.9" />
+          </svg>
           Überspringen
         </button>
         <button
