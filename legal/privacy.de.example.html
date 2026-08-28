@@ -1,0 +1,112 @@
+<!--
+  Datenschutzerklärung (DSGVO) — Vorlage.
+
+  Diese Datei ist eine Vorlage mit Platzhaltern und wird in git eingecheckt.
+  Erstelle daraus die echte Datei privacy.de.html (NICHT in git, siehe .gitignore),
+  trage die privaten Daten ein und lade sie nach S3 hoch (siehe legal/README.md).
+
+  Es wird nur der HTML-Rumpf ausgeliefert und in die App eingebettet
+  (kein <html>/<head>/<body>). Erlaubte Tags: h2, p, ul/li, a, strong.
+-->
+
+<p style="font-size:0.85rem;opacity:0.7">Stand: [TT.MM.JJJJ]</p>
+
+<h2>1. Verantwortlicher</h2>
+<p>Verantwortlicher im Sinne der DSGVO ist:</p>
+<p>
+  [Name / Einrichtung]<br />
+  [Straße und Hausnummer]<br />
+  [PLZ und Ort]<br />
+  E-Mail: [kontakt@example.org]
+</p>
+<p>Datenschutzbeauftragte(r) (falls vorhanden): [Name, Kontakt]</p>
+
+<h2>2. Überblick</h2>
+<p>
+  VocabGym ist eine Web-Anwendung zum Vokabeltraining. Die gesamte Verarbeitung
+  findet auf Servern von Amazon Web Services (AWS) in der Region Frankfurt am
+  Main (eu-central-1) statt.
+</p>
+
+<h2>3. Bereitstellung der Anwendung (Hosting &amp; Auslieferung)</h2>
+<p>
+  Die Anwendung wird über Amazon CloudFront aus einem Amazon-S3-Speicher
+  ausgeliefert. Dabei werden technisch notwendige Zugriffsdaten (u. a.
+  IP-Adresse, Zeitpunkt, angeforderte Datei, Browsertyp) verarbeitet.
+</p>
+<ul>
+  <li><strong>Zweck:</strong> Auslieferung und Betrieb, IT-Sicherheit</li>
+  <li><strong>Rechtsgrundlage:</strong> Art. 6 Abs. 1 lit. f DSGVO</li>
+</ul>
+<p>
+  Schriftarten werden ausschließlich vom eigenen Server ausgeliefert. Es werden
+  keine externen Dienste wie Google Fonts eingebunden.
+</p>
+
+<h2>4. Registrierung und Anmeldung (Konto)</h2>
+<p>Die Anmeldung erfolgt über Amazon Cognito (invite-only). Verarbeitet werden:</p>
+<ul>
+  <li>E-Mail-Adresse</li>
+  <li>Selbst gewählter Anzeigename</li>
+  <li>Rolle (Schüler:in oder Lehrkraft)</li>
+  <li>Authentifizierungs-Metadaten</li>
+</ul>
+<ul>
+  <li><strong>Rechtsgrundlage:</strong> Art. 6 Abs. 1 lit. b DSGVO; bei schulischer Nutzung ggf. lit. e i. V. m. Landesschulrecht</li>
+</ul>
+<p>Die E-Mail-Adresse wird anderen Nutzenden zu keinem Zeitpunkt angezeigt.</p>
+
+<h2>5. Hochgeladene Bilder &amp; Vokabel-Extraktion</h2>
+<p>
+  Hochgeladene Fotos von Arbeitsbuchseiten werden in Amazon S3 gespeichert und
+  zur Vokabelerkennung an Amazon Textract (OCR) und Amazon Bedrock (Modell
+  „Amazon Nova Pro") übergeben.
+</p>
+<ul>
+  <li><strong>Speicherdauer:</strong> Bilder werden automatisch nach 90 Tagen gelöscht.</li>
+</ul>
+
+<h2>6. Übungsdaten &amp; Fortschritt</h2>
+<p>Verarbeitet werden Vokabelsets, Übungssitzungen, Lernfortschritt und Lernziele.</p>
+<ul>
+  <li><strong>Speicherdauer:</strong> Übungssitzungen nach 90 Tagen automatisch gelöscht; Fortschritts- und Vokabeldaten bis zur Löschung des Kontos.</li>
+</ul>
+
+<h2>7. Liga-System</h2>
+<p>In Ligen werden Anzeigename, Punktzahl und Streak in einer Rangliste angezeigt.</p>
+
+<h2>8. Aussprache (Text-to-Speech)</h2>
+<p>
+  Auf Anforderung wird ein Vokabelwort mit Amazon Polly in Sprache umgewandelt.
+  Die Audiodatei wird zwischengespeichert und nach 30 Tagen automatisch gelöscht.
+</p>
+
+<h2>9. Lokale Speicherung (localStorage)</h2>
+<p>
+  Zur Funktionsfähigkeit speichert die App Daten lokal im Browser (Anmelde-Token,
+  Anzeigename, Dark-Mode, zuletzt gewählte Aussprache-Stimme). Kein Tracking.
+</p>
+<ul>
+  <li><strong>Rechtsgrundlage:</strong> Art. 6 Abs. 1 lit. f DSGVO bzw. § 25 Abs. 2 TTDSG</li>
+</ul>
+
+<h2>10. Auftragsverarbeitung &amp; Drittlandtransfer</h2>
+<p>
+  Als technischer Dienstleister wird AWS eingesetzt (Cognito, S3, CloudFront,
+  DynamoDB, Textract, Bedrock, Polly, Route 53), Verarbeitung in der EU
+  (Frankfurt). Ein Auftragsverarbeitungsvertrag gemäß Art. 28 DSGVO ist
+  abzuschließen (AWS Data Processing Addendum).
+</p>
+
+<h2>11. Ihre Rechte</h2>
+<ul>
+  <li>Auskunft (Art. 15), Berichtigung (Art. 16), Löschung (Art. 17)</li>
+  <li>Einschränkung (Art. 18), Datenübertragbarkeit (Art. 20), Widerspruch (Art. 21)</li>
+</ul>
+<p>Zudem besteht ein Beschwerderecht bei einer Datenschutz-Aufsichtsbehörde.</p>
+
+<h2>12. Löschung des Kontos</h2>
+<p>Auf Anfrage beim Verantwortlichen wird das Konto mit allen zugehörigen Daten gelöscht.</p>
+
+<h2>13. Änderungen dieser Datenschutzerklärung</h2>
+<p>Es gilt die jeweils hier veröffentlichte, aktuelle Fassung.</p>

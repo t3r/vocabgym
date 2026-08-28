@@ -59,3 +59,9 @@ pnpm-debug.log*
 # Misc
 *.local
 .cache/
+
+# Private legal documents (contain personal data) — uploaded to S3, never committed.
+# Keep the .example templates and the README tracked.
+legal/*.html
+!legal/*.example.html
+

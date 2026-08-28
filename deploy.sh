@@ -105,6 +105,7 @@ echo ""
 echo "☁️  Uploading frontend to S3..."
 aws s3 sync dist/ "s3://${FRONTEND_BUCKET}" \
   --delete \
+  --exclude "legal/*" \
   --region "${REGION}"
 
 echo ""

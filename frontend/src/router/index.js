@@ -94,6 +94,12 @@ const routes = [
     meta: { requiresAuth: false, title: 'Datenschutz' }
   },
   {
+    path: '/impressum',
+    name: 'Impressum',
+    component: () => import('@/views/ImpressumView.vue'),
+    meta: { requiresAuth: false, title: 'Impressum' }
+  },
+  {
     path: '/:pathMatch(.*)*',
     name: 'NotFound',
     component: () => import('@/views/NotFoundView.vue'),

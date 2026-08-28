@@ -12,6 +12,12 @@
           Datenschutz
         </router-link>
         <router-link
+          to="/impressum"
+          class="text-gray-500 hover:text-primary-600 dark:text-gray-400 dark:hover:text-primary-400"
+        >
+          Impressum
+        </router-link>
+        <router-link
           to="/help"
           class="text-gray-500 hover:text-primary-600 dark:text-gray-400 dark:hover:text-primary-400"
         >
