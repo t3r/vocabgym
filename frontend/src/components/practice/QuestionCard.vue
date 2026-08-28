@@ -110,10 +110,11 @@
     <transition name="hint-fade">
       <div
         v-if="showingHint"
-        class="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg text-center"
+        class="mt-4 p-3 bg-blue-50 dark:bg-blue-900/40 border border-blue-200 dark:border-blue-700 rounded-lg text-center"
       >
-        <p class="text-sm text-blue-800 dark:text-blue-200">
-          💡 <span class="font-medium">{{ correctAnswerText }}</span>
+        <p class="text-xs text-blue-700 dark:text-blue-300 mb-1">💡 Lösung</p>
+        <p class="text-2xl font-bold text-blue-900 dark:text-blue-100 break-words">
+          {{ correctAnswerText }}
         </p>
       </div>
     </transition>
