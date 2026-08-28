@@ -179,3 +179,8 @@ Lehrer können:
 Dieses Projekt ist lizenziert unter der [GNU General Public License v3.0 oder später](LICENSE).
 
 Copyright © 2026 Torsten Raudssus
+
+### Bildnachweise
+
+Das Logo (`frontend/public/logo.svg`) ist urheberrechtlich geschützt: © Alexa Binnewies.
+Es ist **nicht** Teil der GPL-Lizenz dieses Projekts; alle Rechte am Logo bleiben vorbehalten.
