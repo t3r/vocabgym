@@ -13,8 +13,11 @@ export function useAuth() {
   const error = computed(() => authStore.error)
 
   const userName = computed(() => {
+    // Prefer the reactive displayName from the store (kept in sync with the
+    // profile edit + localStorage). Fall back to the Cognito user's name.
+    if (authStore.displayName) return authStore.displayName
     if (!authStore.user) return ''
-    return localStorage.getItem('vocab_trainer_displayName') || authStore.user.name || ''
+    return authStore.user.name || ''
   })
 
   const userInitials = computed(() => {

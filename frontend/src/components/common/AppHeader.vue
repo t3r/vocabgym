@@ -138,11 +138,13 @@
 <script setup>
 import { ref, onMounted, nextTick, watch } from 'vue'
 import { useAuth } from '@/composables/useAuth'
+import { useAuthStore } from '@/stores/auth'
 import api from '@/services/api'
 import LoginButton from '@/components/auth/LoginButton.vue'
 import LogoutButton from '@/components/auth/LogoutButton.vue'
 
 const { isAuthenticated, userName } = useAuth()
+const authStore = useAuthStore()
 const mobileMenuOpen = ref(false)
 const isDark = ref(false)
 const editingName = ref(false)
@@ -161,12 +163,12 @@ async function saveDisplayName() {
   if (!name) return
   try {
     await api.put('/users/profile', { displayName: name })
-    // Update local user object
-    const { user } = useAuth()
-    if (user.value) {
-      user.value.name = name
+    // Update reactive store state (also persists to localStorage) so the
+    // header re-renders immediately with the new name.
+    authStore.setDisplayName(name)
+    if (authStore.user) {
+      authStore.user.name = name
     }
-    localStorage.setItem('vocab_trainer_displayName', name)
     editingName.value = false
   } catch {
     // Silent fail - name will update on next login
