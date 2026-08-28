@@ -86,8 +86,13 @@
           </div>
           <div class="tip-card">
             <span class="tip-icon">🔥</span>
-            <h3>Streak-Power</h3>
-            <p>Nach 2 richtigen Antworten in Folge wird der Hinweis-Button freigeschaltet. Nutze ihn, wenn du festhängst!</p>
+            <h3>Vorsagen & neue Wörter</h3>
+            <p>Bei einem <strong>neuen Wort</strong>, das du noch nie richtig hattest, kannst du dir die Lösung sofort zeigen und vorsprechen lassen. Bei bekannten Wörtern wird der Vorsagen-Button nach 2 richtigen Antworten in Folge freigeschaltet.</p>
+          </div>
+          <div class="tip-card">
+            <span class="tip-icon">🔊</span>
+            <h3>Aussprache anhören</h3>
+            <p>Neben dem Fremdsprach-Wort im Feedback findest du ein Lautsprecher-Symbol. Klick darauf, um die Aussprache zu hören. Über das kleine Pfeil-Symbol kannst du <strong>Akzent</strong> (z.B. britisches oder amerikanisches Englisch) und <strong>Stimme</strong> wählen — deine Wahl wird gemerkt.</p>
           </div>
           <div class="tip-card">
             <span class="tip-icon">📊</span>
@@ -110,6 +115,11 @@
       <section class="mb-10">
         <h2 class="section-title">Übungsrichtung wählen</h2>
         <p>Vor jeder Übung kannst du die Richtung wählen: „Deutsch → Zielsprache" oder „Zielsprache → Deutsch". Wechsle ab, damit du in beide Richtungen fit wirst!</p>
+      </section>
+
+      <section class="mb-10">
+        <h2 class="section-title">Lernziele 🎯</h2>
+        <p>Ein Lernziel bündelt ein oder mehrere Vokabelsets mit einer <strong>Deadline</strong> und einem Ziel-Level (wie gut du die Wörter beherrschen sollst). Auf dem Dashboard siehst du dein aktuelles Ziel mit Fortschrittsbalken und einem Hinweis, wie viele Wörter du pro Tag üben solltest, um es rechtzeitig zu schaffen. Deine Lehrkraft kann der ganzen Liga ein gemeinsames Ziel setzen — oder du legst dir selbst eins an.</p>
       </section>
 
       <section class="mb-10">
@@ -227,6 +237,16 @@
           <li><strong>Teilnehmer-Details</strong> — Klicken Sie auf einen Teilnehmer für detaillierte Statistiken (Genauigkeit, wöchentlicher Score, Gesamtversuche, letztes Übungsdatum)</li>
           <li><strong>Teilnehmer entfernen</strong> — In der Detailansicht eines Teilnehmers</li>
         </ul>
+      </section>
+
+      <section class="mb-10">
+        <h2 class="section-title">Lernziele für die Liga</h2>
+        <p>Sie können Ihrer Liga ein gemeinsames <strong>Lernziel</strong> zuweisen: ein oder mehrere Vokabelsets, eine Deadline und ein Ziel-Mastery-Level (3–5). Die App berechnet pro Lernendem den Fortschritt, das Tempo und einen Status (im Zeitplan, gefährdet, im Rückstand, abgelaufen oder geschafft). In der Ziel-Detailansicht sehen Sie den Fortschritt aller Mitglieder auf einen Blick — ideal, um rechtzeitig nachzusteuern.</p>
+      </section>
+
+      <section class="mb-10">
+        <h2 class="section-title">Aussprache (Text-to-Speech)</h2>
+        <p>Beim Üben können die Lernenden sich das Fremdsprach-Wort vorlesen lassen (Amazon Polly). Akzent (z.B. britisches/amerikanisches Englisch) und Stimme sind wählbar. Für neue Wörter, die noch nie richtig beantwortet wurden, wird die Lösung sofort angeboten und vorgesprochen — so können die Lernenden ein unbekanntes Wort direkt korrekt hören. Es wird ausschließlich die Zielsprache vorgelesen.</p>
       </section>
 
       <section class="mb-10">
