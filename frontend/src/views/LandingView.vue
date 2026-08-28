@@ -2,13 +2,18 @@
   <!-- Landing page: Hero section, feature highlights, and login CTA -->
   <div class="min-h-screen">
     <!-- Hero Section -->
-    <section class="relative bg-gradient-to-br from-primary-600 to-primary-800 text-white">
-      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-24 sm:py-32">
+    <section
+      class="relative bg-cover bg-center text-white"
+      style="background-image: url('/background.jpg')"
+    >
+      <!-- Dark gradient overlay for legibility over the photo -->
+      <div class="absolute inset-0 bg-gradient-to-br from-primary-900/80 to-gray-900/85"></div>
+      <div class="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-24 sm:py-32">
         <div class="text-center">
-          <h1 class="text-4xl sm:text-5xl lg:text-6xl font-bold tracking-tight">
+          <h1 class="text-4xl sm:text-5xl lg:text-6xl font-bold tracking-tight drop-shadow-lg">
             Vokabeln lernen — Französisch, Englisch, Spanisch, Italienisch
           </h1>
-          <p class="mt-6 text-lg sm:text-xl text-primary-100 max-w-2xl mx-auto">
+          <p class="mt-6 text-lg sm:text-xl text-primary-50 max-w-2xl mx-auto drop-shadow">
             Scanne deine Arbeitsbuchseiten, extrahiere Vokabeln automatisch und übe mit
             interaktiven Übungen. Perfekt für die 9. Klasse.
           </p>
