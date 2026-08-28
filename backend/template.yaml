@@ -167,6 +167,14 @@ Resources:
     Properties:
       TableName: !Sub vocabtrainer-users-${Environment}
       BillingMode: PAY_PER_REQUEST
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      DeletionProtectionEnabled: !If [IsProd, true, false]
+      Tags:
+        - Key: Project
+          Value: VocabTrainer
+        - Key: Environment
+          Value: !Ref Environment
       AttributeDefinitions:
         - AttributeName: userId
           AttributeType: S
@@ -179,6 +187,14 @@ Resources:
     Properties:
       TableName: !Sub vocabtrainer-vocabsets-${Environment}
       BillingMode: PAY_PER_REQUEST
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      DeletionProtectionEnabled: !If [IsProd, true, false]
+      Tags:
+        - Key: Project
+          Value: VocabTrainer
+        - Key: Environment
+          Value: !Ref Environment
       AttributeDefinitions:
         - AttributeName: vocabSetId
           AttributeType: S
@@ -206,6 +222,14 @@ Resources:
     Properties:
       TableName: !Sub vocabtrainer-vocabitems-${Environment}
       BillingMode: PAY_PER_REQUEST
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      DeletionProtectionEnabled: !If [IsProd, true, false]
+      Tags:
+        - Key: Project
+          Value: VocabTrainer
+        - Key: Environment
+          Value: !Ref Environment
       AttributeDefinitions:
         - AttributeName: vocabSetId
           AttributeType: S
@@ -222,6 +246,14 @@ Resources:
     Properties:
       TableName: !Sub vocabtrainer-sessions-${Environment}
       BillingMode: PAY_PER_REQUEST
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      DeletionProtectionEnabled: !If [IsProd, true, false]
+      Tags:
+        - Key: Project
+          Value: VocabTrainer
+        - Key: Environment
+          Value: !Ref Environment
       AttributeDefinitions:
         - AttributeName: userId
           AttributeType: S
@@ -254,6 +286,14 @@ Resources:
     Properties:
       TableName: !Sub vocabtrainer-progress-${Environment}
       BillingMode: PAY_PER_REQUEST
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      DeletionProtectionEnabled: !If [IsProd, true, false]
+      Tags:
+        - Key: Project
+          Value: VocabTrainer
+        - Key: Environment
+          Value: !Ref Environment
       AttributeDefinitions:
         - AttributeName: progressKey
           AttributeType: S
@@ -270,6 +310,14 @@ Resources:
     Properties:
       TableName: !Sub vocabtrainer-tts-usage-${Environment}
       BillingMode: PAY_PER_REQUEST
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      DeletionProtectionEnabled: !If [IsProd, true, false]
+      Tags:
+        - Key: Project
+          Value: VocabTrainer
+        - Key: Environment
+          Value: !Ref Environment
       AttributeDefinitions:
         - AttributeName: userId
           AttributeType: S
@@ -513,6 +561,14 @@ Resources:
     Properties:
       TableName: !Sub vocabtrainer-leagues-${Environment}
       BillingMode: PAY_PER_REQUEST
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      DeletionProtectionEnabled: !If [IsProd, true, false]
+      Tags:
+        - Key: Project
+          Value: VocabTrainer
+        - Key: Environment
+          Value: !Ref Environment
       AttributeDefinitions:
         - AttributeName: leagueId
           AttributeType: S
@@ -534,6 +590,14 @@ Resources:
     Properties:
       TableName: !Sub vocabtrainer-league-members-${Environment}
       BillingMode: PAY_PER_REQUEST
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      DeletionProtectionEnabled: !If [IsProd, true, false]
+      Tags:
+        - Key: Project
+          Value: VocabTrainer
+        - Key: Environment
+          Value: !Ref Environment
       AttributeDefinitions:
         - AttributeName: leagueId
           AttributeType: S
@@ -550,6 +614,14 @@ Resources:
     Properties:
       TableName: !Sub vocabtrainer-goals-${Environment}
       BillingMode: PAY_PER_REQUEST
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      DeletionProtectionEnabled: !If [IsProd, true, false]
+      Tags:
+        - Key: Project
+          Value: VocabTrainer
+        - Key: Environment
+          Value: !Ref Environment
       AttributeDefinitions:
         - AttributeName: goalId
           AttributeType: S
@@ -1018,6 +1090,419 @@ Resources:
         DNSName: !GetAtt FrontendDistribution.DomainName
         HostedZoneId: Z2FDTNDATAQYW2  # CloudFront global hosted zone ID (fixed constant)
         EvaluateTargetHealth: false
+
+  # ---------------------------------------------------------------------------
+  # Backup (Phase 2): AWS Backup vault + plan + tag-based selection
+  # PITR (per-table) covers 35-day continuous restore; AWS Backup adds
+  # retained, auditable recovery points (dev 7d; prod daily 35d + weekly 90d).
+  # Selection is tag-based (Project=VocabTrainer, Environment=<env>), so any
+  # newly-tagged table is automatically included with no template change.
+  # ---------------------------------------------------------------------------
+  BackupVault:
+    Type: AWS::Backup::BackupVault
+    Properties:
+      BackupVaultName: !Sub vocabtrainer-backup-vault-${Environment}
+      BackupVaultTags:
+        Project: VocabTrainer
+        Environment: !Ref Environment
+
+  BackupRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub vocabtrainer-backup-role-${Environment}
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: backup.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - !Sub arn:${AWS::Partition}:iam::aws:policy/service-role/AWSBackupServiceRolePolicyForBackup
+        - !Sub arn:${AWS::Partition}:iam::aws:policy/service-role/AWSBackupServiceRolePolicyForRestores
+
+  BackupPlan:
+    Type: AWS::Backup::BackupPlan
+    Properties:
+      BackupPlan:
+        BackupPlanName: !Sub vocabtrainer-backup-plan-${Environment}
+        BackupPlanRule: !If
+          - IsProd
+          - - RuleName: prod-daily-35d
+              TargetBackupVault: !Ref BackupVault
+              ScheduleExpression: cron(0 3 * * ? *)     # daily 03:00 UTC
+              StartWindowMinutes: 60
+              CompletionWindowMinutes: 180
+              Lifecycle:
+                DeleteAfterDays: 35
+            - RuleName: prod-weekly-90d
+              TargetBackupVault: !Ref BackupVault
+              ScheduleExpression: cron(0 4 ? * SUN *)   # weekly Sun 04:00 UTC
+              StartWindowMinutes: 60
+              CompletionWindowMinutes: 240
+              Lifecycle:
+                DeleteAfterDays: 90
+          - - RuleName: dev-daily-7d
+              TargetBackupVault: !Ref BackupVault
+              ScheduleExpression: cron(0 3 * * ? *)     # daily 03:00 UTC
+              StartWindowMinutes: 60
+              CompletionWindowMinutes: 180
+              Lifecycle:
+                DeleteAfterDays: 7
+
+  BackupSelection:
+    Type: AWS::Backup::BackupSelection
+    Properties:
+      BackupPlanId: !Ref BackupPlan
+      BackupSelection:
+        SelectionName: !Sub vocabtrainer-tables-${Environment}
+        IamRoleArn: !GetAtt BackupRole.Arn
+        Conditions:
+          StringEquals:
+            - ConditionKey: aws:ResourceTag/Project
+              ConditionValue: VocabTrainer
+            - ConditionKey: aws:ResourceTag/Environment
+              ConditionValue: !Ref Environment
+
+  # ---------------------------------------------------------------------------
+  # Restore testing (Phase 3, prod only): SSM Automation smoke-test.
+  # A scheduled runbook restores each table into a throwaway table, waits for
+  # ACTIVE, asserts item count > 0, then deletes it. Never touches live data.
+  # Weekly test restores from PITR; monthly test restores from an AWS Backup
+  # recovery point (so both backup paths are exercised). On failure, an
+  # EventBridge rule notifies an SNS topic (subscribe to it manually).
+  # ---------------------------------------------------------------------------
+  RestoreAlertsTopic:
+    Type: AWS::SNS::Topic
+    Condition: IsProd
+    Properties:
+      TopicName: vocabtrainer-restore-alerts-prod
+      DisplayName: VocabGym restore-test alerts
+
+  # Role AWS Backup assumes when the runbook restores from a recovery point.
+  RestoreBackupRole:
+    Type: AWS::IAM::Role
+    Condition: IsProd
+    Properties:
+      RoleName: vocabtrainer-restore-backup-role-prod
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: backup.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - !Sub arn:${AWS::Partition}:iam::aws:policy/service-role/AWSBackupServiceRolePolicyForRestores
+
+  # Role the SSM Automation runbook runs as.
+  RestoreTestAutomationRole:
+    Type: AWS::IAM::Role
+    Condition: IsProd
+    Properties:
+      RoleName: vocabtrainer-restore-test-automation-prod
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ssm.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: restore-test
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              # Restore from PITR + manage throwaway tables + validate.
+              - Effect: Allow
+                Action:
+                  - dynamodb:RestoreTableToPointInTime
+                  - dynamodb:RestoreTableFromBackup
+                  - dynamodb:DescribeTable
+                  - dynamodb:DescribeContinuousBackups
+                  - dynamodb:Scan
+                  - dynamodb:DeleteTable
+                  - dynamodb:ListTables
+                  - dynamodb:TagResource
+                Resource: '*'
+              # Restore from an AWS Backup recovery point.
+              - Effect: Allow
+                Action:
+                  - backup:StartRestoreJob
+                  - backup:DescribeRestoreJob
+                  - backup:ListRecoveryPointsByBackupVault
+                  - backup:ListBackupVaults
+                Resource: '*'
+              # Backup restore hands off to RestoreBackupRole.
+              - Effect: Allow
+                Action: iam:PassRole
+                Resource: !GetAtt RestoreBackupRole.Arn
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: '*'
+
+  RestoreTestDocument:
+    Type: AWS::SSM::Document
+    Condition: IsProd
+    Properties:
+      Name: vocabtrainer-restore-test-prod
+      DocumentType: Automation
+      DocumentFormat: YAML
+      Content:
+        schemaVersion: '0.3'
+        description: >-
+          Smoke-test DynamoDB restores for VocabGym prod. For each table,
+          restore into a throwaway table, wait until ACTIVE, assert item
+          count > 0, then delete the throwaway table. Source = PITR or BACKUP.
+        assumeRole: '{{ AutomationAssumeRole }}'
+        parameters:
+          Source:
+            type: String
+            default: PITR
+            allowedValues:
+              - PITR
+              - BACKUP
+            description: Restore source — PITR (point-in-time) or BACKUP (recovery point).
+          AutomationAssumeRole:
+            type: String
+            description: Role the automation runs as.
+          BackupRestoreRoleArn:
+            type: String
+            description: IAM role ARN AWS Backup uses for restores.
+          BackupVaultName:
+            type: String
+            description: AWS Backup vault holding recovery points.
+        mainSteps:
+          - name: runRestoreTest
+            action: aws:executeScript
+            timeoutSeconds: 3000
+            inputs:
+              Runtime: python3.11
+              Handler: handler
+              InputPayload:
+                Source: '{{ Source }}'
+                BackupRestoreRoleArn: '{{ BackupRestoreRoleArn }}'
+                BackupVaultName: '{{ BackupVaultName }}'
+              Script: |
+                import time
+                import boto3
+
+                ENV = "prod"
+                TABLES = [
+                    f"vocabtrainer-users-{ENV}",
+                    f"vocabtrainer-vocabsets-{ENV}",
+                    f"vocabtrainer-vocabitems-{ENV}",
+                    f"vocabtrainer-sessions-{ENV}",
+                    f"vocabtrainer-progress-{ENV}",
+                    f"vocabtrainer-tts-usage-{ENV}",
+                    f"vocabtrainer-leagues-{ENV}",
+                    f"vocabtrainer-league-members-{ENV}",
+                    f"vocabtrainer-goals-{ENV}",
+                ]
+
+                ddb = boto3.client("dynamodb")
+                backup = boto3.client("backup")
+
+                def wait_active(name, timeout=1200):
+                    deadline = time.time() + timeout
+                    while time.time() < deadline:
+                        st = ddb.describe_table(TableName=name)["Table"]["TableStatus"]
+                        if st == "ACTIVE":
+                            return
+                        time.sleep(15)
+                    raise TimeoutError(f"{name} did not become ACTIVE in time")
+
+                def latest_recovery_point(vault, source_arn):
+                    paginator = backup.get_paginator("list_recovery_points_by_backup_vault")
+                    best = None
+                    for page in paginator.paginate(BackupVaultName=vault):
+                        for rp in page.get("RecoveryPoints", []):
+                            if rp.get("ResourceArn") == source_arn and rp.get("Status") == "COMPLETED":
+                                if best is None or rp["CreationDate"] > best["CreationDate"]:
+                                    best = rp
+                    return best
+
+                def restore_pitr(src, dst):
+                    ddb.restore_table_to_point_in_time(
+                        SourceTableName=src,
+                        TargetTableName=dst,
+                        UseLatestRestorableTime=True,
+                    )
+
+                def restore_backup(src, dst, vault, role_arn):
+                    acct = boto3.client("sts").get_caller_identity()["Account"]
+                    region = boto3.session.Session().region_name
+                    source_arn = f"arn:aws:dynamodb:{region}:{acct}:table/{src}"
+                    rp = latest_recovery_point(vault, source_arn)
+                    if rp is None:
+                        raise RuntimeError(f"No completed recovery point for {src} in {vault}")
+                    job = backup.start_restore_job(
+                        RecoveryPointArn=rp["RecoveryPointArn"],
+                        IamRoleArn=role_arn,
+                        Metadata={"targetTableName": dst},
+                        ResourceType="DynamoDB",
+                    )
+                    jid = job["RestoreJobId"]
+                    deadline = time.time() + 1500
+                    while time.time() < deadline:
+                        d = backup.describe_restore_job(RestoreJobId=jid)
+                        status = d["Status"]
+                        if status == "COMPLETED":
+                            return
+                        if status in ("ABORTED", "FAILED"):
+                            raise RuntimeError(f"Restore job {jid} for {src} {status}: {d.get('StatusMessage')}")
+                        time.sleep(20)
+                    raise TimeoutError(f"Restore job {jid} for {src} timed out")
+
+                def handler(event, context):
+                    source = event.get("Source", "PITR")
+                    vault = event.get("BackupVaultName")
+                    role_arn = event.get("BackupRestoreRoleArn")
+                    stamp = int(time.time())
+                    results, failures = [], []
+
+                    for src in TABLES:
+                        dst = f"vocabtrainer-restore-test-{src.split('vocabtrainer-')[1]}-{stamp}"
+                        dst = dst[:255]
+                        try:
+                            if source == "BACKUP":
+                                restore_backup(src, dst, vault, role_arn)
+                            else:
+                                restore_pitr(src, dst)
+                            wait_active(dst)
+                            count = ddb.scan(TableName=dst, Select="COUNT")["Count"]
+                            if count <= 0:
+                                raise AssertionError(f"{src}: restored table {dst} is EMPTY")
+                            results.append({"table": src, "count": count, "ok": True})
+                        except Exception as e:  # noqa: BLE001
+                            failures.append({"table": src, "error": str(e)})
+                        finally:
+                            try:
+                                ddb.delete_table(TableName=dst)
+                            except Exception:  # noqa: BLE001
+                                pass
+
+                    summary = {"source": source, "passed": results, "failed": failures}
+                    print(summary)
+                    if failures:
+                        raise RuntimeError(f"Restore test FAILED for: {[f['table'] for f in failures]}")
+                    return summary
+
+  # Role EventBridge Scheduler assumes to start the automation.
+  RestoreScheduleRole:
+    Type: AWS::IAM::Role
+    Condition: IsProd
+    Properties:
+      RoleName: vocabtrainer-restore-schedule-role-prod
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: scheduler.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: start-automation
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: ssm:StartAutomationExecution
+                Resource: !Sub arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:automation-definition/${RestoreTestDocument}:$DEFAULT
+              - Effect: Allow
+                Action: iam:PassRole
+                Resource:
+                  - !GetAtt RestoreTestAutomationRole.Arn
+
+  RestoreTestWeeklySchedule:
+    Type: AWS::Scheduler::Schedule
+    Condition: IsProd
+    Properties:
+      Name: vocabtrainer-restore-test-weekly-prod
+      Description: Weekly DynamoDB restore smoke-test from PITR
+      FlexibleTimeWindow:
+        Mode: 'OFF'
+      ScheduleExpression: cron(0 3 ? * SUN *)
+      ScheduleExpressionTimezone: UTC
+      Target:
+        Arn: !Sub arn:${AWS::Partition}:scheduler:::aws-sdk:ssm:startAutomationExecution
+        RoleArn: !GetAtt RestoreScheduleRole.Arn
+        Input: !Sub |
+          {
+            "DocumentName": "${RestoreTestDocument}",
+            "Parameters": {
+              "Source": ["PITR"],
+              "AutomationAssumeRole": ["${RestoreTestAutomationRole.Arn}"],
+              "BackupRestoreRoleArn": ["${RestoreBackupRole.Arn}"],
+              "BackupVaultName": ["vocabtrainer-backup-vault-prod"]
+            }
+          }
+
+  RestoreTestMonthlySchedule:
+    Type: AWS::Scheduler::Schedule
+    Condition: IsProd
+    Properties:
+      Name: vocabtrainer-restore-test-monthly-prod
+      Description: Monthly DynamoDB restore smoke-test from an AWS Backup recovery point
+      FlexibleTimeWindow:
+        Mode: 'OFF'
+      ScheduleExpression: cron(0 3 1 * ? *)
+      ScheduleExpressionTimezone: UTC
+      Target:
+        Arn: !Sub arn:${AWS::Partition}:scheduler:::aws-sdk:ssm:startAutomationExecution
+        RoleArn: !GetAtt RestoreScheduleRole.Arn
+        Input: !Sub |
+          {
+            "DocumentName": "${RestoreTestDocument}",
+            "Parameters": {
+              "Source": ["BACKUP"],
+              "AutomationAssumeRole": ["${RestoreTestAutomationRole.Arn}"],
+              "BackupRestoreRoleArn": ["${RestoreBackupRole.Arn}"],
+              "BackupVaultName": ["vocabtrainer-backup-vault-prod"]
+            }
+          }
+
+  # Notify the SNS topic when a restore-test automation fails or times out.
+  RestoreTestFailureRule:
+    Type: AWS::Events::Rule
+    Condition: IsProd
+    Properties:
+      Name: vocabtrainer-restore-test-failure-prod
+      Description: Alert when the DynamoDB restore-test automation fails
+      EventPattern:
+        source:
+          - aws.ssm
+        detail-type:
+          - EC2 Automation Execution Status-change Notification
+        detail:
+          Definition:
+            - vocabtrainer-restore-test-prod
+          Status:
+            - Failed
+            - TimedOut
+      State: ENABLED
+      Targets:
+        - Id: restore-alerts
+          Arn: !Ref RestoreAlertsTopic
+
+  RestoreAlertsTopicPolicy:
+    Type: AWS::SNS::TopicPolicy
+    Condition: IsProd
+    Properties:
+      Topics:
+        - !Ref RestoreAlertsTopic
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: AllowEventBridgePublish
+            Effect: Allow
+            Principal:
+              Service: events.amazonaws.com
+            Action: sns:Publish
+            Resource: !Ref RestoreAlertsTopic
 
 Outputs:
   ApiEndpoint:
