@@ -1156,10 +1156,12 @@ Resources:
       BackupSelection:
         SelectionName: !Sub vocabtrainer-tables-${Environment}
         IamRoleArn: !GetAtt BackupRole.Arn
+        ListOfTags:
+          - ConditionType: STRINGEQUALS
+            ConditionKey: Project
+            ConditionValue: VocabTrainer
         Conditions:
           StringEquals:
-            - ConditionKey: aws:ResourceTag/Project
-              ConditionValue: VocabTrainer
             - ConditionKey: aws:ResourceTag/Environment
               ConditionValue: !Ref Environment
 
