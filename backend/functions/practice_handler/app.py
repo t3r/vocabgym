@@ -126,6 +126,10 @@ def handle_start(event, user_id):
     if question_count and question_count < len(active_items):
         active_items = active_items[:question_count]
 
+    # Load progress to flag words that were never answered correctly ("new"),
+    # so the client can offer the solution/pronunciation immediately.
+    correct_by_item = _get_correct_counts(user_id, vocab_set_id)
+
     # Create session
     session_id = generate_uuid()
     timestamp = get_timestamp()
@@ -153,6 +157,7 @@ def handle_start(event, user_id):
             'question': question_text,
             'correctAnswer': correct_answer,
             'questionNumber': i + 1,
+            'isNew': int(correct_by_item.get(item['itemId'], 0)) == 0,
         })
 
     # Store session in DynamoDB
@@ -198,6 +203,7 @@ def handle_start(event, user_id):
                 'correctAnswer': q['correctAnswer'],
                 'questionNumber': q['questionNumber'],
                 'totalQuestions': len(questions),
+                'isNew': q['isNew'],
             }
             for q in questions
         ],
@@ -551,6 +557,26 @@ def _analyze_error_patterns(user_id, vocab_set_id, wrong_answers):
     patterns = {k: v for k, v in patterns.items() if v}
 
     return patterns
+
+
+def _get_correct_counts(user_id, vocab_set_id):
+    """Return a map {itemId: correctCount} for the user's progress in a set.
+
+    Used to flag "new" words (correctCount == 0 → never answered correctly).
+    """
+    progress_table = dynamodb.Table(PROGRESS_TABLE)
+    progress_key = f"{user_id}#{vocab_set_id}"
+    try:
+        resp = progress_table.query(
+            KeyConditionExpression=Key('progressKey').eq(progress_key)
+        )
+        return {
+            p['itemId']: int(p.get('correctCount', 0))
+            for p in resp.get('Items', [])
+        }
+    except Exception as e:
+        logger.warning(f"Failed to fetch correct counts: {e}")
+        return {}
 
 
 def _prioritize_items(active_items, user_id, vocab_set_id):
