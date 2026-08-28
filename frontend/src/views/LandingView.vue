@@ -20,7 +20,7 @@
     </section>
 
     <!-- Features Section -->
-    <section class="py-20 bg-white">
+    <section class="py-20 bg-white dark:bg-gray-900">
       <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <h2 class="text-3xl font-bold text-center text-gray-900 dark:text-white mb-12">
           So einfach geht's
@@ -34,7 +34,7 @@
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
               </svg>
             </div>
-            <h3 class="text-xl font-semibold mb-2">Scannen</h3>
+            <h3 class="text-xl font-semibold mb-2 text-gray-900 dark:text-white">Scannen</h3>
             <p class="text-gray-600 dark:text-gray-300">
               Fotografiere einfach die Vokabeltabelle aus deinem Arbeitsbuch.
             </p>
@@ -47,7 +47,7 @@
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
               </svg>
             </div>
-            <h3 class="text-xl font-semibold mb-2">Prüfen</h3>
+            <h3 class="text-xl font-semibold mb-2 text-gray-900 dark:text-white">Prüfen</h3>
             <p class="text-gray-600 dark:text-gray-300">
               Die KI erkennt die Vokabeln automatisch. Du kannst sie noch bearbeiten.
             </p>
@@ -60,7 +60,7 @@
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
               </svg>
             </div>
-            <h3 class="text-xl font-semibold mb-2">Üben</h3>
+            <h3 class="text-xl font-semibold mb-2 text-gray-900 dark:text-white">Üben</h3>
             <p class="text-gray-600 dark:text-gray-300">
               Trainiere mit interaktiven Übungen und verfolge deinen Fortschritt.
             </p>
@@ -70,12 +70,12 @@
     </section>
 
     <!-- CTA Section -->
-    <section class="py-16 bg-gray-50">
+    <section class="py-16 bg-gray-50 dark:bg-gray-800">
       <div class="max-w-4xl mx-auto text-center px-4">
         <h2 class="text-2xl font-bold text-gray-900 dark:text-white mb-4">
           Bereit loszulegen?
         </h2>
-        <p class="text-gray-600 mb-8">
+        <p class="text-gray-600 dark:text-gray-300 mb-8">
           Erstelle jetzt dein kostenloses Konto und beginne sofort mit dem Lernen.
         </p>
         <LoginButton />
