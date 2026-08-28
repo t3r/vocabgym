@@ -329,13 +329,58 @@ def handle_complete(event, user_id):
     # Get results from request body (client-side answer checking)
     client_results = body.get('results', [])
 
+    # Fall back to results already persisted during the session via
+    # /practice/submit. This prevents an empty or partial complete request
+    # (e.g. session abandoned, double-complete, client state reset) from
+    # wiping out good data with 0/total.
+    stored_results = session.get('detailedResults', []) or []
+    if not client_results and stored_results:
+        logger.info(json.dumps({
+            'event': 'complete_using_stored_results',
+            'sessionId': session_id,
+            'storedCount': len(stored_results),
+        }))
+        client_results = stored_results
+
     # Calculate statistics
     timestamp = get_timestamp()
     started_at = session.get('startedAt', timestamp)
     duration = timestamp - started_at
     correct_count = sum(1 for r in client_results if r.get('correct'))
-    total = len(client_results) if client_results else session['totalQuestions']
+    total = len(client_results) if client_results else int(session.get('totalQuestions', 0))
     score = int((correct_count / total * 100) if total > 0 else 0)
+
+    # Guard: never overwrite the session's existing results/score with an
+    # empty set. If there are no results to record (neither from the request
+    # nor previously stored), just mark the session completed without
+    # clobbering correctAnswers/score/detailedResults.
+    if not client_results:
+        logger.warning(json.dumps({
+            'event': 'complete_without_results',
+            'sessionId': session_id,
+            'userId': user_id,
+        }))
+        sessions_table.update_item(
+            Key={'userId': user_id, 'sessionId': session_id},
+            UpdateExpression=(
+                'SET #status = :status, completedAt = :completedAt, '
+                '#duration = :duration'
+            ),
+            ExpressionAttributeNames={'#status': 'status', '#duration': 'duration'},
+            ExpressionAttributeValues={
+                ':status': 'completed',
+                ':completedAt': timestamp,
+                ':duration': duration,
+            }
+        )
+        return build_response(200, {
+            'sessionId': session_id,
+            'score': int(session.get('score', 0)),
+            'correct': int(session.get('correctAnswers', 0)),
+            'total': int(session.get('totalQuestions', 0)),
+            'duration': duration,
+            'detailedResults': stored_results,
+        })
 
     # Update session
     sessions_table.update_item(

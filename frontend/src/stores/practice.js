@@ -135,6 +135,15 @@ export const usePracticeStore = defineStore('practice', () => {
 
     const duration = Math.round((Date.now() - currentSession.value.startTime) / 1000)
 
+    // Guard: if no answers were recorded (e.g. session abandoned right after
+    // start, or local state was reset by a reload), do NOT send an empty
+    // results array. An empty /practice/complete would overwrite the stored
+    // score/progress with 0. Just end the session locally.
+    if (!answers.value.length) {
+      isSessionActive.value = false
+      return null
+    }
+
     try {
       const response = await api.post('/practice/complete', {
         sessionId: currentSession.value.sessionId,
