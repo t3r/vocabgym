@@ -1,0 +1,101 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "BackupPlanVaultSelection",
+      "Effect": "Allow",
+      "Action": [
+        "backup:CreateBackupVault",
+        "backup:DeleteBackupVault",
+        "backup:DescribeBackupVault",
+        "backup:PutBackupVaultAccessPolicy",
+        "backup:DeleteBackupVaultAccessPolicy",
+        "backup:CreateBackupPlan",
+        "backup:UpdateBackupPlan",
+        "backup:DeleteBackupPlan",
+        "backup:GetBackupPlan",
+        "backup:CreateBackupSelection",
+        "backup:DeleteBackupSelection",
+        "backup:GetBackupSelection",
+        "backup:ListTags",
+        "backup:TagResource",
+        "backup:UntagResource"
+      ],
+      "Resource": [
+        "arn:aws:backup:eu-central-1:730335610692:backup-vault:vocabtrainer-*",
+        "arn:aws:backup:eu-central-1:730335610692:backup-plan:*"
+      ]
+    },
+    {
+      "Sid": "BackupStorageAndKmsForVaultCreation",
+      "Effect": "Allow",
+      "Action": [
+        "backup-storage:MountCapsule",
+        "kms:CreateKey",
+        "kms:CreateAlias",
+        "kms:DescribeKey",
+        "kms:ListAliases",
+        "kms:CreateGrant",
+        "kms:GenerateDataKey",
+        "kms:Decrypt",
+        "kms:TagResource"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "SnsRestoreAlerts",
+      "Effect": "Allow",
+      "Action": [
+        "sns:CreateTopic",
+        "sns:DeleteTopic",
+        "sns:GetTopicAttributes",
+        "sns:SetTopicAttributes",
+        "sns:ListTagsForResource",
+        "sns:TagResource",
+        "sns:UntagResource"
+      ],
+      "Resource": "arn:aws:sns:eu-central-1:730335610692:vocabtrainer-*"
+    },
+    {
+      "Sid": "SsmAutomationDocument",
+      "Effect": "Allow",
+      "Action": [
+        "ssm:CreateDocument",
+        "ssm:UpdateDocument",
+        "ssm:DeleteDocument",
+        "ssm:DescribeDocument",
+        "ssm:GetDocument",
+        "ssm:UpdateDocumentDefaultVersion",
+        "ssm:AddTagsToResource",
+        "ssm:RemoveTagsFromResource",
+        "ssm:ListTagsForResource"
+      ],
+      "Resource": "arn:aws:ssm:eu-central-1:730335610692:document/vocabtrainer-*"
+    },
+    {
+      "Sid": "EventBridgeSchedulerAndRule",
+      "Effect": "Allow",
+      "Action": [
+        "scheduler:CreateSchedule",
+        "scheduler:DeleteSchedule",
+        "scheduler:GetSchedule",
+        "scheduler:UpdateSchedule",
+        "scheduler:TagResource",
+        "scheduler:UntagResource",
+        "scheduler:ListTagsForResource",
+        "events:PutRule",
+        "events:DeleteRule",
+        "events:DescribeRule",
+        "events:PutTargets",
+        "events:RemoveTargets",
+        "events:TagResource",
+        "events:UntagResource",
+        "events:ListTagsForResource"
+      ],
+      "Resource": [
+        "arn:aws:scheduler:eu-central-1:730335610692:schedule/default/vocabtrainer-*",
+        "arn:aws:events:eu-central-1:730335610692:rule/vocabtrainer-*"
+      ]
+    }
+  ]
+}

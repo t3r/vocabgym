@@ -352,6 +352,53 @@ erDiagram
     Users ||--o{ TtsUsage : "rate-limited by"
 ```
 
+## Backup & Disaster Recovery
+
+Zweistufige Sicherung aller 9 DynamoDB-Tabellen plus automatisiertes,
+selbstprüfendes Restore-Testing. Alles als IaC in `backend/template.yaml`.
+
+### Sicherung (Backups)
+
+| Ebene | Mechanismus | dev | prod |
+|-------|-------------|-----|------|
+| Kontinuierlich | **PITR** (Point-in-Time Recovery) | an | an |
+| Löschschutz | `DeletionProtectionEnabled` | aus | an |
+| Snapshots | **AWS Backup** (Vault + Plan) | täglich, 7 Tage | täglich 35 Tage + wöchentlich 90 Tage |
+
+- **PITR** erlaubt sekundengenaue Wiederherstellung der letzten 35 Tage — ideal
+  gegen versehentliche Writes oder eine gelöschte Tabelle.
+- **AWS Backup** liefert retinierte, auditierbare Recovery-Points. Die
+  `BackupSelection` ist tag-basiert (`Project=VocabTrainer` **und**
+  `Environment=<env>`), daher werden neu getaggte Tabellen automatisch
+  mitgesichert — ohne Template-Änderung.
+- `DeletionProtectionEnabled` in prod verhindert das versehentliche Löschen
+  einer Tabelle (eine beabsichtigte Löschung braucht dann zwei Schritte).
+
+### Restore-Testing (nur prod)
+
+Ein Backup, das nie getestet wird, ist kein Backup. Ein **SSM-Automation-Runbook**
+(`vocabtrainer-restore-test-prod`) prüft daher regelmäßig, ob Restores
+tatsächlich funktionieren — vollautomatisch und selbstaufräumend:
+
+```mermaid
+flowchart LR
+    SCHED["EventBridge Scheduler<br/>wöchentlich (PITR)<br/>monatlich (AWS Backup)"] --> DOC["SSM Automation<br/>Runbook"]
+    DOC --> R["pro Tabelle:<br/>Restore → warte ACTIVE<br/>→ COUNT > 0 → löschen"]
+    R -->|Erfolg| M["OK (Logs/Metrik)"]
+    R -->|Fehler/Timeout| RULE["EventBridge Rule"]
+    RULE --> SNS["SNS Topic<br/>vocabtrainer-restore-alerts-prod"]
+    SNS --> MAIL["E-Mail (manuell abonniert)"]
+```
+
+- Der Test stellt jede Tabelle in eine **Wegwerf-Tabelle**
+  (`vocabtrainer-restore-test-*`) wieder her, wartet auf `ACTIVE`, prüft
+  `COUNT > 0` und löscht sie danach. Live-Daten werden nie berührt.
+- **Wöchentlich** (So 03:00 UTC) aus PITR; **monatlich** (1. des Monats 03:00 UTC)
+  aus einem AWS-Backup-Recovery-Point — so werden beide Pfade getestet.
+- Nur im Fehlerfall meldet eine EventBridge-Rule an ein **SNS-Topic**
+  (Subscription wird manuell angelegt). Im Normalbetrieb: keinerlei manueller Aufwand.
+- Sämtliche Restore-Test-Ressourcen sind `IsProd`-gated (in dev nicht vorhanden).
+
 ## Technologie-Stack
 
 | Schicht | Technologie |
@@ -363,7 +410,8 @@ erDiagram
 | **Backend** | 8× Lambda (Python 3.11, x86_64) + SharedLayer |
 | **AI/OCR** | Textract (OCR) → Bedrock Nova Pro (Vocab Extraction) |
 | **Sprachausgabe** | Polly (Text-to-Speech, Standard-Engine, MP3-Cache in S3) |
-| **Datenbank** | DynamoDB (9 Tabellen, On-Demand Billing) |
+| **Datenbank** | DynamoDB (9 Tabellen, On-Demand Billing, PITR) |
+| **Backup/DR** | AWS Backup (Vault + Plan) + SSM-Automation-Restore-Test (prod) |
 | **Prompts** | SSM Parameter Store (änderbar ohne Deploy) |
 | **IaC** | AWS SAM (CloudFormation) |
 | **Deploy** | `./deploy.sh dev|prod` |
