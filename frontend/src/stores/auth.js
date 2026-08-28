@@ -61,6 +61,9 @@ export const useAuthStore = defineStore('auth', () => {
       if (tokens.refresh_token) {
         refreshToken.value = tokens.refresh_token
       }
+      // Persist refreshed tokens so the API client (which reads the id_token
+      // from localStorage on every request) uses the new token, not the stale one.
+      persistTokens()
       return true
     } catch (err) {
       error.value = 'Sitzung abgelaufen. Bitte erneut anmelden.'
@@ -69,7 +72,7 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
-  function loadUserFromStorage() {
+  async function loadUserFromStorage() {
     const storedAccessToken = localStorage.getItem('vocab_trainer_access_token')
     const storedIdToken = localStorage.getItem('vocab_trainer_id_token')
     const storedRefreshToken = localStorage.getItem('vocab_trainer_refresh_token')
@@ -84,7 +87,9 @@ export const useAuthStore = defineStore('auth', () => {
       // Extract role from id_token cognito:groups claim
       _extractRoleFromToken(storedIdToken)
 
-      checkTokenExpiry()
+      // Await so a stale/expiring token is refreshed (and persisted) before
+      // any protected view fires its first API request.
+      await checkTokenExpiry()
     }
   }
 
@@ -105,7 +110,7 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
-  function checkTokenExpiry() {
+  async function checkTokenExpiry() {
     if (!accessToken.value) return
 
     try {
@@ -114,14 +119,14 @@ export const useAuthStore = defineStore('auth', () => {
       const now = Date.now()
       const fiveMinutes = 5 * 60 * 1000
 
-      if (now >= expiresAt) {
-        refreshSession()
-      } else if (now >= expiresAt - fiveMinutes) {
-        refreshSession()
+      if (now >= expiresAt - fiveMinutes) {
+        // Expired or about to expire — refresh and wait for it to complete
+        // so callers can await a valid token before firing API requests.
+        return await refreshSession()
       }
     } catch {
       // Token format invalid, attempt refresh
-      refreshSession()
+      return await refreshSession()
     }
   }
 

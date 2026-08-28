@@ -9,12 +9,13 @@ const pinia = createPinia()
 
 app.use(pinia)
 
-// Restore auth state from localStorage BEFORE installing router
-// This ensures the first navigation guard has access to auth state
+// Restore auth state from localStorage BEFORE installing router.
+// Awaiting ensures a stale token is refreshed & persisted before the first
+// navigation guard runs and before any protected view fires an API request.
 import { useAuthStore } from '@/stores/auth'
 const authStore = useAuthStore()
-authStore.loadUserFromStorage()
 
-app.use(router)
-
-app.mount('#app')
+authStore.loadUserFromStorage().finally(() => {
+  app.use(router)
+  app.mount('#app')
+})
