@@ -149,6 +149,10 @@ Resources:
           - Id: DeleteAfter90Days
             Status: Enabled
             ExpirationInDays: 90
+          - Id: DeleteTtsCacheAfter30Days
+            Status: Enabled
+            Prefix: tts/
+            ExpirationInDays: 30
       PublicAccessBlockConfiguration:
         BlockPublicAcls: true
         BlockPublicPolicy: true
@@ -260,6 +264,25 @@ Resources:
           KeyType: HASH
         - AttributeName: itemId
           KeyType: RANGE
+
+  TtsUsageTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub vocabtrainer-tts-usage-${Environment}
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: userId
+          AttributeType: S
+        - AttributeName: windowStart
+          AttributeType: S
+      KeySchema:
+        - AttributeName: userId
+          KeyType: HASH
+        - AttributeName: windowStart
+          KeyType: RANGE
+      TimeToLiveSpecification:
+        AttributeName: expiresAt
+        Enabled: true
 
   # ============================================================
   # API Gateway
@@ -812,6 +835,48 @@ Resources:
             RestApiId: !Ref VocabTrainerApi
             Path: /goals/{goalId}/members
             Method: GET
+
+  PollyHandlerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub vocabtrainer-polly-handler-${Environment}
+      CodeUri: functions/polly_handler/
+      Handler: app.lambda_handler
+      Environment:
+        Variables:
+          TTS_USAGE_TABLE: !Ref TtsUsageTable
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref VocabSetsTable
+        - DynamoDBReadPolicy:
+            TableName: !Ref VocabItemsTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref TtsUsageTable
+        - Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action:
+                - polly:SynthesizeSpeech
+                - polly:DescribeVoices
+              Resource: '*'
+            - Effect: Allow
+              Action:
+                - s3:GetObject
+                - s3:PutObject
+              Resource: !Sub 'arn:aws:s3:::${ImagesBucket}/tts/*'
+      Events:
+        GetVoices:
+          Type: Api
+          Properties:
+            RestApiId: !Ref VocabTrainerApi
+            Path: /tts/voices
+            Method: GET
+        Synthesize:
+          Type: Api
+          Properties:
+            RestApiId: !Ref VocabTrainerApi
+            Path: /tts/synthesize
+            Method: POST
 
   # ============================================================
   # Frontend Hosting
