@@ -18,7 +18,9 @@ This document describes the frontend implementation for VocabTrainer, a web-base
 
 ## Architecture Overview
 
-The frontend is a Single Page Application (SPA) that communicates with a serverless backend via REST API. Authentication is handled entirely by AWS Cognito using the OAuth2 authorization code flow with PKCE. The Cognito hosted UI manages login, registration, and password reset flows.
+The frontend is a Single Page Application (SPA) that communicates with a serverless backend via REST API. Authentication is handled entirely by AWS Cognito using the OAuth2 authorization code flow with PKCE. The Cognito hosted UI manages login and password reset flows.
+
+**Invite-Only Access**: The Cognito user pool is configured as `AdminCreateUserOnly` — there is no self-signup. Teachers onboard new users via the backend (Cognito `admin_create_user`). New users receive an email with a temporary password and are required to set their own password on first login.
 
 The UI language is German throughout. Students see Du-Form ("Dein Fortschritt", "Übe jetzt"), teachers see Sie-Form ("Ihre Liga", "Verwalten Sie Ihre Vokabelsets").
 
@@ -45,6 +47,7 @@ frontend/
 │   ├── components/
 │   │   ├── common/
 │   │   │   ├── AppHeader.vue     # Includes inline display name editor, dark mode toggle
+│   │   │   ├── AppFooter.vue     # Datenschutz, Impressum, Hilfe links; Logo © Alexa Binnewies attribution
 │   │   │   ├── LoadingSpinner.vue
 │   │   │   └── ErrorMessage.vue
 │   │   ├── vocab/
@@ -75,7 +78,9 @@ frontend/
 │   │   ├── ProgressView.vue
 │   │   ├── VocabDetailView.vue
 │   │   ├── LeagueView.vue        # League management and leaderboard
-│   │   └── HelpView.vue          # Help and documentation
+│   │   ├── HelpView.vue          # Help and documentation
+│   │   ├── PrivacyView.vue       # Datenschutzerklärung (public)
+│   │   └── ImpressumView.vue     # Impressum (public)
 │   ├── router/
 │   │   └── index.js
 │   ├── stores/
@@ -86,7 +91,8 @@ frontend/
 │   ├── services/
 │   │   ├── api.js
 │   │   ├── auth.js
-│   │   └── cognito.js
+│   │   ├── cognito.js
+│   │   └── tts.js                # Amazon Polly text-to-speech integration
 │   ├── utils/
 │   │   ├── validators.js
 │   │   └── formatters.js
@@ -112,6 +118,7 @@ frontend/
   - No special characters required (student-friendly)
 - **Email Verification**: Required
 - **Hosted UI Domain**: vocabtrainer-auth-{env}.auth.eu-central-1.amazoncognito.com
+- **Signup Policy**: `AdminCreateUserOnly = true` — no self-signup. Teachers create users via the backend (Cognito `admin_create_user`). New users receive a temporary password by email and must set their own password on first login.
 - **Groups**:
   - `teachers` — Users in this group have the teacher role. All other users are students by default.
 
@@ -194,6 +201,7 @@ Pinia store managing authentication state, including role-based access and leagu
   isLoading: false,
   error: null,
   role: null,           // 'teacher' | 'student' — extracted from id_token cognito:groups claim
+  displayName: null,    // Persisted in localStorage, loaded via GET /users/profile
   leagueId: null        // Persisted in localStorage, set when student joins a league
 }
 ```
@@ -201,9 +209,10 @@ Pinia store managing authentication state, including role-based access and leagu
 **Actions**:
 - `login()`: Initiates OAuth flow
 - `handleAuthCallback(code)`: Processes callback, calls `_extractRoleFromToken()`
-- `logout()`: Clears auth state (tokens, role, leagueId)
+- `logout()`: Clears auth state (tokens, role, leagueId, displayName)
 - `refreshSession()`: Refreshes tokens, re-extracts role
 - `loadUserFromStorage()`: Restores session on page load, restores leagueId from localStorage
+- `loadProfile()`: Fetches user profile from `GET /users/profile`; updates `displayName`
 - `checkTokenExpiry()`: Validates token freshness
 - `_extractRoleFromToken()`: Decodes the ID token, reads `cognito:groups` claim. Sets `role` to `'teacher'` if groups contain `'teachers'`, otherwise `'student'`.
 
@@ -304,6 +313,8 @@ apiClient.interceptors.response.use(
 | `/vocab/:vocabSetId` | VocabDetailView | Yes | View/edit vocabulary set |
 | `/league` | LeagueView | Yes | League management and leaderboard |
 | `/help` | HelpView | Yes | Help and documentation |
+| `/datenschutz` | PrivacyView | No | Datenschutzerklärung (public) |
+| `/impressum` | ImpressumView | No | Impressum (public) |
 
 ### Route Metadata
 
@@ -342,6 +353,7 @@ Each route should include metadata:
 
 **Layout**:
 - Header with display name (editable inline via AppHeader), logout button, dark mode toggle
+- GoalBanner: shows the nearest active Lernziel with its status and deadline (if a goal is set)
 - "Neue Seite hochladen" prominent upload button
 - Grid/list of vocabulary sets with:
   - Thumbnail of source image
@@ -355,7 +367,7 @@ Each route should include metadata:
 
 **Role-specific behavior**:
 - **Students**: See their own vocab sets, league leaderboard widget
-- **Teachers**: Additional "Liga verwalten" section, ability to assign vocab sets to league
+- **Teachers**: Additional "Liga verwalten" section, ability to assign vocab sets to league; "Nutzer einladen" section to onboard new students by email (with or without assigning to a league)
 
 **State Management**:
 - Uses vocab store to fetch and display all vocab sets
@@ -558,6 +570,7 @@ Manages user authentication state, role, and league membership.
   isLoading: false,
   error: null,
   role: null,           // 'teacher' | 'student'
+  displayName: null,    // Persisted in localStorage, loaded via GET /users/profile
   leagueId: null        // Persisted in localStorage
 }
 ```
@@ -565,9 +578,10 @@ Manages user authentication state, role, and league membership.
 **Actions**:
 - `login()`: Initiates OAuth flow
 - `handleAuthCallback(code)`: Processes callback, extracts role from token
-- `logout()`: Clears auth state
+- `logout()`: Clears auth state (tokens, role, leagueId, displayName)
 - `refreshSession()`: Refreshes tokens, re-extracts role
 - `loadUserFromStorage()`: Restores session on page load, restores leagueId from localStorage
+- `loadProfile()`: Fetches user profile from `GET /users/profile`; updates `displayName`
 - `checkTokenExpiry()`: Validates token freshness
 - `_extractRoleFromToken()`: Decodes the ID token JWT, reads `cognito:groups` claim array. If it contains `'teachers'`, sets `role = 'teacher'`. Otherwise `role = 'student'`.
 
@@ -1313,25 +1327,31 @@ Document key patterns:
 
 When implementing this frontend, ensure:
 
-- [ ] Vue 3 project set up with Vite and Tailwind CSS
-- [ ] Full dark mode support with global CSS for form elements
-- [ ] AWS Cognito integration with OAuth2 flow (User Pool: eu-central-1_oc5HH7k2w)
-- [ ] Role extraction from ID token cognito:groups claim (`teachers` group)
-- [ ] Protected routes with authentication guards
-- [ ] API service with token management and refresh logic
-- [ ] Pinia stores for auth (with role, leagueId), vocab, practice, and progress
-- [ ] All views implemented: Landing, Dashboard, Upload, Review, Practice, Progress, VocabDetail, League, Help
-- [ ] Multi-language support: target language selector (FR/EN/ES/IT) during upload
-- [ ] source/target field naming throughout (not german/french)
-- [ ] Image upload with S3 presigned URLs (JPG/PNG only, HEIC rejected, multi-image)
-- [ ] Practice session with fuzzy answer matching, smart repetition, and Lernhinweis feedback
-- [ ] League system: teacher creates league, students join with 6-char code, leaderboard
-- [ ] German UI throughout: Du-Form for students, Sie-Form for teachers
-- [ ] Display names via inline editor in AppHeader (email never exposed)
-- [ ] Progress visualization with Chart.js
-- [ ] Responsive design for mobile/tablet/desktop
-- [ ] Error handling and user feedback (German messages)
-- [ ] Deployment to S3 + CloudFront configured
-- [ ] Environment-specific configuration managed
-- [ ] Accessibility features implemented (both light and dark mode)
-- [ ] Testing coverage for critical flows including role extraction and league features
+- [x] Vue 3 project set up with Vite and Tailwind CSS
+- [x] Full dark mode support with global CSS for form elements
+- [x] Self-hosted Inter font via @font-face in main.css (no Google Fonts dependency)
+- [x] AWS Cognito integration with OAuth2 flow (User Pool: eu-central-1_oc5HH7k2w)
+- [x] Role extraction from ID token cognito:groups claim (`teachers` group)
+- [x] Invite-only access: no self-signup form; accounts created by teachers via admin_create_user
+- [x] Protected routes with authentication guards
+- [x] API service with token management and refresh logic
+- [x] Pinia stores for auth (with role, leagueId, displayName + loadProfile()), vocab, practice, and progress
+- [x] All views implemented: Landing, Dashboard, Upload, Review, Practice, Progress, VocabDetail, League, Help, PrivacyView (/datenschutz), ImpressumView (/impressum)
+- [x] Global AppFooter on every page (Datenschutz, Impressum, Hilfe links; Logo © Alexa Binnewies attribution)
+- [x] Multi-language support: target language selector (FR/EN/ES/IT) during upload
+- [x] source/target field naming throughout (not german/french)
+- [x] Image upload with S3 presigned URLs (JPG/PNG only, HEIC rejected, multi-image)
+- [x] Practice session with fuzzy answer matching, smart repetition, and Lernhinweis feedback
+- [x] TTS service (src/services/tts.js) + PronounceButton component (Amazon Polly via /tts/voices and /tts/synthesize)
+- [x] GoalBanner on dashboard showing nearest active Lernziel
+- [x] League system: teacher creates league, students join with 6-char code, leaderboard
+- [x] Teacher "Nutzer einladen" UI on Dashboard (POST /users/invite or POST /league/{leagueId}/invite)
+- [x] German UI throughout: Du-Form for students, Sie-Form for teachers
+- [x] Display names via inline editor in AppHeader; saved via PUT /users/profile (email never exposed)
+- [x] Progress visualization with Chart.js
+- [x] Responsive design for mobile/tablet/desktop
+- [x] Error handling and user feedback (German messages)
+- [x] Deployment to S3 + CloudFront configured
+- [x] Environment-specific configuration managed
+- [x] Accessibility features implemented (both light and dark mode)
+- [x] Testing coverage for critical flows including role extraction and league features
