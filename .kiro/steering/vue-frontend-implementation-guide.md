@@ -44,12 +44,14 @@ frontend/
 │   │   │   └── LogoutButton.vue
 │   │   ├── common/
 │   │   │   ├── AppHeader.vue
+│   │   │   ├── AppFooter.vue
 │   │   │   ├── LoadingSpinner.vue
 │   │   │   ├── Modal.vue
 │   │   │   └── Toast.vue
 │   │   ├── dashboard/
 │   │   │   ├── VocabSetCard.vue
-│   │   │   └── StatsOverview.vue
+│   │   │   ├── StatsOverview.vue
+│   │   │   └── GoalBanner.vue
 │   │   ├── upload/
 │   │   │   ├── ImageDropzone.vue
 │   │   │   ├── UploadProgress.vue
@@ -64,7 +66,8 @@ frontend/
 │   │   │   ├── AnswerInput.vue
 │   │   │   ├── FeedbackDisplay.vue
 │   │   │   ├── ProgressBar.vue
-│   │   │   └── SessionSummary.vue
+│   │   │   ├── SessionSummary.vue
+│   │   │   └── PronounceButton.vue
 │   │   └── progress/
 │   │       ├── ProgressChart.vue
 │   │       ├── MasteryIndicator.vue
@@ -85,7 +88,8 @@ frontend/
 │   ├── services/
 │   │   ├── api.js
 │   │   ├── cognito.js
-│   │   └── storage.js
+│   │   ├── storage.js
+│   │   └── tts.js
 │   ├── utils/
 │   │   ├── validators.js
 │   │   ├── formatters.js
@@ -102,8 +106,9 @@ frontend/
 │   │   ├── VocabSetDetailView.vue
 │   │   ├── LeagueView.vue
 │   │   ├── LeagueJoinView.vue
-│   │   ├── InviteView.vue
 │   │   ├── HelpView.vue
+│   │   ├── PrivacyView.vue
+│   │   ├── ImpressumView.vue
 │   │   └── NotFoundView.vue
 │   ├── App.vue
 │   └── main.js
@@ -224,7 +229,22 @@ Axios instance configured for API communication with interceptors for authentica
 - `removeMember(leagueId, userId)`: DELETE member from league
 
 **User:**
+- `getProfile()`: GET `/users/profile` to fetch user profile (displayName, etc.)
 - `updateProfile(data)`: PUT `/users/profile` to update display name
+- `inviteUser(data)`: POST `/users/invite` to onboard a new user without league assignment (teacher only)
+- `inviteToLeague(leagueId, data)`: POST `/league/{leagueId}/invite` to create user and immediately add to league (teacher only)
+
+**TTS (Text-to-Speech):**
+- `getTtsVoices()`: GET `/tts/voices` — list available Polly voices per language
+- `synthesizeSpeech(text, languageCode, voiceId)`: POST `/tts/synthesize` — returns presigned MP3 URL (cached in S3)
+
+**Learning Goals:**
+- `getGoals()`: GET `/goals` — list user's learning goals
+- `createGoal(data)`: POST `/goals` — create goal with deadline and target mastery level
+- `getGoal(goalId)`: GET `/goals/{goalId}` — goal details + progress/pace/status
+- `updateGoal(goalId, data)`: PUT `/goals/{goalId}` — update goal parameters
+- `deleteGoal(goalId)`: DELETE `/goals/{goalId}` — remove goal
+- `getGoalMembers(goalId)`: GET `/goals/{goalId}/members` — league member progress for teacher's league-wide goal
 
 ### services/storage.js
 
@@ -236,6 +256,23 @@ Client-side storage utilities for caching and offline capability.
 - `clearCache(key)`: Remove specific cache entry
 - `clearAllCache()`: Clear all app cache
 
+### services/tts.js
+
+Text-to-speech service wrapping the Amazon Polly backend (`GET /tts/voices`, `POST /tts/synthesize`). Only the **target-language word** is synthesized (never the German source word).
+
+**Key Functions:**
+- `getVoices(languageCode)`: Fetch available Polly voices for a given language code. Results are cached for the session.
+- `synthesize(text, languageCode, voiceId)`: POST to backend, returns a presigned S3 MP3 URL. The backend caches MP3s in S3 and rate-limits via the TtsUsage table.
+- `pronounceWithStoredVoice(text, languageCode)`: Convenience wrapper that reads the stored voice preference from localStorage (`vocab_trainer_tts_voice_{languageCode}`), calls `synthesize`, and plays the audio.
+
+**State / Persistence:**
+- Selected voice and accent per language are persisted to localStorage (key `vocab_trainer_tts_voice_{languageCode}`).
+- Available voices are cached in-memory for the current session to avoid redundant API calls.
+
+**Implementation Notes:**
+- The backend MP3 cache means repeated requests for the same word/voice are served instantly from S3.
+- New vocabulary words shown during practice are automatically pronounced when the user has TTS enabled.
+
 ## State Management (Pinia Stores)
 
 ### stores/auth.js
@@ -245,6 +282,7 @@ Client-side storage utilities for caching and offline capability.
 - `accessToken`: String
 - `idToken`: String
 - `refreshToken`: String
+- `displayName`: String or null — display name loaded from `GET /users/profile` and persisted to localStorage (`vocab_trainer_displayName`)
 - `isLoading`: Boolean for auth checks
 - `error`: String or null
 - `role`: String — `'student'` or `'teacher'` (extracted from `cognito:groups` claim in ID token, persisted to localStorage)
@@ -256,9 +294,10 @@ Client-side storage utilities for caching and offline capability.
 **Actions:**
 - `login()`: Initiate Cognito OAuth flow
 - `handleAuthCallback(code)`: Process OAuth callback, extract role from token, persist tokens
-- `logout()`: Clear all auth state including role and leagueId from localStorage, redirect to Cognito logout
+- `logout()`: Clear all auth state including role, leagueId, and displayName from localStorage, redirect to Cognito logout
 - `refreshSession()`: Refresh tokens using refresh token
 - `loadUserFromStorage()`: Restore session on page load, extract role from stored ID token
+- `loadProfile()`: Fetch user profile from `GET /users/profile`; updates `displayName` state and persists to localStorage
 - `checkTokenExpiry()`: Validates token freshness, auto-refreshes if within 5 minutes of expiry
 - `setLeagueId(id)`: Set/clear league ID (persisted to localStorage)
 - `setRole(newRole)`: Override role (persisted to localStorage)
@@ -442,6 +481,19 @@ Application header with navigation, dark mode toggle, display name editor, and h
 - Uses `useAuth` composable for `isAuthenticated` and `userName`
 - All text in German (Hochladen, Fortschritt, Liga, Hilfe, etc.)
 
+### components/common/AppFooter.vue
+
+Global application footer rendered on every page.
+
+**Features:**
+- Navigation links: Datenschutz (`/datenschutz`), Impressum (`/impressum`), Hilfe (`/help`)
+- Logo attribution: "Logo © Alexa Binnewies" — the logo `frontend/public/logo.svg` is copyright Alexa Binnewies and is **not** covered by the project's GPL license
+- Dark mode support
+
+**Implementation Notes:**
+- Included once in `App.vue`, displayed below all page content
+- All links are plain `<router-link>` elements pointing to public (no-auth) routes
+
 ### components/upload/ImageDropzone.vue
 
 Multi-image drag-and-drop file upload component with file validation.
@@ -553,6 +605,26 @@ End-of-session results display with statistics, league update, and error pattern
 - `@practice-again`: Restart practice
 - `@back`: Navigate to dashboard
 
+### components/practice/PronounceButton.vue
+
+Button that synthesizes and plays the target-language pronunciation of a word via Amazon Polly.
+
+**Features:**
+- Speaker icon button (🔊) placed next to the target-language word in practice and review
+- On click: calls `tts.pronounceWithStoredVoice(text, languageCode)` and plays the returned MP3 via the browser Audio API
+- Shows loading state while synthesis request is in flight
+- Displays an error toast if the rate limit is reached or synthesis fails
+
+**Props:**
+- `text`: String — the target-language word to pronounce
+- `languageCode`: String — language code (e.g. `'fr'`, `'en'`)
+- `autoPlay`: Boolean (default: false) — if true, pronounces automatically on mount (used for new words in practice)
+
+**Implementation Notes:**
+- Voice preference read from localStorage key `vocab_trainer_tts_voice_{languageCode}`; falls back to the first available voice for the language
+- Only the target-language word is synthesized, never the German source word
+- `aria-label="Aussprache anhören"` for accessibility
+
 ### components/dashboard/VocabSetCard.vue
 
 Card component displaying vocab set summary on dashboard.
@@ -571,6 +643,24 @@ Card component displaying vocab set summary on dashboard.
 - `@practice`: Emitted to start practice
 - `@view`: Emitted to view details
 - `@delete`: Emitted to delete vocab set
+
+### components/dashboard/GoalBanner.vue
+
+Banner component displayed at the top of the Dashboard showing the nearest active Lernziel.
+
+**Features:**
+- Displays goal title, target mastery level, deadline, and current status
+- Status badge with color coding: `on-track` (green), `at-risk` (yellow), `behind` (red), `achieved` (blue), `expired` (gray)
+- Progress bar showing current mastery vs. target mastery
+- Link to full goal management view
+- Hidden when no active goals exist
+
+**Props:**
+- `goal`: Object with goal data (`title`, `deadline`, `targetMasteryLevel`, `status`, `currentMastery`)
+
+**Implementation Notes:**
+- Loaded in DashboardView.vue via `getGoals()` API call; nearest active goal selected by earliest deadline
+- All text in German
 
 ### components/progress/ProgressChart.vue
 
@@ -614,10 +704,12 @@ Main dashboard after login.
 
 **Features:**
 - Welcome message with user name
+- GoalBanner: shows the nearest active Lernziel with its status and deadline (if a goal is set)
 - Stats overview (total vocab sets, total words)
 - Grid of vocab set cards
 - "Hochladen" button for new uploads
 - League vocab sets section (if user has a league)
+- **Teacher-only**: "Nutzer einladen" section to onboard new students by email via `POST /users/invite` (without league) or via the league invite flow
 
 **Implementation:**
 - Fetch vocab sets on mount
@@ -765,14 +857,6 @@ Separate league join view accessible via `/league/join/:code?`.
 - Join league API call
 - Redirect to League view on success
 
-### views/InviteView.vue
-
-Invite link handler at `/invite/:token`.
-
-**Features:**
-- Handles invite token from URL
-- Auto-joins league if authenticated
-
 ### views/HelpView.vue
 
 Help and documentation page with role-based tabs.
@@ -800,6 +884,26 @@ Help and documentation page with role-based tabs.
 
 OAuth callback handler for Cognito authentication flow.
 
+### views/PrivacyView.vue
+
+Datenschutzerklärung (privacy policy) page — publicly accessible without login.
+
+**Features:**
+- Full privacy policy in German
+- Accessible at `/datenschutz`
+- No authentication required (`meta.requiresAuth: false`)
+- Linked from AppFooter on every page
+
+### views/ImpressumView.vue
+
+Impressum page — publicly accessible without login.
+
+**Features:**
+- Legal imprint in German
+- Accessible at `/impressum`
+- No authentication required (`meta.requiresAuth: false`)
+- Linked from AppFooter on every page
+
 ### views/NotFoundView.vue
 
 404 page with link back to dashboard.
@@ -821,10 +925,11 @@ Vue Router setup with route guards. All route titles are in German.
   { path: '/practice/:vocabSetId', name: 'Practice', meta: { requiresAuth: true, title: 'Üben' }, props: true },
   { path: '/progress', name: 'Progress', meta: { requiresAuth: true, title: 'Fortschritt' } },
   { path: '/vocab/:vocabSetId', name: 'VocabSetDetail', meta: { requiresAuth: true, title: 'Vokabelset' }, props: true },
-  { path: '/invite/:token', name: 'Invite', meta: { requiresAuth: false, title: 'Einladung' }, props: true },
   { path: '/league', name: 'League', meta: { requiresAuth: true, title: 'Liga' } },
   { path: '/league/join/:code?', name: 'LeagueJoin', meta: { requiresAuth: true, title: 'Liga beitreten' }, props: true },
   { path: '/help', name: 'Help', meta: { requiresAuth: false, title: 'Hilfe' } },
+  { path: '/datenschutz', name: 'Privacy', meta: { requiresAuth: false, title: 'Datenschutz' } },
+  { path: '/impressum', name: 'Impressum', meta: { requiresAuth: false, title: 'Impressum' } },
   { path: '/:pathMatch(.*)*', name: 'NotFound', meta: { requiresAuth: false, title: 'Nicht gefunden' } }
 ]
 ```
@@ -845,6 +950,10 @@ Full dark mode support using Tailwind's `dark:` variant. Dark mode is toggled vi
 **Global dark mode styles** in `src/assets/styles/main.css`:
 - Body: `dark:text-gray-100 dark:bg-gray-900`
 - All form inputs (`input[type="text"]`, `select`, `textarea`, etc.): `dark:bg-gray-700 dark:border-gray-600 dark:text-gray-100 dark:placeholder-gray-400`
+
+### Typography & Fonts
+
+The Inter font is **self-hosted** via `@font-face` declarations in `src/assets/styles/main.css`. No Google Fonts dependency — font files are bundled with the frontend and served from S3/CloudFront. This ensures privacy compliance and offline reliability.
 
 ### Utility Classes (main.css `@layer components`)
 

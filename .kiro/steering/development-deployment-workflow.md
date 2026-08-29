@@ -11,7 +11,7 @@ VocabTrainer is a serverless web application for 9th grade German Gymnasium stud
 - Storage: S3
 - CDN: CloudFront
 - Authentication: AWS Cognito with OAuth2 flow
-- OCR: AWS Textract (primary), OpenAI Vision API (fallback)
+- OCR/AI: AWS Textract → Amazon Bedrock (Nova Pro, `eu.amazon.nova-pro-v1:0`)
 - Infrastructure: AWS SAM (template.yaml in `backend/`)
 - Region: eu-central-1
 
@@ -35,12 +35,15 @@ vocabgym/
 ├── backend/
 │   ├── template.yaml       # SAM/CloudFormation template
 │   ├── samconfig.toml       # SAM deployment config
-│   ├── functions/           # Lambda function directories
+│   ├── functions/           # Lambda function directories (8 functions)
 │   │   ├── upload_handler/
 │   │   ├── extraction_handler/
 │   │   ├── vocab_crud_handler/
 │   │   ├── practice_handler/
-│   │   └── progress_handler/
+│   │   ├── progress_handler/
+│   │   ├── league_handler/
+│   │   ├── polly_handler/
+│   │   └── goal_handler/
 │   ├── layers/              # Shared Lambda layer
 │   ├── tests/
 │   └── requirements.txt
@@ -177,7 +180,7 @@ cd backend
 sam build --use-container
 ```
 
-**Known issue:** The PracticeHandler function uses `python-Levenshtein`, which requires a C extension compiled for arm64/Linux. Building with `--use-container` handles this, but there's a pre-existing arm64 wheel issue. If the container build fails for this dependency, the workaround is to use a pre-built wheel or pin to a version with published arm64 wheels.
+**Known issue:** The PracticeHandler function uses `python-Levenshtein`, which requires a C extension compiled for x86_64/Linux. Building with `--use-container` handles this. If the container build fails for this dependency, the workaround is to use a pre-built wheel or pin to a version with published x86_64 wheels.
 
 ### Frontend Build
 
@@ -195,9 +198,38 @@ The `backend/samconfig.toml` has profiles for both environments:
 
 Region is eu-central-1 for all profiles.
 
-### No CI/CD
+### CI/CD
 
-There is no CI/CD pipeline yet. All deployments are triggered manually by running `./deploy.sh`. A GitHub Actions pipeline may be added later as the project matures.
+The project uses GitHub Actions for automated testing and deployment:
+
+| Trigger | Workflow | Action |
+|---------|----------|--------|
+| Pull Request → `main` | `test.yml` | Run backend + frontend tests (mandatory) |
+| Push → `main` | `deploy-dev.yml` | Tests + deploy to dev environment |
+| GitHub Release (tag) | `deploy-prod.yml` | Tests + deploy to prod environment |
+
+Workflows use OIDC (no long-lived AWS credentials). Each environment (`dev`, `prod`) in GitHub has its own secrets:
+- `AWS_DEPLOY_ROLE_ARN` — IAM role for OIDC
+- `CERTIFICATE_ARN` — ACM certificate ARN
+- `HOSTED_ZONE_ID` — Route 53 hosted zone ID
+
+**Prod release:**
+```bash
+git tag v1.0.0
+git push origin v1.0.0
+# Then on GitHub: Releases → Create release from tag
+```
+
+### Custom Domain
+
+The production frontend is served at **vocab.gym.t3r.de** via CloudFront + Route 53 + ACM (certificate in us-east-1). To enable custom domain support during deployment, create `backend/.env.deploy`:
+
+```bash
+CERTIFICATE_ARN=arn:aws:acm:us-east-1:...:certificate/xxx
+HOSTED_ZONE_ID=Z0XXXXXXXXX
+```
+
+`deploy.sh` reads this file and passes the values as CloudFormation parameters. Without this file, deployment works but uses the default CloudFront domain.
 
 ### Post-Deployment Verification
 
@@ -278,7 +310,7 @@ scripts/
 ### CloudWatch
 
 **Log Groups:** `/aws/lambda/vocabtrainer-{env}-{function-name}`
-- Retention: 7 days (dev), 30 days (prod)
+- Retention: 7 days (dev), 90 days (prod)
 - Lambda functions use AWS Lambda Powertools for structured logging
 
 **Key Metrics:**
@@ -311,6 +343,15 @@ def lambda_handler(event, context):
 
 **PII rules:** Never log email addresses or passwords. Log Cognito user IDs only.
 
+### Backup & Disaster Recovery
+
+All 9 DynamoDB tables have Point-in-Time Recovery (PITR) enabled. AWS Backup is configured with tag-based selection:
+
+- **Dev:** Daily backups, 7-day retention
+- **Prod:** Daily backups (35-day retention) + weekly backups (90-day retention)
+
+A prod-only SSM Automation restore-test runbook runs weekly (PITR) and monthly (AWS Backup source) to verify recoverability. An SNS topic + EventBridge rule alerts on runbook failures.
+
 ## Security
 
 ### Authentication & Authorization
@@ -325,7 +366,7 @@ def lambda_handler(event, context):
 - DynamoDB encryption at rest (AWS managed keys)
 - S3 encryption (SSE-S3)
 - HTTPS only (enforced via CloudFront and API Gateway)
-- OpenAI API key stored in AWS Secrets Manager
+- Extraction prompts stored in SSM Parameter Store (changeable without redeploy)
 - betterleaks pre-commit hook prevents committing secrets
 
 ### Input Validation
@@ -340,7 +381,7 @@ def lambda_handler(event, context):
 ### AWS Cost Controls
 
 - DynamoDB: on-demand billing (pay-per-request)
-- Lambda: arm64 architecture for better price/performance
+- Lambda: x86_64 architecture
 - S3 lifecycle policies to auto-delete old images
 - CloudFront compression enabled (gzip/brotli)
 - Lambda memory right-sized per function
@@ -362,7 +403,7 @@ Target: < $50/month for 100 users. Monitor via AWS Cost Explorer and billing ale
 **Lambda timeout during extraction:**
 - Extraction handler has 5-minute timeout
 - If Textract is slow, check image size (resize if > 5MB)
-- OpenAI fallback adds latency
+- Bedrock (Nova Pro) handles the extraction; verify model access in eu-central-1
 
 **Cognito authentication failing:**
 - Verify callback URLs in Cognito match the environment

@@ -41,12 +41,15 @@ The entire infrastructure runs on AWS using serverless architecture.
              ├──────────► Lambda: vocab_crud_handler
              ├──────────► Lambda: practice_handler
              ├──────────► Lambda: progress_handler
-             └──────────► Lambda: league_handler
+             ├──────────► Lambda: league_handler
+             ├──────────► Lambda: polly_handler
+             └──────────► Lambda: goal_handler
                           │
-                          ├──────► DynamoDB (7 tables)
+                          ├──────► DynamoDB (9 tables)
                           ├──────► S3 Bucket (Images)
                           ├──────► AWS Textract (OCR)
-                          └──────► Amazon Bedrock (LLM extraction)
+                          ├──────► Amazon Bedrock (LLM extraction)
+                          └──────► Amazon Polly (TTS)
 ```
 
 ### Design Principles
@@ -101,6 +104,8 @@ User → CloudFront → Cognito Hosted UI → Authorization Code
 **Groups:**
 - **teachers**: Cognito group for teacher accounts. Backend reads `cognito:groups` claim from the JWT to check membership. Teachers can create/manage leagues and are filtered from leaderboards.
 
+**Signup Policy:** `AdminCreateUserOnly = true` — there is **no self-signup**. Teachers onboard new users via `admin_create_user` (Cognito API). New users receive a temporary password by email and must set their own password on first login.
+
 **Domain:**
 - `vocabtrainer-{stage}-{accountId}.auth.{region}.amazoncognito.com`
 
@@ -131,9 +136,9 @@ User → CloudFront → Cognito Hosted UI → Authorization Code
 /images/{userId}/{vocabSetId}/{timestamp}-original.{ext}
 ```
 
-### 3. Amazon DynamoDB Tables (7 tables)
+### 3. Amazon DynamoDB Tables (9 tables)
 
-All tables use on-demand billing (PAY_PER_REQUEST) and are named `vocabtrainer-{tablename}-{stage}`.
+All tables use on-demand billing (PAY_PER_REQUEST) and are named `vocabtrainer-{tablename}-{stage}`. All 9 tables have Point-in-Time Recovery (PITR) enabled, Project/Environment tags, and DeletionProtection enabled in production.
 
 #### Table 1: Users
 
@@ -318,6 +323,47 @@ Attributes:
 
 **Note:** The teacher is NOT a member of LeagueMembers. The teacher is identified via `Leagues.teacherUserId` and is filtered from leaderboard results.
 
+#### Table 8: TtsUsage
+
+**Table Name:** `vocabtrainer-tts-usage-{stage}`
+
+```
+userId (PK) - String (Cognito sub)
+dateKey (SK) - String (ISO date, e.g. "2026-08-29")
+
+Attributes:
+  - requestCount: Number (TTS requests made on this date)
+  - updatedAt: Number (Unix timestamp)
+```
+
+**Purpose:** Rate-limiting for Amazon Polly synthesis requests. The polly_handler increments `requestCount` per user per day and rejects requests that exceed the configured daily limit.
+
+#### Table 9: LearningGoals
+
+**Table Name:** `vocabtrainer-goals-{stage}`
+
+```
+goalId (PK) - String (UUID)
+userId (SK) - String (Cognito sub of goal owner)
+
+Attributes:
+  - title: String
+  - vocabSetId: String (target vocab set, optional)
+  - leagueId: String (if set by teacher as league-wide goal)
+  - targetMasteryLevel: Number (0-5, desired mastery)
+  - deadline: String (ISO date)
+  - status: String ("on-track" | "at-risk" | "behind" | "expired" | "achieved")
+  - createdAt: Number
+  - updatedAt: Number
+
+GSI: userId-deadline-index
+  Partition Key: userId
+  Sort Key: deadline (String)
+  Projection: ALL
+```
+
+**Purpose:** Learning Goals with deadline and target mastery level. `calculate_goal_status` (in goal_handler) computes progress, pace, and current status. Teachers can create league-wide goals visible to all league members.
+
 ### 4. Amazon API Gateway
 
 **API Name:** `vocabtrainer-api-{stage}`
@@ -355,18 +401,29 @@ DELETE /league/{leagueId}                     → league_handler (delete)
 GET    /league/{leagueId}/leaderboard         → league_handler
 GET    /league/{leagueId}/members             → league_handler
 DELETE /league/{leagueId}/members/{memberId}  → league_handler (remove)
-PUT    /users/profile                         → league_handler (update displayName)
+POST   /league/{leagueId}/invite              → league_handler (create user + add to league)
 
-POST   /invite                                → invite_handler (create)
-GET    /invite/{token}                        → invite_handler (validate, no auth)
+GET    /users/profile                         → league_handler (get displayName)
+PUT    /users/profile                         → league_handler (update displayName)
+POST   /users/invite                          → league_handler (onboard user without league)
+
+GET    /tts/voices                            → polly_handler
+POST   /tts/synthesize                        → polly_handler
+
+GET    /goals                                 → goal_handler
+POST   /goals                                 → goal_handler
+GET    /goals/{goalId}                        → goal_handler
+PUT    /goals/{goalId}                        → goal_handler
+DELETE /goals/{goalId}                        → goal_handler
+GET    /goals/{goalId}/members                → goal_handler (league member progress, teacher only)
 ```
 
-### 5. AWS Lambda Functions (7 functions + SharedLayer)
+### 5. AWS Lambda Functions (8 functions + SharedLayer)
 
 #### General Configuration
 
 **Runtime:** Python 3.11
-**Architecture:** arm64 (Graviton2)
+**Architecture:** x86_64
 **Default Memory:** 512 MB
 **Default Timeout:** 30 seconds
 
@@ -381,6 +438,8 @@ PROGRESS_TABLE=vocabtrainer-progress-{stage}
 IMAGES_BUCKET=vocabtrainer-images-{stage}-{accountId}
 LEAGUES_TABLE=vocabtrainer-leagues-{stage}
 LEAGUE_MEMBERS_TABLE=vocabtrainer-league-members-{stage}
+TTS_USAGE_TABLE=vocabtrainer-tts-usage-{stage}
+GOALS_TABLE=vocabtrainer-goals-{stage}
 REGION={AWS::Region}
 ```
 
@@ -391,7 +450,7 @@ REGION={AWS::Region}
   - `validation.py` — validate_uuid, validate_file_upload, validate_practice_options
   - `languages.py` — get_language, DEFAULT_TARGET_LANGUAGE, language config (name, nameEnglish per code)
   - `auth.py` — auth utilities
-- Compatible with python3.11 and arm64
+- Compatible with python3.11 and x86_64
 
 #### Function 1: upload_handler
 
@@ -452,7 +511,7 @@ bedrock_client.converse(
 - Textract: AnalyzeDocument, DetectDocumentText
 - Bedrock: InvokeModel on foundation-model/* and inference-profile/*
 
-**Note:** The OpenAI fallback code still exists in the codebase for legacy reasons but is not the primary path. Bedrock is the production extraction method.
+**Note:** Extraction prompts are stored in SSM Parameter Store and can be updated without redeployment.
 
 #### Function 3: vocab_crud_handler
 
@@ -571,12 +630,52 @@ def _is_teacher(event):
 **IAM Permissions:**
 - DynamoDB: CRUD on Leagues, LeagueMembers, Users; Read on VocabSets, Progress, PracticeSessions
 
-#### Function 7: invite_handler
+#### Function 7: polly_handler
 
-**Function Name:** `vocabtrainer-invite-handler-{stage}`
-**Trigger:** POST /invite, GET /invite/{token} (GET has no auth)
+**Function Name:** `vocabtrainer-polly-handler-{stage}`
+**Trigger:** GET /tts/voices, POST /tts/synthesize
 
-**Purpose:** Create and validate invite tokens for controlled signup.
+**Purpose:** Amazon Polly text-to-speech synthesis for target-language vocabulary words. MP3 results are cached in S3 to avoid redundant Polly calls. Usage is rate-limited per user per day via the TtsUsage table.
+
+**Operations:**
+
+- **GET /tts/voices** — Returns available Polly voices grouped by language code. Results list voices suitable for the supported target languages (fr, en, es, it).
+- **POST /tts/synthesize** — Accepts `{text, languageCode, voiceId}`. Checks S3 cache first (key derived from text + voiceId hash). On cache miss, calls Polly Standard engine, stores MP3 in S3, returns presigned URL. Increments `requestCount` in TtsUsage; rejects with 429 if daily limit exceeded.
+
+**Key Details:**
+- Only the **target-language word** is synthesized (never the German source word).
+- MP3 cache key is stored under a `tts/` prefix in the images bucket.
+- Rate-limit check: reads TtsUsage item for `{userId, dateKey}` and enforces a configured daily maximum.
+
+**IAM Permissions:**
+- Polly: `polly:SynthesizeSpeech`, `polly:DescribeVoices`
+- S3: PutObject, GetObject on images bucket (tts/ prefix)
+- DynamoDB: CRUD on TtsUsage table
+
+#### Function 8: goal_handler
+
+**Function Name:** `vocabtrainer-goal-handler-{stage}`
+**Trigger:** GET/POST /goals, GET/PUT/DELETE /goals/{goalId}, GET /goals/{goalId}/members
+
+**Purpose:** Manage Learning Goals (Lernziele) with deadlines and target mastery levels. Tracks progress and pace per student and per league.
+
+**Operations:**
+
+- **GET /goals** — List all goals for the authenticated user.
+- **POST /goals** — Create a new goal with `{title, vocabSetId, deadline, targetMasteryLevel}`. Teachers may also set `leagueId` for a league-wide goal.
+- **GET /goals/{goalId}** — Get goal details including computed `status`, `currentMastery`, and pace analysis.
+- **PUT /goals/{goalId}** — Update goal parameters (deadline, targetMasteryLevel, title).
+- **DELETE /goals/{goalId}** — Remove a goal.
+- **GET /goals/{goalId}/members** — Teacher-only. Returns per-member progress for a league-wide goal.
+
+**`calculate_goal_status` logic:**
+- Computes current average mastery for the target vocabSet
+- Compares against deadline and `targetMasteryLevel`
+- Returns one of: `on-track`, `at-risk`, `behind`, `expired`, `achieved`
+- Expired goals (past deadline, not achieved) remain visible in history
+
+**IAM Permissions:**
+- DynamoDB: CRUD on LearningGoals; Read on Progress, VocabSets, VocabItems, Leagues, LeagueMembers, Users
 
 ### 6. Amazon Bedrock
 
@@ -614,7 +713,17 @@ def _is_teacher(event):
 
 **Role in pipeline:** Textract is the OCR stage only. The LLM (Bedrock) handles the intelligent extraction of vocabulary pairs from the raw text. This two-stage approach handles free-text layouts that don't use strict table structures.
 
-### 8. Amazon CloudFront
+### 8. Amazon Polly
+
+**Purpose:** Text-to-speech synthesis for target-language vocabulary words in practice and review.
+
+**Integration:** Called by polly_handler. Synthesized MP3 audio is cached in S3 (under `tts/` prefix) and served via presigned URLs to avoid repeated Polly calls for the same word/voice combination.
+
+**Voices:** `GET /tts/voices` returns voices grouped by language code (fr, en, es, it); voice and accent are selectable per student preference (persisted to localStorage).
+
+**Rate limiting:** Daily per-user request count tracked in the TtsUsage DynamoDB table.
+
+### 9. Amazon CloudFront
 
 **Distribution for frontend SPA.**
 
@@ -627,7 +736,9 @@ def _is_teacher(event):
 - Price class: PriceClass_100 (US, Canada, Europe)
 - Custom error responses: 403 → /index.html (200), 404 → /index.html (200) — for SPA routing
 
-### 9. CloudWatch Logging & Monitoring
+**Custom Domain:** Production frontend served at **vocab.gym.t3r.de** via CloudFront + Route 53 + ACM (certificate in us-east-1). Custom domain parameters (`CERTIFICATE_ARN`, `HOSTED_ZONE_ID`) are passed to the CloudFormation stack during deployment.
+
+### 10. CloudWatch Logging & Monitoring
 
 **Log Groups:**
 - `/aws/lambda/vocabtrainer-upload-handler-{stage}`
@@ -636,9 +747,10 @@ def _is_teacher(event):
 - `/aws/lambda/vocabtrainer-practice-handler-{stage}`
 - `/aws/lambda/vocabtrainer-progress-handler-{stage}`
 - `/aws/lambda/vocabtrainer-league-handler-{stage}`
-- `/aws/lambda/vocabtrainer-invite-handler-{stage}`
+- `/aws/lambda/vocabtrainer-polly-handler-{stage}`
+- `/aws/lambda/vocabtrainer-goal-handler-{stage}`
 
-**Retention:** 7 days (dev), 30 days (prod)
+**Retention:** 7 days (dev), 90 days (prod)
 
 **Structured Logging:** All handlers use Python `logging` with `json.dumps` for structured log events. Always use `default=str` for DynamoDB Decimal serialization.
 
@@ -654,6 +766,22 @@ def _is_teacher(event):
 - API Gateway 5xx errors > 10 in 5 minutes
 - Textract/Bedrock throttling
 - Lambda duration > 80% of timeout
+
+### 11. Backup & Disaster Recovery
+
+**DynamoDB PITR:** All 9 tables have Point-in-Time Recovery enabled. Allows restore to any second within the last 35 days.
+
+**DeletionProtection:** Enabled on all 9 tables in production to prevent accidental deletion.
+
+**AWS Backup:**
+- Backup vault: `vocabtrainer-backup-vault-{stage}`
+- Tag-based selection — all resources tagged `Project=VocabTrainer` are included
+- **Dev plan:** Daily backups, 7-day retention
+- **Prod plan:** Daily backups (35-day retention) + weekly backups (90-day retention)
+
+**Restore Testing (prod only):**
+- SSM Automation runbook runs weekly (PITR) and monthly (AWS Backup source) to verify recoverability
+- An SNS topic + EventBridge rule alerts on runbook failures
 
 ## Infrastructure as Code
 
@@ -687,7 +815,10 @@ backend/
 │   ├── league_handler/
 │   │   ├── app.py
 │   │   └── requirements.txt
-│   └── invite_handler/
+│   ├── polly_handler/
+│   │   ├── app.py
+│   │   └── requirements.txt
+│   └── goal_handler/
 │       ├── app.py
 │       └── requirements.txt
 ├── layers/
@@ -744,7 +875,7 @@ DynamoDB returns numbers as `Decimal` type in Python. Always use `json.dumps(dat
 
 ### Lambda
 
-- arm64 architecture for faster cold starts and better price/performance
+- x86_64 architecture
 - Global-scope AWS client initialization for connection reuse across invocations
 - SharedLayer for common dependencies to reduce per-function package size
 

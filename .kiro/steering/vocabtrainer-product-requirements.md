@@ -11,8 +11,10 @@ The application features two user roles: **students** and **teachers**. Teachers
 - **Automated extraction**: Two-stage AI pipeline (Textract + Bedrock) converts workbook pages into practice material, handling both tables and free-text layouts
 - **Immediate practice**: Scan → Review → Practice workflow in minutes
 - **AI-assisted learning**: Smart repetition prioritizes weak words; error pattern analysis provides personalized learning hints (Lernhinweise)
+- **Audio pronunciation**: Amazon Polly speaks target-language words aloud; voice and accent selectable; new words are automatically read aloud
+- **Learning Goals (Lernziele)**: Students and teachers set goals with deadlines and target mastery levels; progress and pace tracked per student and per league
 - **Multi-language support**: German → French, English, Spanish, or Italian
-- **Liga system**: Teachers create leagues for classroom management with leaderboards and streak tracking
+- **Liga system**: Teachers create leagues for classroom management with leaderboards and streak tracking; teachers invite students by email (invite-only, no self-registration)
 - **Progress tracking**: Monitors mastery levels, practice history, and error patterns
 
 ### Target Audience
@@ -89,11 +91,13 @@ A unified web application that scans workbook pages, extracts vocabulary automat
 
 ### Teacher Role
 - All student capabilities
+- **Invite students by email** (with or without assigning them to a Liga) — Cognito AdminCreateUser flow; no self-signup exists
 - Create and manage Ligen (leagues) with auto-generated 6-character join codes
 - Assign vocabulary sets to Liga members
 - View member statistics and progress
 - Remove members from Liga
 - Configure Liga leaderboard score mode
+- Set league-wide Learning Goals (Lernziele) with deadlines and target mastery levels
 - UI uses Sie-Form (formal German, appropriate for adults)
 - Role assigned via Cognito 'teachers' group membership
 
@@ -111,24 +115,24 @@ A unified web application that scans workbook pages, extracts vocabulary automat
 - Multi-user support with individual accounts
 - Secure authentication using AWS Cognito
 - OAuth2 flow with Cognito-hosted login UI
+- **Invite-only access**: The Cognito user pool is configured as `AdminCreateUserOnly` — there is no self-signup. Teachers onboard new users via the backend (Cognito `admin_create_user`). New users receive an email with a temporary password and are required to set their own password on first login.
 - Two user roles: student (default) and teacher (via Cognito 'teachers' group)
 - User profile with display name and basic statistics
 - Display name settable/editable via application header
 - Password reset functionality
-- Email verification on signup
 - Email addresses never exposed to other users
 
 **User Stories:**
-- As a student, I want to create an account with my email so I can save my vocabulary lists
-- As a student, I want to log in securely so my data remains private
+- As a teacher, I want to invite a student by email so they receive account credentials and can start practising
+- As a teacher, I want to invite a student directly into a Liga so they are immediately enrolled
 - As a student, I want to set a display name so my classmates see my name on the leaderboard
 - As a student, I want to reset my password if I forget it
 - As a teacher, I want to log in and have access to teacher features automatically
 - As a parent, I want to help my child set up their account safely
 
 **Acceptance Criteria:**
-- User can register with email and password
-- Email verification required before first login
+- There is no public self-registration form; all accounts are created by teachers
+- New users receive a temporary password by email; they must change it on first login
 - Session persists across browser refreshes
 - Logout clears all authentication tokens
 - Failed login attempts are rate-limited
@@ -496,6 +500,52 @@ Level 5: 100% accuracy over last 5 attempts
 - Error pages for critical failures (500, 404)
 - Retry buttons where applicable
 
+### 10. Audio Pronunciation (Amazon Polly)
+
+**Requirements:**
+- Target-language vocabulary words can be played aloud via Amazon Polly text-to-speech
+- Voice and accent are selectable by the student (e.g., French: female/male, European/Canadian)
+- New words that appear during a practice session are automatically spoken aloud on first display
+- MP3 audio is cached in S3 to avoid repeated Polly calls for the same word
+- TTS usage is rate-limited per user via the TtsUsage table to control costs
+- Only the target-language word is synthesized (not the German source word)
+
+**User Stories:**
+- As a student, I want to hear how a word is pronounced so I learn the correct sound
+- As a student, I want to choose the voice and accent that matches my textbook
+- As a student, I want new vocabulary words to be read aloud automatically so I hear them immediately
+
+**Acceptance Criteria:**
+- A "Pronounce" button (PronounceButton component) appears next to target-language words in practice and review
+- Clicking the button plays the MP3 audio via the browser's Audio API
+- Voice and accent options are fetched from `GET /tts/voices` and shown in a selector
+- Audio synthesis request sent to `POST /tts/synthesize`; cached MP3 returned from S3 on repeat requests
+- New words in a practice session are automatically read aloud without requiring a button click
+- Rate limiting prevents excessive Polly API usage; error displayed if limit reached
+
+### 11. Learning Goals (Lernziele)
+
+**Requirements:**
+- Students and teachers can set vocabulary learning goals with a deadline and a target mastery level
+- The system tracks progress toward each goal and calculates pace (on-track, at-risk, behind, expired, achieved)
+- Teachers can set a league-wide goal that applies to all Liga members
+- Goals are stored in the LearningGoals DynamoDB table
+- The dashboard displays a GoalBanner showing current goal status at a glance
+
+**User Stories:**
+- As a student, I want to set a goal to master a vocab set by a specific date so I stay motivated before a test
+- As a student, I want to see at a glance whether I'm on track to meet my goal
+- As a teacher, I want to set a league-wide goal so all students in my Liga work toward the same deadline
+- As a teacher, I want to see which students are on track and which are falling behind
+
+**Acceptance Criteria:**
+- Students can create a goal via `POST /goals` with a deadline and target mastery level
+- Goals can be viewed, updated, and deleted via `GET/PUT/DELETE /goals/{goalId}`
+- Goal status is computed by `calculate_goal_status`: possible values are `on-track`, `at-risk`, `behind`, `expired`, `achieved`
+- `GET /goals/{goalId}/members` (teacher-only) returns per-member progress for a league-wide goal
+- The dashboard GoalBanner displays the nearest active goal with its status and deadline
+- Expired goals are marked as such but remain visible in goal history
+
 ## Technical Requirements
 
 ### Performance
@@ -583,6 +633,8 @@ Level 5: 100% accuracy over last 5 attempts
 - No third-party data sharing without consent
 - Email addresses protected from exposure to other users
 
+**Delivered:** A dedicated **Datenschutzerklärung** page (`/datenschutz`) and **Impressum** page (`/impressum`) are publicly accessible (no login required). A global AppFooter on every page links to both pages and the Hilfe page.
+
 ## Success Metrics
 
 ### User Engagement
@@ -624,7 +676,6 @@ Level 5: 100% accuracy over last 5 attempts
 ## Future Enhancements (Out of Scope for Current Release)
 
 ### Potential Features
-- Audio pronunciation for vocabulary words (text-to-speech)
 - Multiple choice practice mode
 - Spaced repetition with scheduled review reminders
 - Mobile native apps (iOS, Android)
@@ -673,6 +724,8 @@ Level 5: 100% accuracy over last 5 attempts
 - **Join Code**: A 6-character alphanumeric code used by students to join a Liga
 - **Smart Repetition**: AI-driven question selection that prioritizes weak words based on mastery level, error count, and recency
 - **Error Pattern**: Detected recurring mistake types (e.g., article confusion, repeated typos) tracked per vocabulary item
+- **Lernziel**: Learning goal — a student- or teacher-set goal with a deadline and target mastery level; progress and pace tracked by the system
+- **GoalBanner**: Dashboard widget showing the nearest active Lernziel with status and deadline
 - **Du-Form**: Informal German address used in the student UI
 - **Sie-Form**: Formal German address used in the teacher UI
 - **Gymnasium**: German secondary school (grades 5-12/13) preparing students for university
@@ -734,6 +787,8 @@ Level 5: 100% accuracy over last 5 attempts
 4. ~~Teacher dashboard for classroom management?~~ → **Implemented via Liga system.**
 5. ~~Spaced repetition algorithm?~~ → **Implemented as smart repetition with weighted question selection.**
 6. ~~Gamification?~~ → **Partially implemented: Liga leaderboards and streak tracking.**
+7. ~~Audio pronunciation (text-to-speech)?~~ → **Implemented via Amazon Polly (polly_handler). Voice and accent selectable; new words auto-pronounced; MP3 cache in S3.**
+8. ~~Learning Goals with deadlines?~~ → **Implemented via goal_handler. Students and teachers set goals with deadline + target mastery level; GoalBanner on dashboard; teachers can set league-wide goals.**
 
 ## Open Questions
 
