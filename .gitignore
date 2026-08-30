@@ -65,3 +65,5 @@ pnpm-debug.log*
 legal/*.html
 !legal/*.example.html
 
+business/
+
