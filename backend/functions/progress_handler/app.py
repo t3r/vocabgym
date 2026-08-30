@@ -187,6 +187,7 @@ def handle_overview(event, user_id):
             'duration': s.get('duration', 0),
             'completedAt': s.get('completedAt', 0),
             'direction': s.get('direction', 'de-fr'),
+            'mode': s.get('mode', 'practice'),
         }
         for s in completed_sessions[:10]
     ]

@@ -37,7 +37,7 @@
             {{ feedback.correctAnswer }}
           </p>
           <PronounceButton
-            v-if="question.itemId && question.vocabSetId && answerIsTarget"
+            v-if="!examMode && question.itemId && question.vocabSetId && answerIsTarget"
             :vocab-set-id="question.vocabSetId"
             :item-id="question.itemId"
             :lang="targetLanguage"
@@ -68,7 +68,7 @@
       :item-id="question.itemId"
       :vocab-set-id="question.vocabSetId || ''"
       :target-language="targetLanguage"
-      :answer-is-target="answerIsTarget"
+      :answer-is-target="answerIsTarget && !examMode"
     />
 
     <!-- Actions -->
@@ -91,9 +91,10 @@
           Überspringen
         </button>
         <!-- Audio pronunciation: ALWAYS available in learning mode (no streak
-             needed), but only when the solution is the target-language word. -->
+             needed), but only when the solution is the target-language word.
+             Hidden entirely in exam mode. -->
         <button
-          v-if="!feedback && answerIsTarget && question.itemId && question.vocabSetId"
+          v-if="!feedback && !examMode && answerIsTarget && question.itemId && question.vocabSetId"
           @click="playPronunciation"
           :disabled="pronouncing"
           type="button"
@@ -102,16 +103,17 @@
         >
           🔊 Vorsagen
         </button>
-        <!-- Text reveal: still gated behind a 2-streak (or a new word). -->
+        <!-- Text reveal: still gated behind a 2-streak (or a new word).
+             Hidden entirely in exam mode. -->
         <button
-          v-if="!feedback && (hintEnabled || question.isNew)"
+          v-if="!feedback && !examMode && (hintEnabled || question.isNew)"
           @click="showHint"
           class="text-sm text-primary-600 hover:text-primary-700 font-medium"
         >
           {{ question.isNew ? '💡 Neues Wort — Lösung zeigen' : '💡 Lösung zeigen' }}
         </button>
         <span
-          v-if="!feedback && !hintEnabled && !question.isNew"
+          v-if="!feedback && !examMode && !hintEnabled && !question.isNew"
           class="text-xs text-gray-400 italic"
         >
           💡 Lösung anzeigen ab 2 richtigen
@@ -131,7 +133,7 @@
     <!-- Hint Toast -->
     <transition name="hint-fade">
       <div
-        v-if="showingHint"
+        v-if="showingHint && !examMode"
         class="mt-4 p-3 bg-blue-50 dark:bg-blue-900/40 border border-blue-200 dark:border-blue-700 rounded-lg text-center"
       >
         <p class="text-xs text-blue-700 dark:text-blue-300 mb-1">💡 Lösung</p>
@@ -166,7 +168,8 @@ const props = defineProps({
   feedback: { type: Object, default: null },
   streak: { type: Number, default: 0 },
   hintEnabled: { type: Boolean, default: false },
-  targetLanguage: { type: String, default: 'fr' }
+  targetLanguage: { type: String, default: 'fr' },
+  examMode: { type: Boolean, default: false }
 })
 
 defineEmits(['submit', 'skip', 'next', 'accept-close', 'reject-close'])

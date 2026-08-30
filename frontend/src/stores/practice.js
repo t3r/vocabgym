@@ -19,6 +19,9 @@ export const usePracticeStore = defineStore('practice', () => {
     return questions.value[currentQuestionIndex.value]
   })
 
+  const mode = computed(() => currentSession.value?.mode || 'practice')
+  const isExam = computed(() => mode.value === 'exam')
+
   const progress = computed(() => ({
     current: currentQuestionIndex.value + 1,
     total: questions.value.length,
@@ -42,13 +45,15 @@ export const usePracticeStore = defineStore('practice', () => {
       const response = await api.post('/practice/start', {
         vocabSetId,
         direction: options.direction || 'de-fr',
-        questionCount: options.questionCount || 20
+        questionCount: options.questionCount || 20,
+        mode: options.mode || 'practice'
       })
 
       currentSession.value = {
         sessionId: response.data.sessionId,
         vocabSetId,
         direction: options.direction || 'de-fr',
+        mode: options.mode || 'practice',
         startTime: Date.now()
       }
       // Ensure every question carries its vocabSetId (used e.g. by the
@@ -163,6 +168,8 @@ export const usePracticeStore = defineStore('practice', () => {
         ...response.data,
         score: score.value,
         duration,
+        mode: currentSession.value.mode || 'practice',
+        vocabSetId: currentSession.value.vocabSetId,
         detailedResults: answers.value,
         leagueUpdate: response.data.leagueUpdate || null,
         errorPatterns: response.data.errorPatterns || null,
@@ -172,6 +179,8 @@ export const usePracticeStore = defineStore('practice', () => {
       sessionResults.value = {
         score: score.value,
         duration,
+        mode: currentSession.value.mode || 'practice',
+        vocabSetId: currentSession.value.vocabSetId,
         detailedResults: answers.value,
         leagueUpdate: null
       }
@@ -202,6 +211,8 @@ export const usePracticeStore = defineStore('practice', () => {
     currentQuestion,
     progress,
     score,
+    mode,
+    isExam,
     startSession,
     submitAnswer,
     acceptCloseAnswer,

@@ -13,6 +13,24 @@
       </p>
     </div>
 
+    <!-- Exam mode: prominent time + comparison to the previous exam of this set -->
+    <div v-if="isExam" class="mb-6 px-4 py-4 bg-red-50 dark:bg-red-900/20 rounded-lg border border-red-200 dark:border-red-800">
+      <p class="text-xs uppercase tracking-wide text-red-600 dark:text-red-300 mb-1">⏱️ Prüfungszeit</p>
+      <div class="text-4xl font-mono font-bold text-red-700 dark:text-red-300 tabular-nums">
+        {{ formatDuration(results.duration || 0) }}
+      </div>
+      <div v-if="previousExam" class="mt-3 text-sm">
+        <p class="text-gray-600 dark:text-gray-300">
+          Letzte Prüfung: <span class="font-medium">{{ formatDuration(previousExam.duration) }}</span>
+          · {{ previousExam.correct }}/{{ previousExam.total }} richtig
+        </p>
+        <p class="mt-1 font-medium" :class="deltaClass">{{ deltaText }}</p>
+      </div>
+      <p v-else class="mt-2 text-xs text-gray-500 dark:text-gray-400">
+        Deine erste Prüfung für dieses Set — das ist deine Referenzzeit.
+      </p>
+    </div>
+
     <!-- League Update -->
     <div v-if="results.leagueUpdate" class="mb-6 px-4 py-3 bg-primary-50 dark:bg-primary-900/20 rounded-lg border border-primary-200 dark:border-primary-800">
       <p class="text-sm font-medium text-primary-800 dark:text-primary-200">
@@ -87,8 +105,9 @@
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, ref, onMounted } from 'vue'
 import { formatDuration } from '@/utils/formatters'
+import api from '@/services/api'
 
 const props = defineProps({
   results: { type: Object, required: true }
@@ -101,5 +120,53 @@ const scoreColorClass = computed(() => {
   if (pct >= 80) return 'text-success'
   if (pct >= 50) return 'text-warning'
   return 'text-error'
+})
+
+const isExam = computed(() => props.results.mode === 'exam')
+
+// Previous exam run for the same vocab set (for progress comparison).
+const previousExam = ref(null)
+
+onMounted(async () => {
+  if (!isExam.value || !props.results.vocabSetId) return
+  try {
+    const response = await api.get('/progress/overview')
+    const sessions = response.data?.recentSessions || []
+    const currentSessionId = props.results.sessionId
+    // Most recent completed EXAM session for this set, excluding the current one.
+    const prior = sessions
+      .filter((s) => s.mode === 'exam'
+        && s.vocabSetId === props.results.vocabSetId
+        && s.sessionId !== currentSessionId
+        && (s.duration || 0) > 0)
+      .sort((a, b) => (b.completedAt || 0) - (a.completedAt || 0))
+    if (prior.length) {
+      previousExam.value = {
+        duration: prior[0].duration,
+        correct: prior[0].correct,
+        total: prior[0].total,
+      }
+    }
+  } catch {
+    // Comparison is best-effort; ignore failures.
+  }
+})
+
+const deltaText = computed(() => {
+  if (!previousExam.value) return ''
+  const cur = props.results.duration || 0
+  const prev = previousExam.value.duration || 0
+  const diff = cur - prev
+  if (diff < 0) return `🚀 ${formatDuration(-diff)} schneller als beim letzten Mal!`
+  if (diff > 0) return `🐢 ${formatDuration(diff)} langsamer als beim letzten Mal.`
+  return 'Gleiche Zeit wie beim letzten Mal.'
+})
+
+const deltaClass = computed(() => {
+  if (!previousExam.value) return ''
+  const diff = (props.results.duration || 0) - (previousExam.value.duration || 0)
+  if (diff < 0) return 'text-green-700 dark:text-green-400'
+  if (diff > 0) return 'text-orange-600 dark:text-orange-400'
+  return 'text-gray-600 dark:text-gray-300'
 })
 </script>

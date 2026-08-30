@@ -95,6 +95,11 @@
             <p>Neben dem Fremdsprach-Wort im Feedback findest du ein Lautsprecher-Symbol. Klick darauf, um die Aussprache zu hören. Über das kleine Pfeil-Symbol kannst du <strong>Akzent</strong> (z.B. britisches oder amerikanisches Englisch) und <strong>Stimme</strong> wählen — deine Wahl wird gemerkt.</p>
           </div>
           <div class="tip-card">
+            <span class="tip-icon">⏱️</span>
+            <h3>Übung vs. Prüfung auf Zeit</h3>
+            <p>Vor dem Start wählst du den <strong>Modus</strong>. In der <strong>Übung</strong> hast du Vorsagen und Lösungshilfe wie gewohnt. In der <strong>Prüfung auf Zeit</strong> läuft eine sichtbare Uhr, es gibt <strong>keine Vorsagen und keine Lösung</strong>, und knappe Treffer zählen streng als falsch. Deine Zeit und dein Ergebnis werden gespeichert — so siehst du, ob du schneller und sicherer wirst. Das baut etwas Prüfungsstress auf und trainiert deine Stressresistenz.</p>
+          </div>
+          <div class="tip-card">
             <span class="tip-icon">📊</span>
             <h3>Fortschritt</h3>
             <p>Unter „Fortschritt" siehst du, welche Vokabeln du schon drauf hast und welche noch Übung brauchen.</p>

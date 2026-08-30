@@ -96,6 +96,11 @@ def handle_start(event, user_id):
     direction = body.get('direction', 'de-fr')
     question_count = int(body.get('questionCount', 0)) or None
 
+    # Practice mode: 'practice' (default) or 'exam' (timed, no hints).
+    mode = body.get('mode', 'practice')
+    if mode not in ('practice', 'exam'):
+        mode = 'practice'
+
     # Map old direction values to new ones internally
     direction_map = {
         'de-fr': 'source-target',
@@ -168,6 +173,7 @@ def handle_start(event, user_id):
             'sessionId': session_id,
             'vocabSetId': vocab_set_id,
             'direction': direction,
+            'mode': mode,
             'totalQuestions': len(questions),
             'correctAnswers': 0,
             'startedAt': timestamp,
@@ -194,6 +200,7 @@ def handle_start(event, user_id):
         'sessionId': session_id,
         'vocabSetId': vocab_set_id,
         'direction': direction,
+        'mode': mode,
         'totalQuestions': len(questions),
         'questions': [
             {
@@ -385,6 +392,7 @@ def handle_complete(event, user_id):
             'correct': int(session.get('correctAnswers', 0)),
             'total': int(session.get('totalQuestions', 0)),
             'duration': duration,
+            'mode': session.get('mode', 'practice'),
             'detailedResults': stored_results,
         })
 
@@ -440,6 +448,7 @@ def handle_complete(event, user_id):
         'correct': correct_count,
         'total': total,
         'duration': duration,
+        'mode': session.get('mode', 'practice'),
         'detailedResults': client_results,
     }
     if league_update:

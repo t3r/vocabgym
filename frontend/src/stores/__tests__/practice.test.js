@@ -31,6 +31,28 @@ describe('practice store', () => {
     { questionId: 'q3', itemId: 'i3', question: 'die Katze', correctAnswer: 'le chat' },
   ]
 
+  describe('exam mode getters', () => {
+    it('defaults to practice mode when no session', () => {
+      expect(store.mode).toBe('practice')
+      expect(store.isExam).toBe(false)
+    })
+
+    it('reflects exam mode from currentSession', () => {
+      store.currentSession = {
+        sessionId: 's', vocabSetId: 'vs', direction: 'de-fr', mode: 'exam', startTime: Date.now(),
+      }
+      expect(store.mode).toBe('exam')
+      expect(store.isExam).toBe(true)
+    })
+
+    it('reflects practice mode from currentSession', () => {
+      store.currentSession = {
+        sessionId: 's', vocabSetId: 'vs', direction: 'de-fr', mode: 'practice', startTime: Date.now(),
+      }
+      expect(store.isExam).toBe(false)
+    })
+  })
+
   describe('initial state', () => {
     it('starts with no session', () => {
       expect(store.currentSession).toBeNull()
