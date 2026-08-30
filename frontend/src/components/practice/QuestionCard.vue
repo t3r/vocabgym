@@ -90,18 +90,31 @@
           </svg>
           Überspringen
         </button>
+        <!-- Audio pronunciation: ALWAYS available in learning mode (no streak
+             needed), but only when the solution is the target-language word. -->
+        <button
+          v-if="!feedback && answerIsTarget && question.itemId && question.vocabSetId"
+          @click="playPronunciation"
+          :disabled="pronouncing"
+          type="button"
+          aria-label="Aussprache vorsagen"
+          class="inline-flex items-center gap-1.5 text-sm text-primary-600 hover:text-primary-700 font-medium disabled:opacity-50"
+        >
+          🔊 Vorsagen
+        </button>
+        <!-- Text reveal: still gated behind a 2-streak (or a new word). -->
         <button
           v-if="!feedback && (hintEnabled || question.isNew)"
           @click="showHint"
           class="text-sm text-primary-600 hover:text-primary-700 font-medium"
         >
-          {{ question.isNew ? '💡 Neues Wort — Lösung zeigen' : '💡 Vorsagen' }}
+          {{ question.isNew ? '💡 Neues Wort — Lösung zeigen' : '💡 Lösung zeigen' }}
         </button>
         <span
           v-if="!feedback && !hintEnabled && !question.isNew"
           class="text-xs text-gray-400 italic"
         >
-          💡 Vorsagen ab 2 richtigen
+          💡 Lösung anzeigen ab 2 richtigen
         </span>
       </div>
       <div v-if="!feedback"></div>
@@ -161,7 +174,32 @@ defineEmits(['submit', 'skip', 'next', 'accept-close', 'reject-close'])
 const { showError } = useToast()
 
 const showingHint = ref(false)
+const pronouncing = ref(false)
 let hintTimeout = null
+
+// Play the target-language pronunciation only (no text reveal). Used by the
+// always-available "Vorsagen" button in learning mode.
+function playPronunciation() {
+  if (pronouncing.value) return
+  if (!(answerIsTarget.value && props.question.vocabSetId && props.question.itemId)) return
+  pronouncing.value = true
+  pronounceWithStoredVoice({
+    vocabSetId: props.question.vocabSetId,
+    itemId: props.question.itemId,
+    lang: props.targetLanguage,
+  })
+    .catch((e) => {
+      const status = e?.response?.status
+      if (status === 429) {
+        showError('Zu viele Aussprache-Anfragen, bitte kurz warten.')
+      } else {
+        showError('Aussprache konnte nicht abgespielt werden.')
+      }
+    })
+    .finally(() => {
+      pronouncing.value = false
+    })
+}
 
 // The correct answer is the target-language word only when translating
 // Deutsch -> Fremdsprache. In the reverse direction it is the German word,
@@ -213,21 +251,8 @@ function showHint() {
     showingHint.value = false
   }, 5000)
 
-  // Also play the pronunciation when the solution is the target-language word
-  // (Deutsch -> Fremdsprache). Uses the voice/accent stored by PronounceButton.
-  if (answerIsTarget.value && props.question.vocabSetId && props.question.itemId) {
-    pronounceWithStoredVoice({
-      vocabSetId: props.question.vocabSetId,
-      itemId: props.question.itemId,
-      lang: props.targetLanguage,
-    }).catch((e) => {
-      const status = e?.response?.status
-      if (status === 429) {
-        showError('Zu viele Aussprache-Anfragen, bitte kurz warten.')
-      }
-      // Silent otherwise — the text hint is still shown.
-    })
-  }
+  // Also play the pronunciation when the solution is the target-language word.
+  playPronunciation()
 }
 </script>
 

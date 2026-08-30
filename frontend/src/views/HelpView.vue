@@ -87,7 +87,7 @@
           <div class="tip-card">
             <span class="tip-icon">🔥</span>
             <h3>Vorsagen & neue Wörter</h3>
-            <p>Bei einem <strong>neuen Wort</strong>, das du noch nie richtig hattest, kannst du dir die Lösung sofort zeigen und vorsprechen lassen. Bei bekannten Wörtern wird der Vorsagen-Button nach 2 richtigen Antworten in Folge freigeschaltet.</p>
+            <p>Das <strong>Audio-Vorsagen</strong> (🔊) kannst du beim Üben jederzeit nutzen — auch ohne Streak. Die <strong>Lösung als Text</strong> wird dagegen erst nach <strong>2 richtigen Antworten in Folge</strong> freigeschaltet. Ausnahme: bei einem ganz <strong>neuen Wort</strong>, das du noch nie richtig hattest, kannst du dir die Lösung sofort anzeigen und vorsprechen lassen.</p>
           </div>
           <div class="tip-card">
             <span class="tip-icon">🔊</span>
