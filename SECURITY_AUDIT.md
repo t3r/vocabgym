@@ -7,13 +7,15 @@
 
 ## Executive Summary
 
-A comprehensive security audit of the VocabGym application identified **1 CRITICAL**, **2 HIGH**, and **3 MEDIUM** severity vulnerabilities. The critical finding allows unauthorized access to other users' vocabulary data through missing ownership validation in the practice handler.
+A comprehensive security audit of the VocabGym application identified **2 CRITICAL** and **3 MEDIUM** severity vulnerabilities (0 HIGH, 0 LOW). The critical findings allowed unauthorized access to other users' vocabulary data through missing ownership validation in the practice and progress handlers.
+
+**Remediation status (as of 2026-08-30):** All CRITICAL findings have been **fixed and tested** (commit 7934f28). Two of three MEDIUM findings are fixed (commit ce390c0); the third (CORS) is documented as accepted technical debt. See per-finding status below and the "Remediation Log" at the end.
 
 ---
 
 ## CRITICAL Findings
 
-### [CRITICAL-01] IDOR in practice_handler - Unauthorized Access to Foreign Vocabulary Sets
+### [CRITICAL-01] IDOR in practice_handler - Unauthorized Access to Foreign Vocabulary Sets ✅ FIXED
 
 **Location:** `backend/functions/practice_handler/app.py:79-159` (`handle_start`)
 
@@ -93,9 +95,11 @@ def handle_start(event, user_id):
 
 **CVSS Score:** 8.1 (AV:N/AC:L/PR:L/UI:N/S:U/C:H/I:N/A:N)
 
+**Fix Applied (commit 7934f28):** Ownership check added to `handle_start` before querying VocabItems — verifies owned-by-caller first, then league assignment (deterministic fetch by teacher owner), returns uniform 404 on all unauthorized access. Regression test: `TestPracticeIDOR.test_foreign_set_returns_404_not_403`.
+
 ---
 
-### [CRITICAL-02] IDOR in progress_handler - Unauthorized Access to User Progress Data
+### [CRITICAL-02] IDOR in progress_handler - Unauthorized Access to User Progress Data ✅ FIXED
 
 **Location:** `backend/functions/progress_handler/app.py:225-295` (`handle_vocab_set_progress`)
 
@@ -156,6 +160,8 @@ def handle_vocab_set_progress(event, user_id):
 ```
 
 **CVSS Score:** 7.5 (AV:N/AC:L/PR:L/UI:N/S:U/C:H/I:N/A:N)
+
+**Fix Applied (commit 7934f28):** Identical ownership check added to `handle_vocab_set_progress` before querying items — owned-by-caller → league assignment → deterministic teacher fetch → uniform 404. Regression test: `TestProgressIDOR.test_foreign_set_progress_returns_404`.
 
 ---
 
@@ -267,46 +273,49 @@ All other handlers correctly use either:
 
 ## Testing Coverage Gaps
 
-- No integration test for practice_handler IDOR (only unit tests with single-user context)
-- No test for league-assigned vocab set access in practice_handler
-- Missing negative test: user A tries to practice user B's private set
+- ✅ Negative IDOR tests added for both practice_handler and progress_handler
+  (user B → user A's set → 404): `TestPracticeIDOR`, `TestProgressIDOR`.
+- Remaining gap: no explicit **positive** test for league-assigned vocab set
+  access in practice/progress (verifying a legitimate league member CAN start a
+  session on a teacher-assigned set). Low risk — path mirrors vocab_crud which is tested.
 
 ---
 
-## Recommendations Priority
+## Remediation Log
 
-1. **CRITICAL — Fix immediately (tonight):**
-   - CRITICAL-01: Add ownership check to `practice_handler.handle_start` before querying VocabItems
-   - CRITICAL-02: Add ownership check to `progress_handler.handle_vocab_set_progress` before querying items
+| Finding | Severity | Status | Commit |
+|---------|----------|--------|--------|
+| CRITICAL-01 — practice_handler IDOR | CRITICAL | ✅ Fixed + tested | 7934f28 |
+| CRITICAL-02 — progress_handler IDOR | CRITICAL | ✅ Fixed + tested | 7934f28 |
+| MEDIUM-01 — API Gateway throttling | MEDIUM | ✅ Fixed | ce390c0 |
+| MEDIUM-02 — CORS `*` origin | MEDIUM | ⚠️ Accepted tech debt (JWT-mitigated) | ce390c0 (documented) |
+| MEDIUM-03 — error message leak | MEDIUM | ✅ Fixed | ce390c0 |
 
-2. **HIGH — Fix within 1 week:**
-   - Add comprehensive IDOR test suite for all handlers (practice, progress)
-   - Enforce max field lengths (title 200, notes 1000) in all handlers
-
-3. **MEDIUM — Fix within 2 weeks:**
-   - Configure API Gateway usage plans with burst/rate limits
-   - Restrict CORS to CloudFront domain in prod
-   - Review and sanitize error messages in production
+**Remaining backlog (non-blocking):**
+- Enforce max field lengths (title 200, notes 1000) across handlers
+- Restrict CORS to CloudFront/custom domain in prod (conditional GatewayResponse)
+- Optional: WAF with IP-based throttling on top of the usage plan
 
 ---
 
-## Audit Status: COMPLETED
+## Audit Status: COMPLETED — all CRITICAL & actionable MEDIUM findings remediated
 
-**Summary:** 2 CRITICAL IDOR vulnerabilities found, all other handlers secure.
+**Summary:** 2 CRITICAL IDOR vulnerabilities found and **fixed**; all other handlers secure.
 
 - [x] upload_handler — ✅ SECURE (extension whitelist, owned-set counter, slot rollback)
 - [x] extraction_handler — ✅ SECURE (prompt injection hardening, Bedrock guardrail, rate limit)
 - [x] vocab_crud_handler — ✅ SECURE (ownership check + uniform 404, commit b7f03e2)
-- [x] practice_handler — ❌ **CRITICAL-01: handle_start IDOR**, ✅ handle_complete/submit safe (userId in PK)
-- [x] progress_handler — ❌ **CRITICAL-02: handle_vocab_set_progress IDOR**, ✅ handle_overview safe
-- [x] league_handler — ✅ SECURE (_is_teacher checks, membership validation)
+- [x] practice_handler — ✅ FIXED (CRITICAL-01 remediated in 7934f28; handle_complete/submit already safe via userId PK)
+- [x] progress_handler — ✅ FIXED (CRITICAL-02 remediated in 7934f28; handle_overview already safe)
+- [x] league_handler — ✅ SECURE (_is_teacher checks, membership validation; error leak fixed in ce390c0)
 - [x] polly_handler — ✅ SECURE (rate limit, MP3 caching, target-language only)
 - [x] goal_handler — ✅ SECURE (ownership checks in all operations)
-- [x] Infrastructure — ⚠️ 3 MEDIUM findings (CORS, no API throttling, error verbosity)
+- [x] Infrastructure — ✅ API throttling added (ce390c0); CORS documented as tech debt
 - [x] Frontend — ⏭️ Deferred (no critical XSS/secret exposure suspected, full review out of scope)
 
-**Total Findings:** 2 CRITICAL, 0 HIGH, 3 MEDIUM, 0 LOW
+**Total Findings:** 2 CRITICAL (both fixed), 0 HIGH, 3 MEDIUM (2 fixed, 1 accepted), 0 LOW
 
-**Critical Path:** Both CRITICAL findings are easily exploitable IDORs that expose user data across the entire platform. Fix immediately.
+**Current posture:** No known exploitable vulnerabilities remain. All authorization bypasses closed and covered by regression tests (123 backend tests pass).
+
 
 
