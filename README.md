@@ -54,7 +54,7 @@ Vue 3 SPA → CloudFront → API Gateway → Lambda (Python 3.11)
 | Schicht | Technologie |
 |---------|-------------|
 | Frontend | Vue 3, Tailwind CSS, Pinia, Vite |
-| Backend | 8× Lambda (Python 3.11, x86_64), SharedLayer |
+| Backend | 9× Lambda (Python 3.11, x86_64), SharedLayer |
 | AI/OCR | Textract + Bedrock (Amazon Nova Pro) |
 | Sprachausgabe | Amazon Polly (Text-to-Speech, Standard-Engine) |
 | Auth | Cognito (OAuth2, teachers-Gruppe, AdminOnly) |
@@ -85,7 +85,8 @@ vocabgym/
 │   │   ├── progress_handler/     # Fortschrittsstatistiken
 │   │   ├── league_handler/       # Liga, Profil & Einladungen (admin-create-user)
 │   │   ├── goal_handler/         # Lernziele + Deadline-Tracking
-│   │   └── polly_handler/        # Aussprache (Polly TTS)
+│   │   ├── polly_handler/        # Aussprache (Polly TTS)
+│   │   └── icon_handler/         # Robohash-Identicons (S3→EventBridge, Robots/Katzen)
 │   └── layers/shared/           # Gemeinsame Utilities
 ├── scripts/                  # Migrationsskripte
 ├── docs/                     # Architektur-Dokumentation
@@ -211,3 +212,20 @@ specs defined in .kiro/steering and lots of manual finetuning during endless vib
 
 Das Logo (`frontend/public/logo.svg`) ist urheberrechtlich geschützt: © Alexa Binnewies.
 Es ist **nicht** Teil der GPL-Lizenz dieses Projekts; alle Rechte am Logo bleiben vorbehalten.
+
+Die Set-Symbole (Identicons) werden serverseitig mit **[Robohash](https://robohash.org)**
+generiert (Code MIT-lizenziert). Die verwendeten Grafiksets sind:
+- **set1 „Classic Robots"** von Zikri Kader — CC-BY-3.0 / CC-BY-4.0
+- **set4 „Cats"** von [David Revoy](https://www.peppercarrot.com) — CC-BY-4.0
+
+_Robots lovingly delivered by [Robohash.org](https://robohash.org)._
+
+## Datenschutz: Umgang mit hochgeladenen Scans
+
+Hochgeladene Arbeitsbuch-Fotos werden ausschließlich zur Vokabel-Extraktion
+verarbeitet. Aus dem S3-Objektschlüssel jeder Seite wird ein deterministisches,
+**nicht umkehrbares** Roboter-/Katzen-Icon generiert (kein Bildinhalt fließt
+ein). Sobald ein Vokabelset **freigegeben** wird, werden die Original-Scans
+sofort aus S3 gelöscht — es verbleibt nur das generierte Icon als visuelle
+Wiedererkennung. Nicht freigegebene Sets werden als Fallback nach 30 Tagen
+automatisch gelöscht.

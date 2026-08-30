@@ -44,6 +44,8 @@ The entire infrastructure runs on AWS using serverless architecture.
              ├──────────► Lambda: league_handler
              ├──────────► Lambda: polly_handler
              └──────────► Lambda: goal_handler
+
+  S3 (images/ upload) ──► EventBridge ──► Lambda: icon_handler (robohash identicons)
                           │
                           ├──────► DynamoDB (9 tables)
                           ├──────► S3 Bucket (Images)
@@ -128,13 +130,27 @@ User → CloudFront → Cognito Hosted UI → Authorization Code
 - Public access: Blocked (presigned URLs only)
 - Encryption: SSE-S3 (AES-256)
 - Versioning: Disabled
-- Lifecycle policy: Delete after 90 days
+- EventBridge: enabled (`EventBridgeConfiguration.EventBridgeEnabled`) so
+  `images/` uploads trigger the icon_handler via an EventBridge rule
+- Lifecycle policy (per prefix):
+  - `images/` — deleted after 30 days (fallback; originals are normally deleted
+    by vocab_crud on set approval)
+  - `tts/` — deleted after 30 days
+  - `identicons/` — **no expiration** (persistent visual identity of a set)
 - CORS: Allow PUT/POST/GET from all origins
 
 **Folder Structure:**
 ```
-/images/{userId}/{vocabSetId}/{timestamp}-original.{ext}
+/images/{userId}/{vocabSetId}/{timestamp}-original.{ext}     # original scan (transient)
+/identicons/{userId}/{vocabSetId}/{timestamp}-{set}.png       # robohash icon (set1|set4), persistent
+/tts/...                                                       # cached Polly MP3s
 ```
+
+**Privacy / copyright note:** Original scans are transient. On set approval the
+vocab_crud handler deletes all `images/{userId}/{vocabSetId}/*` objects; only the
+generated, non-reversible identicon remains. The identicon seed is the S3 object
+key (no image bytes), so it has no reproducible relationship to the copyrighted
+workbook content.
 
 ### 3. Amazon DynamoDB Tables (9 tables)
 
@@ -421,7 +437,7 @@ DELETE /goals/{goalId}                        → goal_handler
 GET    /goals/{goalId}/members                → goal_handler (league member progress, teacher only)
 ```
 
-### 5. AWS Lambda Functions (8 functions + SharedLayer)
+### 5. AWS Lambda Functions (9 functions + SharedLayer)
 
 #### General Configuration
 
@@ -679,6 +695,43 @@ def _is_teacher(event):
 
 **IAM Permissions:**
 - DynamoDB: CRUD on LearningGoals; Read on Progress, VocabSets, VocabItems, Leagues, LeagueMembers, Users
+
+#### Function 9: icon_handler
+
+**Function Name:** `vocabtrainer-icon-handler-{stage}`
+**Memory:** 1024 MB
+**Timeout:** 60 seconds
+**Trigger:** EventBridge rule on S3 `Object Created` events under the `images/` prefix (NOT API Gateway).
+
+**Purpose:** Generate a deterministic robohash identicon for every uploaded
+workbook page, so the copyrighted original scan can be replaced by a
+non-reversible generated image. This is the ONLY function carrying the
+`Pillow` + `robohash` dependency (fully decoupled from the other handlers).
+
+**Flow:**
+1. S3 upload under `images/` → bucket emits event to the default EventBridge bus
+   (`EventBridgeEnabled: true`) → EventBridge rule (prefix `images/`) invokes
+   this function. EventBridge (not a direct S3→Lambda notification) is used to
+   avoid a circular CFN dependency and to filter by prefix.
+2. Seed = `sha256(full image key)` → one unique icon per page. No image bytes are
+   read, so the icon has no reproducible link to the workbook content.
+3. Renders BOTH styles — `set1` (Classic Robots) and `set4` (Cats) — at 256px and
+   writes them to `identicons/{userId}/{vocabSetId}/{timestamp}-{set}.png`, so a
+   user switching their `identiconSet` preference sees the change instantly.
+4. Idempotent (`head_object` skip) and loop-guarded (never reacts to writes under
+   `identicons/` or non-`images/` prefixes). A single failure never fails the batch.
+
+**Robohash licensing:** code MIT; artwork CC-BY-3.0/4.0 (set1 Zikri Kader, set4
+David Revoy). Attribution is provided in the README.
+
+**IAM Permissions:**
+- S3: GetObject, PutObject scoped to the `identicons/*` prefix only (never reads originals)
+
+**Related pieces:**
+- vocab_crud `handle_update` deletes the original scans on approval and serves the
+  identicon presigned URLs (per page) on GET/list.
+- The user's style choice is stored in `Users.preferences.identiconSet`
+  (`set1`|`set4`) via `PUT /users/profile`.
 
 ### 6. Amazon Bedrock
 
