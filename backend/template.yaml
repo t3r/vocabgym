@@ -133,6 +133,13 @@ Resources:
     Type: AWS::S3::Bucket
     Properties:
       BucketName: !Sub vocabtrainer-images-${Environment}-${AWS::AccountId}
+      # Emit S3 events to the default EventBridge bus so the icon_handler can
+      # render identicons on upload. Using EventBridge (not a direct Lambda
+      # notification) avoids a circular dependency between the bucket and the
+      # function's permission, and lets us filter by prefix in the rule.
+      NotificationConfiguration:
+        EventBridgeConfiguration:
+          EventBridgeEnabled: true
       CorsConfiguration:
         CorsRules:
           - AllowedHeaders:
@@ -146,13 +153,19 @@ Resources:
             MaxAge: 3600
       LifecycleConfiguration:
         Rules:
-          - Id: DeleteAfter90Days
+          # Original scans (images/) are deleted by the vocab_crud handler when a
+          # set is approved. This rule is only a fallback for sets that are never
+          # approved, so originals never linger. Identicons are NOT covered here.
+          - Id: DeleteOriginalsAfter30Days
             Status: Enabled
-            ExpirationInDays: 90
+            Prefix: images/
+            ExpirationInDays: 30
           - Id: DeleteTtsCacheAfter30Days
             Status: Enabled
             Prefix: tts/
             ExpirationInDays: 30
+          # Note: the identicons/ prefix intentionally has NO expiration rule —
+          # identicons are the persistent visual identity of a vocab set.
       PublicAccessBlockConfiguration:
         BlockPublicAcls: true
         BlockPublicPolicy: true
@@ -1036,6 +1049,48 @@ Resources:
             Path: /tts/synthesize
             Method: POST
 
+  # Icon Handler — event-driven robohash identicon generator.
+  # Triggered via EventBridge when an original scan is uploaded under images/.
+  # Renders both styles (robots + cats) per page and caches them in identicons/.
+  # This is the ONLY function carrying the Pillow/robohash dependency.
+  IconHandlerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub vocabtrainer-icon-handler-${Environment}
+      CodeUri: functions/icon_handler/
+      Handler: app.lambda_handler
+      MemorySize: 1024        # Pillow rendering headroom
+      Timeout: 60
+      Environment:
+        Variables:
+          ICON_SIZE: '256'
+      Policies:
+        - Version: '2012-10-17'
+          Statement:
+            # Read to check idempotency (head_object), write the rendered icons.
+            # Scoped to the identicons/ prefix; the handler never reads originals.
+            - Effect: Allow
+              Action:
+                - s3:GetObject
+                - s3:PutObject
+              Resource: !Sub 'arn:aws:s3:::${ImagesBucket}/identicons/*'
+      Events:
+        PageUploaded:
+          Type: EventBridgeRule
+          Properties:
+            Pattern:
+              source:
+                - aws.s3
+              detail-type:
+                - Object Created
+              detail:
+                bucket:
+                  name:
+                    - !Ref ImagesBucket
+                object:
+                  key:
+                    - prefix: images/
+
   # ============================================================
   # CloudWatch Log Groups (retention: 7 days dev / 90 days prod)
   # ============================================================
@@ -1093,6 +1148,13 @@ Resources:
     DeletionPolicy: Delete
     Properties:
       LogGroupName: !Sub /aws/lambda/vocabtrainer-polly-handler-${Environment}
+      RetentionInDays: !If [IsProd, 90, 7]
+
+  IconHandlerLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Delete
+    Properties:
+      LogGroupName: !Sub /aws/lambda/vocabtrainer-icon-handler-${Environment}
       RetentionInDays: !If [IsProd, 90, 7]
 
   # ============================================================
