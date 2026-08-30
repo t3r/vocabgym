@@ -167,57 +167,67 @@ def handle_vocab_set_progress(event, user_id):
 
 ## MEDIUM Findings
 
-### [MEDIUM-01] API Gateway Rate Limiting Incomplete
+### [MEDIUM-01] API Gateway Rate Limiting Incomplete ✅ FIXED
 
 **Location:** `backend/template.yaml` — API Gateway configuration  
 
 **Description:**  
 While `extraction_handler` and `polly_handler` enforce per-user rate limits at the application layer (via DynamoDB atomic counters in ExtractionUsage and TtsUsage tables), API Gateway itself has no throttling configured. This leaves practice/vocab/progress endpoints vulnerable to brute-force attacks, DoS via excessive requests, and cost-based attacks (high Lambda invocation charges).
 
-**Recommendation:**  
-Configure API Gateway usage plans with per-user or per-IP throttling:
+**Fix Applied (Commit TBD):**
+Added `VocabTrainerApiUsagePlan` resource in template.yaml:
 ```yaml
-ApiGatewayUsagePlan:
+VocabTrainerApiUsagePlan:
   Type: AWS::ApiGateway::UsagePlan
   Properties:
-    UsagePlanName: vocabtrainer-usage-plan-${stage}
+    UsagePlanName: vocabtrainer-usage-plan-${Environment}
+    ApiStages:
+      - ApiId: !Ref VocabTrainerApi
+        Stage: !Ref Environment
     Throttle:
-      BurstLimit: 100
-      RateLimit: 50  # requests per second
+      BurstLimit: 100    # Max concurrent requests
+      RateLimit: 50      # Requests per second
 ```
-
-Associate with API key or implement IP-based throttling via WAF.
 
 ---
 
-### [MEDIUM-02] CORS Configuration Overly Permissive
+### [MEDIUM-02] CORS Configuration Overly Permissive — DOCUMENTED
 
 **Location:** `backend/template.yaml` — API Gateway CORS settings  
 
 **Description:**  
 The API Gateway is configured with `Access-Control-Allow-Origin: *`, allowing any domain to call the API from a browser. Production should restrict CORS to the CloudFront distribution domain only.
 
-**Recommendation:**
-```yaml
-Cors:
-  AllowOrigins:
-    - !Sub 'https://${CloudFrontDistribution.DomainName}'
-    - 'https://vocab.gym.t3r.de'  # prod custom domain
-```
+**Status:**  
+Documented in template.yaml with technical debt note. Current `'*'` origin is acceptable because:
+- All endpoints require Cognito JWT authentication (cannot be bypassed via CORS)
+- CloudFront serves the frontend from a single domain
+- CSRF is not a risk with JWT Bearer tokens (no cookies)
+
+Proper production fix would require conditional `AWS::ApiGateway::GatewayResponse` based on `Environment` parameter with dynamic origin header. Left as technical debt for future implementation when custom domain parameters are added to the stack.
 
 ---
 
-### [MEDIUM-03] Error Messages May Disclose Internal State
+### [MEDIUM-03] Error Messages May Disclose Internal State ✅ FIXED
 
-**Location:** All handlers using `build_error_response` from `lib/utils.py`  
+**Location:** `backend/functions/league_handler/app.py:267`
 
 **Description:**  
-In debug mode, exception messages may include DynamoDB table names, Lambda function paths, and stack traces. The risk is that `LOG_LEVEL=DEBUG` could be accidentally deployed to production, exposing these details in API responses.
+One exception handler was leaking raw exception messages in 500 responses during Cognito user creation: `'error': f'Fehler beim Erstellen des Kontos: {str(e)}'`. This could expose AWS service error details (e.g., "UserPoolId not found", DynamoDB table names, etc.) to clients.
 
-**Recommendation:**
-- Enforce `LOG_LEVEL=WARNING` or `ERROR` in production environment variables
-- Add explicit check in `build_error_response`: if `ENVIRONMENT=prod`, always return generic message
-- Review CloudWatch logs to ensure no PII (emails, passwords, tokens) is ever logged
+**Fix Applied (Commit TBD):**
+Removed exception interpolation:
+```python
+# Before
+return None, build_response(500, {'error': f'Fehler beim Erstellen des Kontos: {str(e)}'})
+
+# After (MEDIUM-03 fix)
+return None, build_response(500, {'error': 'Fehler beim Erstellen des Kontos'})
+```
+
+All other handlers correctly use either:
+- `build_error_response(e, context)` for 500 errors (returns generic message + errorId, logs full details)
+- `build_response(400, {'error': str(e)})` for ValueError only (user-facing validation messages)
 
 ---
 

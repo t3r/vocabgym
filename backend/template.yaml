@@ -374,9 +374,29 @@ Resources:
             UserPoolArn: !GetAtt CognitoUserPool.Arn
         AddDefaultAuthorizerToCorsPreflight: false
       Cors:
+        # MEDIUM-02: CORS currently allows all origins for development flexibility.
+        # Production deployments should restrict AllowOrigin to the CloudFront
+        # distribution domain or custom domain (e.g., vocab.gym.t3r.de).
+        # Current '*' is mitigated by Cognito JWT authentication on all endpoints.
+        # To restrict in prod: use AWS::ApiGateway::GatewayResponse with conditional
+        # Access-Control-Allow-Origin header based on Environment parameter.
         AllowMethods: "'GET,POST,PUT,DELETE,OPTIONS'"
         AllowHeaders: "'Content-Type,Authorization'"
         AllowOrigin: "'*'"
+
+  # API Gateway Usage Plan with Throttling (MEDIUM-01 fix)
+  # Protects against brute-force attacks and excessive API usage
+  VocabTrainerApiUsagePlan:
+    Type: AWS::ApiGateway::UsagePlan
+    Properties:
+      UsagePlanName: !Sub vocabtrainer-usage-plan-${Environment}
+      Description: Rate limiting for VocabTrainer API endpoints
+      ApiStages:
+        - ApiId: !Ref VocabTrainerApi
+          Stage: !Ref Environment
+      Throttle:
+        BurstLimit: 100    # Max concurrent requests
+        RateLimit: 50      # Requests per second
 
   # ============================================================
   # Shared Lambda Layer

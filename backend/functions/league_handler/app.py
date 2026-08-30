@@ -264,7 +264,8 @@ def _create_or_get_cognito_user(email, display_name):
 
     except Exception as e:
         logger.exception(f"Failed to create Cognito user: {e}")
-        return None, build_response(500, {'error': f'Fehler beim Erstellen des Kontos: {str(e)}'})
+        # MEDIUM-03: Never leak exception details to client in production
+        return None, build_response(500, {'error': 'Fehler beim Erstellen des Kontos'})
 
     # Upsert Users record (do NOT change leagueId here)
     timestamp = get_timestamp()
