@@ -159,53 +159,85 @@ def _get_league(league_id):
 def handle_get_profile(event, user_id):
     """Handle GET /users/profile - Return the user's stored profile.
 
-    Returns the displayName persisted in the Users table (empty string if the
-    user has not set one yet).
+    Returns the displayName and identicon style preference (empty/default when
+    the user has not set them yet).
     """
     user = _get_user(user_id)
     display_name = (user or {}).get('displayName', '') or ''
-    return build_response(200, {'displayName': display_name})
+    identicon_set = ((user or {}).get('preferences') or {}).get('identiconSet') or 'set1'
+    if identicon_set not in ('set1', 'set4'):
+        identicon_set = 'set1'
+    return build_response(200, {'displayName': display_name, 'identiconSet': identicon_set})
 
 
 def handle_update_profile(event, user_id):
-    """Handle PUT /users/profile - Update user's display name.
+    """Handle PUT /users/profile - Update user's display name and/or identicon style.
 
-    Expected body:
+    Expected body (at least one field):
     {
-        "displayName": "Max M."
+        "displayName": "Max M.",
+        "identiconSet": "set1" | "set4"
     }
     """
     body = parse_body(event)
-    display_name = body.get('displayName', '').strip()
+    has_display_name = 'displayName' in body
+    has_icon_set = 'identiconSet' in body
 
-    if not display_name:
-        return build_response(400, {'error': 'displayName is required'})
+    if not has_display_name and not has_icon_set:
+        return build_response(400, {'error': 'displayName or identiconSet is required'})
 
-    if len(display_name) > 50:
-        return build_response(400, {'error': 'displayName must be 50 characters or less'})
-
-    # Update Users table
     users_table = dynamodb.Table(USERS_TABLE)
+    set_parts = []
+    expr_values = {}
+    display_name = None
+
+    if has_display_name:
+        display_name = body.get('displayName', '').strip()
+        if not display_name:
+            return build_response(400, {'error': 'displayName is required'})
+        if len(display_name) > 50:
+            return build_response(400, {'error': 'displayName must be 50 characters or less'})
+        set_parts.append('displayName = :name')
+        expr_values[':name'] = display_name
+
+    icon_set = None
+    if has_icon_set:
+        icon_set = body.get('identiconSet')
+        if icon_set not in ('set1', 'set4'):
+            return build_response(400, {'error': "identiconSet must be 'set1' or 'set4'"})
+        # Stored under the preferences map; if_not_exists guards a first write.
+        set_parts.append('preferences = :prefs')
+        # Merge into existing preferences to avoid clobbering other keys.
+        existing = (_get_user(user_id) or {}).get('preferences') or {}
+        existing['identiconSet'] = icon_set
+        expr_values[':prefs'] = existing
+
     users_table.update_item(
         Key={'userId': user_id},
-        UpdateExpression='SET displayName = :name',
-        ExpressionAttributeValues={':name': display_name}
+        UpdateExpression='SET ' + ', '.join(set_parts),
+        ExpressionAttributeValues=expr_values,
     )
 
-    # Also update displayName in LeagueMembers if user is in a league
-    user = _get_user(user_id)
-    if user and user.get('leagueId'):
-        members_table = dynamodb.Table(LEAGUE_MEMBERS_TABLE)
-        try:
-            members_table.update_item(
-                Key={'leagueId': user['leagueId'], 'userId': user_id},
-                UpdateExpression='SET displayName = :name',
-                ExpressionAttributeValues={':name': display_name}
-            )
-        except Exception as e:
-            logger.warning(f"Failed to update displayName in league members: {e}")
+    # Also update displayName in LeagueMembers if the user is in a league.
+    if has_display_name:
+        user = _get_user(user_id)
+        if user and user.get('leagueId'):
+            members_table = dynamodb.Table(LEAGUE_MEMBERS_TABLE)
+            try:
+                members_table.update_item(
+                    Key={'leagueId': user['leagueId'], 'userId': user_id},
+                    UpdateExpression='SET displayName = :name',
+                    ExpressionAttributeValues={':name': display_name}
+                )
+            except Exception as e:
+                logger.warning(f"Failed to update displayName in league members: {e}")
 
-    return build_response(200, {'displayName': display_name})
+    result = {}
+    if display_name is not None:
+        result['displayName'] = display_name
+    if icon_set is not None:
+        result['identiconSet'] = icon_set
+    return build_response(200, result)
 
 
 def _validate_email(email):

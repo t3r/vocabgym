@@ -33,6 +33,79 @@ VOCABITEMS_TABLE = os.environ['VOCABITEMS_TABLE']
 IMAGES_BUCKET = os.environ['IMAGES_BUCKET']
 USERS_TABLE = os.environ.get('USERS_TABLE', '')
 
+# Identicon styles the icon_handler pre-renders per page. Kept in sync with
+# functions/icon_handler/app.py.
+VALID_ICON_SETS = ('set1', 'set4')
+DEFAULT_ICON_SET = 'set1'
+_SOURCE_PREFIX = 'images/'
+_ICON_PREFIX = 'identicons/'
+
+
+def _icon_key_for(image_key, roboset):
+    """Map an original image key to its identicon key for a given style.
+
+    Mirrors icon_handler._icon_key:
+    images/{userId}/{vocabSetId}/{timestamp}-original.jpg
+      -> identicons/{userId}/{vocabSetId}/{timestamp}-{roboset}.png
+    """
+    if not image_key:
+        return None
+    rel = image_key[len(_SOURCE_PREFIX):] if image_key.startswith(_SOURCE_PREFIX) else image_key
+    last = rel.rsplit('/', 1)[-1]
+    stem = rel[: -(len(last.rsplit('.', 1)[-1]) + 1)] if '.' in last else rel
+    if stem.endswith('-original'):
+        stem = stem[: -len('-original')]
+    return f"{_ICON_PREFIX}{stem}-{roboset}.png"
+
+
+def _list_identicon_url(vocab_set, icon_set):
+    """Presigned URL for a set's primary identicon (first page), or None."""
+    first_key = vocab_set.get('sourceImageKey') or (vocab_set.get('imageKeys') or [None])[0]
+    icon_key = _icon_key_for(first_key, icon_set)
+    if not icon_key:
+        return None
+    try:
+        return s3_client.generate_presigned_url(
+            'get_object',
+            Params={'Bucket': IMAGES_BUCKET, 'Key': icon_key},
+            ExpiresIn=3600,
+        )
+    except Exception as e:
+        logger.warning(f"Failed to generate list identicon URL for {icon_key}: {e}")
+        return None
+
+
+def _get_user_icon_set(user_id):
+    """Return the user's chosen identicon style ('set1'|'set4'), default set1."""
+    if not USERS_TABLE:
+        return DEFAULT_ICON_SET
+    try:
+        user = dynamodb.Table(USERS_TABLE).get_item(Key={'userId': user_id}).get('Item', {})
+        pref = (user.get('preferences') or {}).get('identiconSet')
+        return pref if pref in VALID_ICON_SETS else DEFAULT_ICON_SET
+    except Exception:
+        return DEFAULT_ICON_SET
+
+
+def _delete_original_scans(vocab_set):
+    """Delete all original scan objects for a set from S3 (identicons are kept).
+
+    Called on approval: once the user has reviewed and approved the vocabulary,
+    the copyrighted original scans are removed; only the generated identicons
+    remain.
+    """
+    source_key = vocab_set.get('sourceImageKey')
+    keys = list(vocab_set.get('imageKeys') or [])
+    if source_key and source_key not in keys:
+        keys.append(source_key)
+    for key in keys:
+        if not key or not key.startswith(_SOURCE_PREFIX):
+            continue
+        try:
+            s3_client.delete_object(Bucket=IMAGES_BUCKET, Key=key)
+        except Exception as e:
+            logger.warning(f"Failed to delete original scan {key}: {e}")
+
 
 def lambda_handler(event, context):
     """Route requests to appropriate handler based on HTTP method and path.
@@ -93,6 +166,7 @@ def handle_list(event, user_id):
 
     # Enrich with progress data
     progress_table = dynamodb.Table(os.environ['PROGRESS_TABLE'])
+    icon_set = _get_user_icon_set(user_id)
     enriched_sets = []
     for vs in vocab_sets:
         vocab_set_id = vs['vocabSetId']
@@ -124,6 +198,8 @@ def handle_list(event, user_id):
             'updatedAt': vs.get('updatedAt', 0),
             'mastery': mastery,
             'lastPracticedAt': last_practiced,
+            'identiconSet': icon_set,
+            'identiconUrl': _list_identicon_url(vs, icon_set),
         })
 
     logger.info(json.dumps({
@@ -222,6 +298,26 @@ def handle_get(event, user_id):
             except Exception as e:
                 logger.warning(f"Failed to generate presigned URL for {key}: {e}")
 
+    # Generate presigned URLs for the identicons (one per page), in the caller's
+    # preferred style. These are the persistent visual identity of the set and
+    # remain valid after the originals are deleted on approval.
+    icon_set = _get_user_icon_set(user_id)
+    identicon_urls = []
+    for key in image_keys:
+        icon_key = _icon_key_for(key, icon_set)
+        if not icon_key:
+            continue
+        try:
+            identicon_urls.append(
+                s3_client.generate_presigned_url(
+                    'get_object',
+                    Params={'Bucket': IMAGES_BUCKET, 'Key': icon_key},
+                    ExpiresIn=3600,
+                )
+            )
+        except Exception as e:
+            logger.warning(f"Failed to generate identicon URL for {icon_key}: {e}")
+
     response_body = {
         'vocabSetId': vocab_set['vocabSetId'],
         'userId': vocab_set['userId'],
@@ -230,6 +326,9 @@ def handle_get(event, user_id):
         'sourceImageUrl': image_url,
         'imageKeys': image_keys,
         'imageUrls': image_urls,
+        'identiconSet': icon_set,
+        'identiconUrl': identicon_urls[0] if identicon_urls else None,
+        'identiconUrls': identicon_urls,
         'extractionStatus': vocab_set.get('extractionStatus', 'pending'),
         'metadata': vocab_set.get('metadata', {}),
         'itemCount': len(items),
@@ -367,6 +466,12 @@ def handle_update(event, user_id):
         UpdateExpression=update_expression,
         ExpressionAttributeValues=expr_values,
     )
+
+    # On approval, delete the copyrighted original scans. The generated
+    # identicons (identicons/ prefix) are kept as the set's visual identity.
+    # Rendering never depends on the originals, so this is safe.
+    if body.get('approve'):
+        _delete_original_scans(response['Item'])
 
     logger.info(json.dumps({
         'event': 'vocab_updated',
