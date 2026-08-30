@@ -47,7 +47,16 @@
           />
         </div>
 
-        <h3 class="font-semibold text-gray-900 dark:text-white mb-3">Seite {{ groupIndex + 1 }}</h3>
+        <h3 class="font-semibold text-gray-900 dark:text-white mb-3 flex items-center gap-2">
+          <img
+            v-if="group.identiconUrl"
+            :src="group.identiconUrl"
+            alt="Seiten-Symbol"
+            class="w-8 h-8 rounded bg-gray-50 dark:bg-gray-700"
+            loading="lazy"
+          />
+          Seite {{ groupIndex + 1 }}
+        </h3>
 
         <!-- Editable table for this image's items -->
         <div class="overflow-x-auto">
@@ -215,11 +224,14 @@ const targetLanguageName = computed(() => {
 const imageGroups = computed(() => {
   const imageKeys = vocabSet.value?.imageKeys || []
   const imageUrls = vocabSet.value?.imageUrls || []
+  const identiconUrls = vocabSet.value?.identiconUrls || []
 
-  // Build a map of imageKey -> imageUrl
+  // Build a map of imageKey -> imageUrl and imageKey -> identiconUrl
   const keyToUrl = {}
+  const keyToIcon = {}
   imageKeys.forEach((key, idx) => {
     keyToUrl[key] = imageUrls[idx] || null
+    keyToIcon[key] = identiconUrls[idx] || null
   })
 
   // If no imageKeys but we have a legacy sourceImageKey/sourceImageUrl, use that
@@ -239,6 +251,7 @@ const imageGroups = computed(() => {
       groups.push({
         imageKey: key,
         imageUrl: keyToUrl[key] || null,
+        identiconUrl: keyToIcon[key] || null,
         items: groupItems
       })
       usedKeys.add(key)
@@ -251,6 +264,7 @@ const imageGroups = computed(() => {
       groups.push({
         imageKey: key,
         imageUrl: keyToUrl[key] || null,
+        identiconUrl: keyToIcon[key] || null,
         items: []
       })
     }

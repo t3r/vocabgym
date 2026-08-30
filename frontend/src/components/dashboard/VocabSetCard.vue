@@ -1,12 +1,21 @@
 <template>
   <div class="card hover:shadow-lg transition-shadow cursor-pointer" @click="$emit('view', vocabSet)">
     <!-- Title and Metadata -->
-    <div class="mb-3">
-      <h3 class="font-semibold text-gray-900 dark:text-white truncate">{{ vocabSet.title || 'Unbenanntes Set' }}</h3>
-      <p class="text-sm text-gray-500 mt-1">
-        {{ vocabSet.itemCount || 0 }} Vokabeln
-        <span v-if="vocabSet.metadata?.chapter"> · Kap. {{ vocabSet.metadata.chapter }}</span>
-      </p>
+    <div class="mb-3 flex items-center gap-3">
+      <img
+        v-if="vocabSet.identiconUrl"
+        :src="vocabSet.identiconUrl"
+        alt="Set-Symbol"
+        class="w-12 h-12 rounded-lg flex-shrink-0 bg-gray-50 dark:bg-gray-700"
+        loading="lazy"
+      />
+      <div class="min-w-0">
+        <h3 class="font-semibold text-gray-900 dark:text-white truncate">{{ vocabSet.title || 'Unbenanntes Set' }}</h3>
+        <p class="text-sm text-gray-500 mt-1">
+          {{ vocabSet.itemCount || 0 }} Vokabeln
+          <span v-if="vocabSet.metadata?.chapter"> · Kap. {{ vocabSet.metadata.chapter }}</span>
+        </p>
+      </div>
     </div>
 
     <!-- Progress Bar -->

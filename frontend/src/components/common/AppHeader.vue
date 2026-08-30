@@ -92,8 +92,23 @@
                   @keyup.enter="saveDisplayName"
                   ref="nameInput"
                 />
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Symbol-Stil</label>
+                <div class="flex gap-2 mb-3">
+                  <button
+                    type="button"
+                    @click="iconSet = 'set1'"
+                    :class="iconSet === 'set1' ? 'btn-primary' : 'btn-secondary'"
+                    class="text-xs flex-1"
+                  >🤖 Roboter</button>
+                  <button
+                    type="button"
+                    @click="iconSet = 'set4'"
+                    :class="iconSet === 'set4' ? 'btn-primary' : 'btn-secondary'"
+                    class="text-xs flex-1"
+                  >🐱 Katzen</button>
+                </div>
                 <div class="flex gap-2">
-                  <button @click="saveDisplayName" class="btn-primary text-xs flex-1" :disabled="!newDisplayName.trim()">Speichern</button>
+                  <button @click="saveProfile" class="btn-primary text-xs flex-1" :disabled="!newDisplayName.trim()">Speichern</button>
                   <button @click="editingName = false" class="btn-secondary text-xs">Abbrechen</button>
                 </div>
               </div>
@@ -146,20 +161,25 @@ const mobileMenuOpen = ref(false)
 const isDark = ref(false)
 const editingName = ref(false)
 const newDisplayName = ref('')
+const iconSet = ref('set1')
 const nameInput = ref(null)
 
 watch(editingName, (val) => {
   if (val) {
     newDisplayName.value = userName.value || ''
+    // Load current icon-set preference so the toggle reflects the saved value.
+    api.get('/users/profile')
+      .then((resp) => { iconSet.value = resp.data?.identiconSet || 'set1' })
+      .catch(() => { iconSet.value = 'set1' })
     nextTick(() => nameInput.value?.focus())
   }
 })
 
-async function saveDisplayName() {
+async function saveProfile() {
   const name = newDisplayName.value.trim()
   if (!name) return
   try {
-    await api.put('/users/profile', { displayName: name })
+    await api.put('/users/profile', { displayName: name, identiconSet: iconSet.value })
     // Update reactive store state (also persists to localStorage) so the
     // header re-renders immediately with the new name.
     authStore.setDisplayName(name)
@@ -168,7 +188,7 @@ async function saveDisplayName() {
     }
     editingName.value = false
   } catch {
-    // Silent fail - name will update on next login
+    // Silent fail - will update on next login
     editingName.value = false
   }
 }
