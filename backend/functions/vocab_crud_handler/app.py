@@ -17,6 +17,7 @@ from lib.utils import (
     get_path_parameter,
 )
 from lib.validation import validate_vocab_set_data, validate_vocab_items, validate_uuid
+from lib.plans import release_set_slot
 
 logger = logging.getLogger()
 logger.setLevel(os.environ.get('LOG_LEVEL', 'INFO'))
@@ -30,6 +31,7 @@ s3_client = boto3.client('s3', region_name=region, endpoint_url=f'https://s3.{re
 VOCABSETS_TABLE = os.environ['VOCABSETS_TABLE']
 VOCABITEMS_TABLE = os.environ['VOCABITEMS_TABLE']
 IMAGES_BUCKET = os.environ['IMAGES_BUCKET']
+USERS_TABLE = os.environ.get('USERS_TABLE', '')
 
 
 def lambda_handler(event, context):
@@ -422,6 +424,10 @@ def handle_delete(event, user_id):
     vocabsets_table.delete_item(
         Key={'vocabSetId': vocab_set_id, 'userId': user_id}
     )
+
+    # Release the owned-set slot (race-safe, never below zero).
+    if USERS_TABLE:
+        release_set_slot(dynamodb.Table(USERS_TABLE), user_id)
 
     logger.info(json.dumps({
         'event': 'vocab_deleted',

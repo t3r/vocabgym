@@ -17,6 +17,22 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'layers', 'shar
 os.environ['IMAGES_BUCKET'] = 'test-images-bucket'
 os.environ['VOCABSETS_TABLE'] = 'test-vocabsets-table'
 os.environ['VOCABITEMS_TABLE'] = 'test-vocabitems-table'
+os.environ['USERS_TABLE'] = 'test-users-table'
+
+
+def _load_upload_app():
+    """Load the upload handler by explicit file path under a unique module name.
+
+    Using a bare `import app` collides with other handlers' `app.py` modules in
+    the full test suite (shared `sys.modules['app']`), which made these tests
+    order-dependent. Loading by path makes them isolated and robust.
+    """
+    import importlib.util
+    path = os.path.join(os.path.dirname(__file__), '..', 'functions', 'upload_handler', 'app.py')
+    spec = importlib.util.spec_from_file_location('upload_app_under_test', path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 os.environ['SESSIONS_TABLE'] = 'test-sessions-table'
 os.environ['PROGRESS_TABLE'] = 'test-progress-table'
 os.environ['REGION'] = 'eu-central-1'
@@ -76,15 +92,20 @@ def aws_resources():
             BillingMode='PAY_PER_REQUEST',
         )
 
+        # Users table — upload_handler maintains a race-safe owned-set counter here.
+        dynamodb.create_table(
+            TableName='test-users-table',
+            KeySchema=[{'AttributeName': 'userId', 'KeyType': 'HASH'}],
+            AttributeDefinitions=[{'AttributeName': 'userId', 'AttributeType': 'S'}],
+            BillingMode='PAY_PER_REQUEST',
+        )
+
         yield {'s3': s3, 'dynamodb': dynamodb, 'table': table}
 
 
 def test_successful_upload_request(aws_resources):
     """Test a successful upload request generates presigned URL."""
-    # Must import inside test to use mocked AWS
-    import importlib
-    import app
-    importlib.reload(app)
+    app = _load_upload_app()
 
     event = create_api_gateway_event(
         body={
@@ -107,9 +128,7 @@ def test_successful_upload_request(aws_resources):
 
 def test_upload_missing_file_name(aws_resources):
     """Test upload request without fileName returns 400."""
-    import importlib
-    import app
-    importlib.reload(app)
+    app = _load_upload_app()
 
     event = create_api_gateway_event(
         body={
@@ -123,9 +142,7 @@ def test_upload_missing_file_name(aws_resources):
 
 def test_upload_invalid_content_type(aws_resources):
     """Test upload with invalid content type returns 400."""
-    import importlib
-    import app
-    importlib.reload(app)
+    app = _load_upload_app()
 
     event = create_api_gateway_event(
         body={
@@ -143,9 +160,7 @@ def test_upload_invalid_content_type(aws_resources):
 
 def test_upload_missing_body(aws_resources):
     """Test upload request without body returns 400."""
-    import importlib
-    import app
-    importlib.reload(app)
+    app = _load_upload_app()
 
     event = create_api_gateway_event(body=None)
     event['body'] = None
@@ -156,9 +171,7 @@ def test_upload_missing_body(aws_resources):
 
 def test_upload_creates_dynamodb_record(aws_resources):
     """Test that upload creates initial VocabSet record in DynamoDB."""
-    import importlib
-    import app
-    importlib.reload(app)
+    app = _load_upload_app()
 
     event = create_api_gateway_event(
         body={
@@ -187,9 +200,7 @@ def test_upload_creates_dynamodb_record(aws_resources):
 
 def test_upload_cors_headers(aws_resources):
     """Test that response includes CORS headers."""
-    import importlib
-    import app
-    importlib.reload(app)
+    app = _load_upload_app()
 
     event = create_api_gateway_event(
         body={
@@ -206,9 +217,7 @@ def test_upload_cors_headers(aws_resources):
 
 def test_upload_no_auth(aws_resources):
     """Test that request without auth returns 400."""
-    import importlib
-    import app
-    importlib.reload(app)
+    app = _load_upload_app()
 
     event = create_api_gateway_event(
         body={

@@ -15,6 +15,7 @@ from lib.utils import (
     parse_body,
 )
 from lib.validation import validate_file_upload
+from lib.plans import get_plan_set_limit, try_reserve_set_slot, release_set_slot, DEFAULT_PLAN
 
 logger = logging.getLogger()
 logger.setLevel(os.environ.get('LOG_LEVEL', 'INFO'))
@@ -33,6 +34,12 @@ dynamodb = boto3.resource('dynamodb')
 # Environment variables
 IMAGES_BUCKET = os.environ['IMAGES_BUCKET']
 VOCABSETS_TABLE = os.environ['VOCABSETS_TABLE']
+USERS_TABLE = os.environ.get('USERS_TABLE', '')
+
+# Feature flag: block new-set creation at the plan limit. The atomic owned-set
+# counter is ALWAYS maintained (race-safe); blocking is enabled once the
+# subscription plans go live so existing users are not disrupted early.
+ENFORCE_SET_LIMITS = os.environ.get('ENFORCE_SET_LIMITS', 'false').lower() == 'true'
 
 
 def lambda_handler(event, context):
@@ -87,6 +94,24 @@ def lambda_handler(event, context):
         else:
             vocab_set_id = generate_uuid()
 
+        # For a NEW set, reserve an owned-set slot atomically (race-safe).
+        # Appending an image to an existing set does not consume a slot.
+        slot_reserved = False
+        if not existing_vocab_set_id and USERS_TABLE:
+            users_table = dynamodb.Table(USERS_TABLE)
+            user_resp = users_table.get_item(Key={'userId': user_id})
+            plan = (user_resp.get('Item') or {}).get('plan', DEFAULT_PLAN)
+            limit = get_plan_set_limit(plan) if ENFORCE_SET_LIMITS else None
+            reserved = try_reserve_set_slot(users_table, user_id, limit)
+            if not reserved:
+                return build_response(403, {
+                    'error': 'Set-Limit deines Plans erreicht. Lösche ein Set oder upgrade deinen Plan.',
+                    'code': 'PLAN_LIMIT',
+                    'plan': plan,
+                    'limit': get_plan_set_limit(plan),
+                })
+            slot_reserved = True
+
         timestamp = get_timestamp()
         extension = file_name.rsplit('.', 1)[-1].lower() if '.' in file_name else 'jpg'
         image_key = f"images/{user_id}/{vocab_set_id}/{timestamp}-original.{extension}"
@@ -119,7 +144,13 @@ def lambda_handler(event, context):
             }
             if target_language:
                 item_data['targetLanguage'] = target_language
-            table.put_item(Item=item_data)
+            try:
+                table.put_item(Item=item_data)
+            except Exception:
+                # Roll back the reserved slot so a failed create doesn't leak it.
+                if slot_reserved and USERS_TABLE:
+                    release_set_slot(dynamodb.Table(USERS_TABLE), user_id)
+                raise
         else:
             # Append new image key to existing vocab set's imageKeys list
             table.update_item(
