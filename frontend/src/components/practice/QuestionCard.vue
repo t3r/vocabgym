@@ -154,7 +154,7 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import AnswerInput from './AnswerInput.vue'
 import FeedbackDisplay from './FeedbackDisplay.vue'
 import PronounceButton from './PronounceButton.vue'
@@ -172,9 +172,24 @@ const props = defineProps({
   examMode: { type: Boolean, default: false }
 })
 
-defineEmits(['submit', 'skip', 'next', 'accept-close', 'reject-close'])
+const emit = defineEmits(['submit', 'skip', 'next', 'accept-close', 'reject-close'])
 
 const { showError } = useToast()
+
+// Allow advancing with the Enter key once feedback is shown (the answer input
+// is gone by then, so its own Enter-to-submit no longer applies). Only for the
+// exact/wrong feedback with a "Weiter" button — a "close" result needs an
+// explicit accept/reject decision.
+function onKeydown(e) {
+  if (e.key !== 'Enter') return
+  if (props.feedback && !props.feedback.close) {
+    e.preventDefault()
+    emit('next')
+  }
+}
+
+onMounted(() => window.addEventListener('keydown', onKeydown))
+onUnmounted(() => window.removeEventListener('keydown', onKeydown))
 
 const showingHint = ref(false)
 const pronouncing = ref(false)

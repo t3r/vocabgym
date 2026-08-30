@@ -183,8 +183,22 @@ def calculate_goal_status(goal, user_id):
 
     progress_table = dynamodb.Table(PROGRESS_TABLE)
     items_table = dynamodb.Table(VOCABITEMS_TABLE)
+    vocabsets_table = dynamodb.Table(VOCABSETS_TABLE)
+
+    # Vocab sets belong to the goal owner (for league-wide goals the teacher).
+    goal_owner_id = goal.get('userId', user_id)
 
     for vocab_set_id in vocab_set_ids:
+        # Resolve the set title (fall back to the id if not found)
+        set_title = ''
+        try:
+            vs_resp = vocabsets_table.get_item(
+                Key={'vocabSetId': vocab_set_id, 'userId': goal_owner_id}
+            )
+            set_title = (vs_resp.get('Item') or {}).get('title', '')
+        except Exception as e:
+            logger.warning(f"Failed to load title for set {vocab_set_id}: {e}")
+
         # Count total items in this vocab set
         try:
             items_response = items_table.query(
@@ -222,6 +236,7 @@ def calculate_goal_status(goal, user_id):
         set_percent = round(set_mastered / max(set_total, 1) * 100, 1)
         per_set.append({
             'vocabSetId': vocab_set_id,
+            'title': set_title,
             'totalWords': set_total,
             'masteredWords': set_mastered,
             'hardWords': set_hard,
