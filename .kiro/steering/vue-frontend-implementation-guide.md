@@ -329,11 +329,11 @@ Text-to-speech service wrapping the Amazon Polly backend (`GET /tts/voices`, `PO
 ### stores/practice.js
 
 **State:**
-- `currentSession`: Object with session data (`sessionId`, `vocabSetId`, `direction`, `startTime`)
+- `currentSession`: Object with session data (`sessionId`, `vocabSetId`, `direction`, `mode`, `startTime`)
 - `questions`: Array of questions for current session (populated from backend, which applies smart repetition — weak words are prioritized)
 - `currentQuestionIndex`: Integer
 - `answers`: Array of answer records
-- `sessionResults`: Object with score, detailed results, `leagueUpdate`, and `errorPatterns` from API
+- `sessionResults`: Object with score, detailed results, `mode`, `vocabSetId`, `duration`, `leagueUpdate`, and `errorPatterns` from API
 - `isSessionActive`: Boolean
 - `currentStreak`: Integer — consecutive correct answers in current session
 
@@ -341,9 +341,11 @@ Text-to-speech service wrapping the Amazon Polly backend (`GET /tts/voices`, `PO
 - `currentQuestion`: Returns current question object
 - `progress`: Returns `{current, total, percentage}` for progress bar
 - `score`: Returns `{correct, total, percentage}`
+- `mode`: Returns the current session mode (`'practice'` | `'exam'`, default `'practice'`)
+- `isExam`: Returns `true` when the current session mode is `'exam'`
 
 **Actions:**
-- `startSession(vocabSetId, options)`: POST to backend, populate questions array. Backend handles smart repetition (weak words prioritized).
+- `startSession(vocabSetId, options)`: POST to backend (passes `options.mode`), populate questions array. Backend handles smart repetition (weak words prioritized).
 - `submitAnswer(answer)`: Check answer locally using `checkAnswer` from fuzzyMatch. Returns result with `'exact'`, `'close'`, or `'wrong'`. Pushes answer record.
 - `acceptCloseAnswer()`: Mark last close answer as correct, increment streak
 - `rejectCloseAnswer()`: Mark last close answer as incorrect, reset streak
@@ -567,6 +569,9 @@ Main practice interface showing question and answer input.
 - Correct answer display when wrong
 - Streak counter display
 - Skip button (moves question to end of queue)
+- Audio "Vorsagen" (🔊) is always available in practice mode (no streak needed); revealing the solution as text stays gated behind a 2-streak (or a new word)
+- Pressing Enter after feedback advances to the next question (except for a "close" result, which needs an explicit decision)
+- `examMode`: hides Vorsagen, the text reveal and the hint entirely
 
 **Props:**
 - `question`: Object with question data
@@ -575,6 +580,7 @@ Main practice interface showing question and answer input.
 - `streak`: Number — current streak count
 - `hintEnabled`: Boolean — enable hints after streak ≥ 2
 - `targetLanguage`: String — language code for display
+- `examMode`: Boolean — when true, disables all hints/pronunciation (exam mode)
 
 **Events:**
 - `@submit`: Emitted with user answer
@@ -767,17 +773,21 @@ Practice session interface.
 
 **Features:**
 - Direction selector: "Deutsch → [Target Language]" or "[Target Language] → Deutsch" using `getLanguageName()`
+- Mode selector: "📚 Übung" (practice) or "⏱️ Prüfung auf Zeit" (exam)
 - QuestionCard component with streak and hint support
 - Progress bar at top
-- Three-tier answer feedback (exact, close, wrong)
+- Exam mode: an always-visible upward timer (mm:ss) that starts on session start and stops after the last word
+- Three-tier answer feedback (exact, close, wrong). In exam mode a "close" answer is treated strictly as wrong (no accept/reject dialog)
+- Enter advances to the next question once feedback is shown (in addition to the "Weiter" button)
 - Exit confirmation if session incomplete (German confirm dialog)
-- SessionSummary with league update and error patterns on completion
+- SessionSummary with league update and error patterns; in exam mode also the elapsed time (prominent) and a comparison to the previous exam of the same set
 
 **Implementation:**
 - Maps `source-target`/`target-source` directions to legacy `de-fr`/`fr-de` for backend API compatibility
+- Passes `mode` (`practice`|`exam`) to `startSession`; hints/pronunciation are disabled via the QuestionCard `examMode` prop in exam mode
 - Loads vocab set metadata to get `targetLanguage` code
 - Backend handles smart repetition (weak words prioritized in returned questions)
-- `onBeforeRouteLeave` guard saves partial progress
+- `onBeforeRouteLeave` guard saves partial progress; the exam timer is stopped on session end, route leave and unmount
 - All text in German
 
 ### views/ProgressView.vue

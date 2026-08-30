@@ -12,6 +12,7 @@ The application features two user roles: **students** and **teachers**. Teachers
 - **Immediate practice**: Scan → Review → Practice workflow in minutes
 - **AI-assisted learning**: Smart repetition prioritizes weak words; error pattern analysis provides personalized learning hints (Lernhinweise)
 - **Audio pronunciation**: Amazon Polly speaks target-language words aloud; voice and accent selectable; new words are automatically read aloud
+- **Practice & timed exam modes**: A relaxed practice mode (hints, pronunciation, "close" answers let the user decide) and a timed exam mode (upward timer, no hints/pronunciation, strict scoring) that builds a bit of stress to train exam resilience; exam times and results are stored so students can compare their progress
 - **Learning Goals (Lernziele)**: Students and teachers set goals with deadlines and target mastery levels; progress and pace tracked per student and per league
 - **Multi-language support**: German → French, English, Spanish, or Italian
 - **Liga system**: Teachers create leagues for classroom management with leaderboards and streak tracking; teachers invite students by email (invite-only, no self-registration)
@@ -259,13 +260,14 @@ A unified web application that scans workbook pages, extracts vocabulary automat
 
 **Requirements:**
 - User selects vocabulary set to practice from dashboard
-- Practice mode selection: German → target language or target language → German
+- Direction selection: German → target language or target language → German
+- **Session mode selection**: `practice` (default) or `exam` (timed). Practice mode keeps hints, pronunciation and the "close answer — you decide" flow. Exam mode shows an always-visible upward timer, disables hints and pronunciation, treats "close" answers strictly as wrong (no confirm dialog), and stores the elapsed time + correct/wrong so runs can be compared. The exam summary shows the time prominently and compares it to the previous exam of the same set. Goal: build a little stress and train exam resilience.
 - **AI-assisted smart repetition**: Weighted question selection based on mastery level and error history — weak words appear more frequently
 - Large, clear text input field for answer entry
 - "Check Answer" button (keyboard shortcut: Enter)
 - Immediate feedback: correct (green) or incorrect (red)
 - Display correct answer after incorrect attempt
-- "Next Question" button to continue
+- "Next Question" button to continue (also triggered by the Enter key once feedback is shown)
 - Progress bar showing position in session
 - Option to skip question (marks as incorrect)
 - Session summary at completion: score, time taken, detailed results

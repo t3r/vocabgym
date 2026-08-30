@@ -223,6 +223,9 @@ sessionId (SK) - String (UUID)
 Attributes:
   - vocabSetId: String
   - direction: String ("de-fr" | "fr-de" | "source-target" | "target-source")
+  - mode: String ("practice" | "exam") — "exam" is the timed exam mode (upward
+      timer, no hints/pronunciation, strict scoring); stored per session so the
+      history can compare exam runs. Defaults to "practice".
   - totalQuestions: Number
   - correctAnswers: Number
   - score: Number (percentage)
@@ -535,7 +538,7 @@ bedrock_client.converse(
 **Function Name:** `vocabtrainer-practice-handler-{stage}`
 **Trigger:** POST /practice/start, /practice/submit, /practice/complete
 
-**Purpose:** Manage practice sessions with smart repetition, answer validation, error pattern tracking, and league stat updates.
+**Purpose:** Manage practice sessions with smart repetition, answer validation, error pattern tracking, and league stat updates. Sessions run in one of two modes: `practice` (default; hints, pronunciation, "close" answers let the user decide) or `exam` (timed mode — the client shows an upward timer, hints/pronunciation are disabled, and "close" answers count strictly as wrong). The chosen `mode` is stored on the session and returned by start/complete so the history can compare exam runs.
 
 **Key Features:**
 
@@ -663,7 +666,7 @@ def _is_teacher(event):
 
 - **GET /goals** — List all goals for the authenticated user.
 - **POST /goals** — Create a new goal with `{title, vocabSetId, deadline, targetMasteryLevel}`. Teachers may also set `leagueId` for a league-wide goal.
-- **GET /goals/{goalId}** — Get goal details including computed `status`, `currentMastery`, and pace analysis.
+- **GET /goals/{goalId}** — Get goal details including computed `status`, `currentMastery`, pace analysis, and a `perSet` breakdown (each entry carries the vocab set `title`, resolved from VocabSets, plus per-set progress) so the UI shows set names rather than ids.
 - **PUT /goals/{goalId}** — Update goal parameters (deadline, targetMasteryLevel, title).
 - **DELETE /goals/{goalId}** — Remove a goal.
 - **GET /goals/{goalId}/members** — Teacher-only. Returns per-member progress for a league-wide goal.
@@ -955,7 +958,8 @@ DynamoDB returns numbers as `Decimal` type in Python. Always use `json.dumps(dat
 {
   "vocabSetId": "uuid",
   "direction": "de-fr",
-  "questionCount": 20
+  "questionCount": 20,
+  "mode": "practice"  // "practice" (default) or "exam" (timed)
 }
 
 // Response
