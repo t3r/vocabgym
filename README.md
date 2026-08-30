@@ -2,7 +2,10 @@
   <img src="frontend/public/background.jpg" alt="VocabGym – Vokabeln aus dem Arbeitsbuch scannen und üben" width="100%">
 </p>
 
-<h1 align="center">VocabGym 💪</h1>
+<h1 align="center">
+  <img src="frontend/public/logo.svg" alt="VocabGym Logo" height="36" valign="middle">
+  Vocab.Gym
+</h1>
 
 <p align="center">
   <strong>Vokabeltrainer für deutsche Gymnasialschüler.</strong><br>
