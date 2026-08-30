@@ -316,3 +316,221 @@ class TestVocabGetIDOR:
 
         # Must be a uniform 404 (never 403) so existence is not disclosed.
         assert resp['statusCode'] == 404
+
+
+# ============================================================
+# IDOR Tests (CRITICAL-01 & CRITICAL-02)
+# ============================================================
+
+_PRACTICE_PATH = os.path.join(
+    os.path.dirname(__file__), '..', 'functions', 'practice_handler', 'app.py'
+)
+_PROGRESS_PATH = os.path.join(
+    os.path.dirname(__file__), '..', 'functions', 'progress_handler', 'app.py'
+)
+
+
+def _load_practice_app(env):
+    """Load practice handler by explicit path under a unique module name."""
+    for k, v in env.items():
+        os.environ[k] = v
+    spec = importlib.util.spec_from_file_location('practice_app_under_test', _PRACTICE_PATH)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _load_progress_app(env):
+    """Load progress handler by explicit path under a unique module name."""
+    for k, v in env.items():
+        os.environ[k] = v
+    spec = importlib.util.spec_from_file_location('progress_app_under_test', _PROGRESS_PATH)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+@mock_aws
+class TestPracticeIDOR:
+    """Test CRITICAL-01: practice_handler must reject access to foreign vocab sets."""
+
+    def test_foreign_set_returns_404_not_403(self):
+        """User B tries to practice user A's set → uniform 404 (not 403, no info disclosure)."""
+        from moto import mock_aws
+
+        region = 'eu-central-1'
+        dynamodb = boto3.resource('dynamodb', region_name=region)
+
+        # Create tables
+        vocabsets = dynamodb.create_table(
+            TableName='test-vocabsets',
+            KeySchema=[
+                {'AttributeName': 'vocabSetId', 'KeyType': 'HASH'},
+                {'AttributeName': 'userId', 'KeyType': 'RANGE'},
+            ],
+            AttributeDefinitions=[
+                {'AttributeName': 'vocabSetId', 'AttributeType': 'S'},
+                {'AttributeName': 'userId', 'AttributeType': 'S'},
+            ],
+            BillingMode='PAY_PER_REQUEST',
+        )
+        vocabitems = dynamodb.create_table(
+            TableName='test-vocabitems',
+            KeySchema=[
+                {'AttributeName': 'vocabSetId', 'KeyType': 'HASH'},
+                {'AttributeName': 'itemId', 'KeyType': 'RANGE'},
+            ],
+            AttributeDefinitions=[
+                {'AttributeName': 'vocabSetId', 'AttributeType': 'S'},
+                {'AttributeName': 'itemId', 'AttributeType': 'S'},
+            ],
+            BillingMode='PAY_PER_REQUEST',
+        )
+        users = dynamodb.create_table(
+            TableName='test-users',
+            KeySchema=[{'AttributeName': 'userId', 'KeyType': 'HASH'}],
+            AttributeDefinitions=[{'AttributeName': 'userId', 'AttributeType': 'S'}],
+            BillingMode='PAY_PER_REQUEST',
+        )
+
+        # User A owns a vocab set
+        vocabsets.put_item(
+            Item={
+                'vocabSetId': 'set-a',
+                'userId': 'user-a',
+                'title': 'Private Set A',
+                'itemCount': 1,
+            }
+        )
+        vocabitems.put_item(
+            Item={
+                'vocabSetId': 'set-a',
+                'itemId': 'item-1',
+                'source': 'Haus',
+                'target': 'maison',
+                'isActive': True,
+            }
+        )
+        users.put_item(Item={'userId': 'user-b', 'leagueId': None})
+
+        # Load handler
+        app = _load_practice_app(
+            {
+                'VOCABSETS_TABLE': 'test-vocabsets',
+                'VOCABITEMS_TABLE': 'test-vocabitems',
+                'SESSIONS_TABLE': 'test-sessions',
+                'PROGRESS_TABLE': 'test-progress',
+                'USERS_TABLE': 'test-users',
+                'LEAGUES_TABLE': 'test-leagues',
+            }
+        )
+
+        # User B tries to practice user A's set
+        event = {
+            'httpMethod': 'POST',
+            'path': '/practice/start',
+            'requestContext': {
+                'authorizer': {'claims': {'sub': 'user-b'}}
+            },
+            'body': '{"vocabSetId": "set-a", "direction": "de-fr"}',
+        }
+
+        response = app.lambda_handler(event, None)
+
+        # MUST return 404 (not 403), to avoid existence probes
+        assert response['statusCode'] == 404
+        assert 'not found' in response['body'].lower()
+
+
+@mock_aws
+class TestProgressIDOR:
+    """Test CRITICAL-02: progress_handler must reject access to foreign vocab sets."""
+
+    def test_foreign_set_progress_returns_404(self):
+        """User B tries to view progress for user A's set → uniform 404."""
+        import uuid
+
+        region = 'eu-central-1'
+        dynamodb = boto3.resource('dynamodb', region_name=region)
+
+        set_id = str(uuid.uuid4())
+
+        # Create tables
+        vocabsets = dynamodb.create_table(
+            TableName='test-vocabsets-progress',
+            KeySchema=[
+                {'AttributeName': 'vocabSetId', 'KeyType': 'HASH'},
+                {'AttributeName': 'userId', 'KeyType': 'RANGE'},
+            ],
+            AttributeDefinitions=[
+                {'AttributeName': 'vocabSetId', 'AttributeType': 'S'},
+                {'AttributeName': 'userId', 'AttributeType': 'S'},
+            ],
+            BillingMode='PAY_PER_REQUEST',
+        )
+        vocabitems = dynamodb.create_table(
+            TableName='test-vocabitems-progress',
+            KeySchema=[
+                {'AttributeName': 'vocabSetId', 'KeyType': 'HASH'},
+                {'AttributeName': 'itemId', 'KeyType': 'RANGE'},
+            ],
+            AttributeDefinitions=[
+                {'AttributeName': 'vocabSetId', 'AttributeType': 'S'},
+                {'AttributeName': 'itemId', 'AttributeType': 'S'},
+            ],
+            BillingMode='PAY_PER_REQUEST',
+        )
+        users = dynamodb.create_table(
+            TableName='test-users-progress',
+            KeySchema=[{'AttributeName': 'userId', 'KeyType': 'HASH'}],
+            AttributeDefinitions=[{'AttributeName': 'userId', 'AttributeType': 'S'}],
+            BillingMode='PAY_PER_REQUEST',
+        )
+
+        # User A owns a vocab set with items
+        vocabsets.put_item(
+            Item={
+                'vocabSetId': set_id,
+                'userId': 'user-a',
+                'title': 'Private Set A',
+                'itemCount': 2,
+            }
+        )
+        vocabitems.put_item(
+            Item={
+                'vocabSetId': set_id,
+                'itemId': 'item-1',
+                'source': 'Haus',
+                'target': 'maison',
+                'isActive': True,
+            }
+        )
+        users.put_item(Item={'userId': 'user-b', 'leagueId': None})
+
+        # Load handler
+        app = _load_progress_app(
+            {
+                'VOCABSETS_TABLE': 'test-vocabsets-progress',
+                'VOCABITEMS_TABLE': 'test-vocabitems-progress',
+                'PROGRESS_TABLE': 'test-progress',
+                'SESSIONS_TABLE': 'test-sessions',
+                'USERS_TABLE': 'test-users-progress',
+                'LEAGUES_TABLE': 'test-leagues',
+            }
+        )
+
+        # User B tries to view progress for user A's set
+        event = {
+            'httpMethod': 'GET',
+            'path': f'/progress/{set_id}',
+            'pathParameters': {'vocabSetId': set_id},
+            'requestContext': {
+                'authorizer': {'claims': {'sub': 'user-b'}}
+            },
+        }
+
+        response = app.lambda_handler(event, None)
+
+        # MUST return 404 (not 403), uniform response
+        assert response['statusCode'] == 404
+        assert 'not found' in response['body'].lower()

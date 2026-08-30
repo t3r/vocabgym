@@ -28,9 +28,11 @@ logger.setLevel(os.environ.get('LOG_LEVEL', 'INFO'))
 dynamodb = boto3.resource('dynamodb')
 
 # Environment variables
+VOCABSETS_TABLE = os.environ.get('VOCABSETS_TABLE', '')
 VOCABITEMS_TABLE = os.environ['VOCABITEMS_TABLE']
 SESSIONS_TABLE = os.environ['SESSIONS_TABLE']
 PROGRESS_TABLE = os.environ['PROGRESS_TABLE']
+LEAGUES_TABLE = os.environ.get('LEAGUES_TABLE', '')
 LEAGUE_MEMBERS_TABLE = os.environ.get('LEAGUE_MEMBERS_TABLE', '')
 USERS_TABLE = os.environ.get('USERS_TABLE', '')
 
@@ -110,7 +112,44 @@ def handle_start(event, user_id):
     }
     internal_direction = direction_map.get(direction, 'source-target')
 
-    # Fetch vocabulary items
+    # SECURITY: Verify ownership or league assignment before accessing vocab items.
+    # This prevents IDOR attacks where any user could practice another user's
+    # private vocabulary sets by guessing/enumerating vocabSetIds.
+    vocabsets_table = dynamodb.Table(VOCABSETS_TABLE)
+    vocab_set_resp = vocabsets_table.get_item(
+        Key={'vocabSetId': vocab_set_id, 'userId': user_id}
+    )
+    vocab_set = vocab_set_resp.get('Item')
+
+    if not vocab_set:
+        # Not owned by caller. Check if it's a league-assigned set.
+        # Resolution is deterministic: fetch caller's league, verify the set is
+        # assigned, then fetch by the known teacher owner (no cross-owner scan).
+        users_table = dynamodb.Table(USERS_TABLE)
+        user = users_table.get_item(Key={'userId': user_id}).get('Item', {})
+        league_id = user.get('leagueId')
+
+        if not league_id:
+            # Not owned, no league → uniform 404 (never 403, prevents existence probes)
+            return build_response(404, {'error': 'Vocabulary set not found'})
+
+        leagues_table = dynamodb.Table(LEAGUES_TABLE)
+        league = leagues_table.get_item(Key={'leagueId': league_id}).get('Item', {})
+        assigned_ids = league.get('vocabSetIds', [])
+        teacher_user_id = league.get('teacherUserId')
+
+        if vocab_set_id not in assigned_ids or not teacher_user_id:
+            return build_response(404, {'error': 'Vocabulary set not found'})
+
+        # Deterministic fetch by known teacher owner
+        vocab_set_resp = vocabsets_table.get_item(
+            Key={'vocabSetId': vocab_set_id, 'userId': teacher_user_id}
+        )
+        vocab_set = vocab_set_resp.get('Item')
+        if not vocab_set:
+            return build_response(404, {'error': 'Vocabulary set not found'})
+
+    # Fetch vocabulary items (now authorized)
     items_table = dynamodb.Table(VOCABITEMS_TABLE)
     response = items_table.query(
         KeyConditionExpression=Key('vocabSetId').eq(vocab_set_id)

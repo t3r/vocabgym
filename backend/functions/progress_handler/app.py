@@ -27,6 +27,8 @@ PROGRESS_TABLE = os.environ['PROGRESS_TABLE']
 SESSIONS_TABLE = os.environ['SESSIONS_TABLE']
 VOCABSETS_TABLE = os.environ['VOCABSETS_TABLE']
 VOCABITEMS_TABLE = os.environ['VOCABITEMS_TABLE']
+USERS_TABLE = os.environ.get('USERS_TABLE', '')
+LEAGUES_TABLE = os.environ.get('LEAGUES_TABLE', '')
 
 
 def lambda_handler(event, context):
@@ -230,7 +232,40 @@ def handle_vocab_set_progress(event, user_id):
     if not is_valid:
         return build_response(400, {'error': err})
 
-    # Get vocab items (only active ones)
+    # SECURITY: Verify ownership or league assignment before accessing vocab items.
+    # This prevents IDOR attacks where any user could view another user's
+    # vocabulary items and progress data by guessing/enumerating vocabSetIds.
+    vocabsets_table = dynamodb.Table(VOCABSETS_TABLE)
+    vocab_set_resp = vocabsets_table.get_item(
+        Key={'vocabSetId': vocab_set_id, 'userId': user_id}
+    )
+    vocab_set = vocab_set_resp.get('Item')
+
+    if not vocab_set:
+        # Not owned by caller. Check if it's a league-assigned set.
+        users_table = dynamodb.Table(USERS_TABLE)
+        user = users_table.get_item(Key={'userId': user_id}).get('Item', {})
+        league_id = user.get('leagueId')
+
+        if not league_id:
+            return build_response(404, {'error': 'Vocabulary set not found'})
+
+        leagues_table = dynamodb.Table(LEAGUES_TABLE)
+        league = leagues_table.get_item(Key={'leagueId': league_id}).get('Item', {})
+        assigned_ids = league.get('vocabSetIds', [])
+        teacher_user_id = league.get('teacherUserId')
+
+        if vocab_set_id not in assigned_ids or not teacher_user_id:
+            return build_response(404, {'error': 'Vocabulary set not found'})
+
+        vocab_set_resp = vocabsets_table.get_item(
+            Key={'vocabSetId': vocab_set_id, 'userId': teacher_user_id}
+        )
+        vocab_set = vocab_set_resp.get('Item')
+        if not vocab_set:
+            return build_response(404, {'error': 'Vocabulary set not found'})
+
+    # Get vocab items (only active ones, now authorized)
     items_table = dynamodb.Table(VOCABITEMS_TABLE)
     items_response = items_table.query(
         KeyConditionExpression=Key('vocabSetId').eq(vocab_set_id)
