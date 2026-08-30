@@ -27,6 +27,20 @@ os.environ.setdefault('REGION', 'eu-central-1')
 _EXTRACTION_DIR = os.path.join(os.path.dirname(__file__), '..', 'functions', 'extraction_handler')
 _EXTRACTION_APP_PATH = os.path.join(_EXTRACTION_DIR, 'app.py')
 
+_VOCAB_CRUD_PATH = os.path.join(
+    os.path.dirname(__file__), '..', 'functions', 'vocab_crud_handler', 'app.py'
+)
+
+
+def _load_vocab_crud_app(env):
+    """Load vocab_crud handler by explicit path under a unique module name."""
+    for k, v in env.items():
+        os.environ[k] = v
+    spec = importlib.util.spec_from_file_location('vocab_crud_app_under_test', _VOCAB_CRUD_PATH)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
 
 def _load_extraction_app(env):
     """Load the extraction handler under a UNIQUE module name from its file path.
@@ -244,3 +258,61 @@ class TestSetSlotCounter:
         table.put_item(Item={'userId': 'fresh'})
         assert try_reserve_set_slot(table, 'fresh', 1) is True
         assert int(table.get_item(Key={'userId': 'fresh'})['Item']['ownedSetCount']) == 1
+
+
+# ---------------------------------------------------------------------------
+# #5 — IDOR / information disclosure in vocab_crud handle_get
+# ---------------------------------------------------------------------------
+class TestVocabGetIDOR:
+    _ENV = {
+        'VOCABSETS_TABLE': 'vocabsets',
+        'VOCABITEMS_TABLE': 'vocabitems',
+        'IMAGES_BUCKET': 'images-bucket',
+        'PROGRESS_TABLE': 'progress',
+        'USERS_TABLE': 'users',
+        'LEAGUES_TABLE': 'leagues',
+    }
+
+    def _event(self, vocab_set_id, user_id):
+        return {
+            'httpMethod': 'GET',
+            'path': f'/vocab/{vocab_set_id}',
+            'pathParameters': {'vocabSetId': vocab_set_id},
+            'requestContext': {'authorizer': {'claims': {'sub': user_id}}},
+        }
+
+    @mock_aws
+    def test_foreign_set_returns_404_not_403(self):
+        ddb = boto3.resource('dynamodb', region_name='eu-central-1')
+        # Minimal tables the handler touches.
+        ddb.create_table(
+            TableName='vocabsets',
+            KeySchema=[
+                {'AttributeName': 'vocabSetId', 'KeyType': 'HASH'},
+                {'AttributeName': 'userId', 'KeyType': 'RANGE'},
+            ],
+            AttributeDefinitions=[
+                {'AttributeName': 'vocabSetId', 'AttributeType': 'S'},
+                {'AttributeName': 'userId', 'AttributeType': 'S'},
+            ],
+            BillingMode='PAY_PER_REQUEST',
+        )
+        ddb.create_table(
+            TableName='users',
+            KeySchema=[{'AttributeName': 'userId', 'KeyType': 'HASH'}],
+            AttributeDefinitions=[{'AttributeName': 'userId', 'AttributeType': 'S'}],
+            BillingMode='PAY_PER_REQUEST',
+        )
+        # A set owned by user A, valid UUID, not part of any league.
+        set_id = '11111111-1111-4111-8111-111111111111'
+        ddb.Table('vocabsets').put_item(Item={
+            'vocabSetId': set_id, 'userId': 'user-A', 'title': 'A secret set',
+        })
+        # User B (no league) has no legitimate access.
+        ddb.Table('users').put_item(Item={'userId': 'user-B'})
+
+        app = _load_vocab_crud_app(self._ENV)
+        resp = app.lambda_handler(self._event(set_id, 'user-B'), None)
+
+        # Must be a uniform 404 (never 403) so existence is not disclosed.
+        assert resp['statusCode'] == 404

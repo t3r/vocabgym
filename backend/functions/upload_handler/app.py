@@ -113,7 +113,11 @@ def lambda_handler(event, context):
             slot_reserved = True
 
         timestamp = get_timestamp()
-        extension = file_name.rsplit('.', 1)[-1].lower() if '.' in file_name else 'jpg'
+        # Whitelist the extension used in the S3 key. The content type is already
+        # validated; derive a safe extension from the allowed set only, so a name
+        # like "evil.jpg.exe" cannot place an unexpected extension in the key.
+        raw_ext = file_name.rsplit('.', 1)[-1].lower() if '.' in file_name else ''
+        extension = raw_ext if raw_ext in ('jpg', 'jpeg', 'png') else 'jpg'
         image_key = f"images/{user_id}/{vocab_set_id}/{timestamp}-original.{extension}"
 
         # Generate presigned URL for direct upload

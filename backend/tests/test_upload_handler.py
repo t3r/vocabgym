@@ -126,6 +126,48 @@ def test_successful_upload_request(aws_resources):
     assert 'test-user-123' in body['imageKey']
 
 
+def test_upload_multidot_filename_forces_safe_extension(aws_resources):
+    """A crafted name like 'evil.jpg.exe' must not place '.exe' in the S3 key.
+
+    The content type is valid image/jpeg, so the upload proceeds, but the key
+    extension must be whitelisted (falls back to jpg for anything not in
+    {jpg,jpeg,png})."""
+    app = _load_upload_app()
+
+    event = create_api_gateway_event(
+        body={
+            'fileName': 'evil.jpg.exe',
+            'contentType': 'image/jpeg',
+        }
+    )
+    response = app.lambda_handler(event, None)
+
+    # validate_file_upload rejects the '.exe' extension outright (defense #1).
+    # If it ever passed, the key must still not end in .exe (defense #2).
+    if response['statusCode'] == 200:
+        body = json.loads(response['body'])
+        assert body['imageKey'].endswith('.jpg')
+        assert '.exe' not in body['imageKey']
+    else:
+        assert response['statusCode'] == 400
+
+
+def test_upload_png_keeps_png_extension(aws_resources):
+    """A legitimate .png keeps its extension in the key."""
+    app = _load_upload_app()
+
+    event = create_api_gateway_event(
+        body={
+            'fileName': 'seite.png',
+            'contentType': 'image/png',
+        }
+    )
+    response = app.lambda_handler(event, None)
+    assert response['statusCode'] == 200
+    body = json.loads(response['body'])
+    assert body['imageKey'].endswith('.png')
+
+
 def test_upload_missing_file_name(aws_resources):
     """Test upload request without fileName returns 400."""
     app = _load_upload_app()

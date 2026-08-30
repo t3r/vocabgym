@@ -146,42 +146,44 @@ def handle_get(event, user_id):
     if not is_valid:
         return build_response(400, {'error': err})
 
-    # Get vocab set - first try owned by user
+    # Get vocab set - first try the set owned by the caller.
     vocabsets_table = dynamodb.Table(VOCABSETS_TABLE)
     response = vocabsets_table.get_item(
         Key={'vocabSetId': vocab_set_id, 'userId': user_id}
     )
-
     vocab_set = response.get('Item')
 
-    # If not owned by user, check if it's a league-assigned set
+    # If the caller does not own it, the only legitimate access is via a league
+    # the caller belongs to. Resolve access WITHOUT revealing whether the set
+    # exists: we never scan the set's partition for arbitrary owners, and every
+    # access failure returns a uniform 404 (never 403), so an attacker cannot
+    # probe for the existence of other users' set IDs.
     if not vocab_set:
-        # Query by vocabSetId only (any owner)
-        query_response = vocabsets_table.query(
-            KeyConditionExpression=Key('vocabSetId').eq(vocab_set_id)
-        )
-        sets = query_response.get('Items', [])
-        if not sets:
-            return build_response(404, {'error': 'Vocabulary set not found'})
+        not_found = build_response(404, {'error': 'Vocabulary set not found'})
 
-        vocab_set = sets[0]
-
-        # Verify user has access via league assignment
         users_table = dynamodb.Table(os.environ['USERS_TABLE'])
-        user_response = users_table.get_item(Key={'userId': user_id})
-        user = user_response.get('Item', {})
+        user = users_table.get_item(Key={'userId': user_id}).get('Item', {})
         league_id = user.get('leagueId')
-
         if not league_id:
-            return build_response(403, {'error': 'Access denied'})
+            return not_found
 
         leagues_table = dynamodb.Table(os.environ['LEAGUES_TABLE'])
-        league_response = leagues_table.get_item(Key={'leagueId': league_id})
-        league = league_response.get('Item', {})
+        league = leagues_table.get_item(Key={'leagueId': league_id}).get('Item', {})
         assigned_ids = league.get('vocabSetIds', [])
+        teacher_user_id = league.get('teacherUserId')
 
-        if vocab_set_id not in assigned_ids and league.get('teacherUserId') != user_id:
-            return build_response(403, {'error': 'Access denied'})
+        # The set must be assigned to the caller's league. The owner of a
+        # league set is the league's teacher, so we can fetch it deterministically
+        # by its known owner instead of querying across all owners.
+        if vocab_set_id not in assigned_ids or not teacher_user_id:
+            return not_found
+
+        owned = vocabsets_table.get_item(
+            Key={'vocabSetId': vocab_set_id, 'userId': teacher_user_id}
+        ).get('Item')
+        if not owned:
+            return not_found
+        vocab_set = owned
 
     # Get items
     items_table = dynamodb.Table(VOCABITEMS_TABLE)

@@ -868,7 +868,44 @@ Each Lambda function has its own execution role with minimal permissions via SAM
 
 - Shared `validation.py` module validates UUIDs, file uploads (type, size), practice options
 - Each handler validates ownership (userId from JWT matches DynamoDB record)
-- File upload: JPG, PNG, HEIC only; max 10 MB
+- File upload: JPG, PNG only (HEIC rejected); max 10 MB. The S3 key extension is
+  whitelisted to {jpg, jpeg, png} (fallback jpg) so a crafted name like
+  `evil.jpg.exe` cannot place an unexpected extension in the object key.
+
+### Abuse / Cost Protection
+
+- **Extraction rate limit:** the extraction handler enforces a per-user daily
+  cap (`ExtractionUsageTable`, atomic counter) and returns 429 before the
+  expensive Textract/Bedrock calls — prevents DoS-by-cost and delete/recreate abuse.
+- **TTS rate limit:** the polly handler enforces a per-user hourly cap (`TtsUsage`).
+- **Owned-set counter:** `lib/plans.py` maintains a race-safe `ownedSetCount` on
+  the Users record (atomic conditional increment) so plan set-limits cannot be
+  bypassed by concurrent requests. Enforcement is gated by `ENFORCE_SET_LIMITS`.
+
+### LLM Safety (extraction)
+
+- **Prompt-injection hardening:** untrusted OCR text is length-capped and wrapped
+  in an `<ocr_data>` block with a standing instruction to ignore any instructions
+  inside it; breakout delimiters are stripped.
+- **Bedrock Guardrail:** a managed guardrail (content filters SEXUAL/VIOLENCE=HIGH,
+  HATE/INSULTS/MISCONDUCT=MEDIUM, PROMPT_ATTACK=HIGH input-only) is applied to the
+  extraction converse calls. On `stopReason == 'guardrail_intervened'` the handler
+  returns no vocabulary (fail-safe) so blocked content is never stored.
+
+### Access control / no information disclosure
+
+- `vocab_crud` `GET /vocab/{id}` resolves access as: owned-by-caller first, else
+  the set must be assigned to the caller's league (fetched deterministically by
+  the league's teacher owner). Every access failure returns a uniform **404**
+  (never 403, never a cross-owner scan) so set IDs cannot be probed for existence.
+
+### Billing (future `billing_handler`) — REQUIREMENT
+
+- The Stripe webhook endpoint (`POST /billing/webhook`) MUST be configured
+  **without** the Cognito authorizer and MUST verify the `Stripe-Signature`
+  header against the webhook signing secret (from SSM/Secrets Manager) as its
+  first operation, before processing the event. Without signature verification
+  anyone could forge plan upgrades. (Not yet implemented — billing_handler pending.)
 
 ### DynamoDB Decimal Handling
 
