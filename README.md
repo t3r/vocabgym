@@ -1,8 +1,27 @@
-# VocabGym 💪
+<p align="center">
+  <img src="frontend/public/background.jpg" alt="VocabGym – Vokabeln aus dem Arbeitsbuch scannen und üben" width="100%">
+</p>
 
-Vokabeltrainer für deutsche Gymnasialschüler. Workbook-Seiten scannen, Vokabeln per KI extrahieren, mit smarter Wiederholung üben.
+<h1 align="center">VocabGym 💪</h1>
 
-Unterstützte Zielsprachen: 🇫🇷 Französisch · 🇬🇧 Englisch · 🇪🇸 Spanisch · 🇮🇹 Italienisch
+<p align="center">
+  <strong>Vokabeltrainer für deutsche Gymnasialschüler.</strong><br>
+  Arbeitsbuch-Seiten scannen · Vokabeln per KI extrahieren · mit smarter Wiederholung üben.
+</p>
+
+<p align="center">
+  🇫🇷 Französisch&nbsp;&nbsp;·&nbsp;&nbsp;🇬🇧 Englisch&nbsp;&nbsp;·&nbsp;&nbsp;🇪🇸 Spanisch&nbsp;&nbsp;·&nbsp;&nbsp;🇮🇹 Italienisch
+</p>
+
+<p align="center">
+  <img alt="Vue 3" src="https://img.shields.io/badge/Frontend-Vue%203-42b883?logo=vuedotjs&logoColor=white">
+  <img alt="Python 3.11" src="https://img.shields.io/badge/Backend-Python%203.11-3776ab?logo=python&logoColor=white">
+  <img alt="AWS SAM" src="https://img.shields.io/badge/IaC-AWS%20SAM-ff9900?logo=amazonaws&logoColor=white">
+  <img alt="License GPL v3" src="https://img.shields.io/badge/License-GPLv3-blue">
+</p>
+
+---
+
 
 ## Features
 
