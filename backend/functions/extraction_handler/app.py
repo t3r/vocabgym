@@ -38,6 +38,30 @@ EXTRACTION_PROMPT_PARAM = os.environ.get('EXTRACTION_PROMPT_PARAM', '')
 VERIFICATION_PROMPT_PARAM = os.environ.get('VERIFICATION_PROMPT_PARAM', '')
 EXTRACTION_USAGE_TABLE = os.environ.get('EXTRACTION_USAGE_TABLE', '')
 
+# Bedrock Guardrail (content filter + prompt-attack) for the extraction LLM
+# calls. Applied only when configured, so local/unit runs without a guardrail
+# still work.
+GUARDRAIL_ID = os.environ.get('GUARDRAIL_ID', '')
+GUARDRAIL_VERSION = os.environ.get('GUARDRAIL_VERSION', '')
+
+
+def _guardrail_config():
+    """Return the converse() guardrailConfig dict, or None if not configured."""
+    if GUARDRAIL_ID and GUARDRAIL_VERSION:
+        return {
+            'guardrailIdentifier': GUARDRAIL_ID,
+            'guardrailVersion': GUARDRAIL_VERSION,
+        }
+    return None
+
+
+def _converse(**kwargs):
+    """Call bedrock converse, injecting the guardrail config when configured."""
+    gc = _guardrail_config()
+    if gc:
+        kwargs['guardrailConfig'] = gc
+    return bedrock_client.converse(**kwargs)
+
 # Extraction is expensive (Textract + Bedrock). Cap real extractions per user
 # per day to prevent DoS-by-cost / abuse. A flat daily cap for now; per-plan
 # limits can replace this once the subscription plan field exists.
@@ -210,11 +234,14 @@ Antworte mit GENAU EINEM Sprachcode, nichts anderes.
 {sample}"""
 
     try:
-        response = bedrock_client.converse(
+        response = _converse(
             modelId='eu.amazon.nova-pro-v1:0',
             messages=[{'role': 'user', 'content': [{'text': prompt}]}],
             inferenceConfig={'maxTokens': 10},
         )
+        if response.get('stopReason') == 'guardrail_intervened':
+            logger.warning(json.dumps({'event': 'guardrail_blocked', 'stage': 'detect_language'}))
+            return None
         result = response['output']['message']['content'][0]['text'].strip().lower()
 
         if result in ('fr', 'en', 'es', 'it'):
@@ -272,7 +299,7 @@ Antworte NUR mit einem JSON-Array: [{{"source": "deutsch", "target": "{lang_name
 {wrapped_text}"""
 
     try:
-        response = bedrock_client.converse(
+        response = _converse(
             modelId='eu.amazon.nova-pro-v1:0',
             messages=[
                 {'role': 'user', 'content': [{'text': prompt}]}
@@ -281,6 +308,12 @@ Antworte NUR mit einem JSON-Array: [{{"source": "deutsch", "target": "{lang_name
                 'maxTokens': 4096,
             }
         )
+
+        # Guardrail blocked (inappropriate uploaded image or prompt-injection):
+        # treat as no vocab found rather than crashing.
+        if response.get('stopReason') == 'guardrail_intervened':
+            logger.warning(json.dumps({'event': 'guardrail_blocked', 'stage': 'extract'}))
+            return []
 
         result_text = response['output']['message']['content'][0]['text'].strip()
 
@@ -354,7 +387,7 @@ Antworte NUR mit JSON-Array: [{{"source": "deutsch", "target": "übersetzung"}}]
 {wrapped_pairs}"""
 
     try:
-        response = bedrock_client.converse(
+        response = _converse(
             modelId='eu.amazon.nova-pro-v1:0',
             messages=[
                 {'role': 'user', 'content': [{'text': prompt}]}
@@ -363,6 +396,11 @@ Antworte NUR mit JSON-Array: [{{"source": "deutsch", "target": "übersetzung"}}]
                 'maxTokens': 4096,
             }
         )
+
+        # Guardrail blocked: return no pairs rather than crashing.
+        if response.get('stopReason') == 'guardrail_intervened':
+            logger.warning(json.dumps({'event': 'guardrail_blocked', 'stage': 'verify'}))
+            return []
 
         result_text = response['output']['message']['content'][0]['text'].strip()
 

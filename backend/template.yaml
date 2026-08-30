@@ -429,6 +429,8 @@ Resources:
           EXTRACTION_PROMPT_PARAM: !Ref ExtractionPromptParam
           VERIFICATION_PROMPT_PARAM: !Ref VerificationPromptParam
           EXTRACTION_USAGE_TABLE: !Ref ExtractionUsageTable
+          GUARDRAIL_ID: !GetAtt ExtractionGuardrail.GuardrailId
+          GUARDRAIL_VERSION: !GetAtt ExtractionGuardrailVersion.Version
       Policies:
         - S3ReadPolicy:
             BucketName: !Ref ImagesBucket
@@ -453,6 +455,11 @@ Resources:
               Resource:
                 - 'arn:aws:bedrock:*::foundation-model/*'
                 - !Sub 'arn:aws:bedrock:*:${AWS::AccountId}:inference-profile/*'
+            - Effect: Allow
+              Action:
+                - bedrock:ApplyGuardrail
+              Resource:
+                - !GetAtt ExtractionGuardrail.GuardrailArn
       Events:
         ProcessVocab:
           Type: Api
@@ -752,6 +759,50 @@ Resources:
 
         Extrahierte Paare:
         $pairs_text
+
+  # ============================================================
+  # Bedrock Guardrail — content filter + prompt-attack protection
+  # applied to the extraction LLM calls (user-uploaded OCR text).
+  # ============================================================
+  ExtractionGuardrail:
+    Type: AWS::Bedrock::Guardrail
+    Properties:
+      Name: !Sub vocabtrainer-extraction-guardrail-${Environment}
+      Description: Content + prompt-attack filter for vocabulary extraction from user images.
+      BlockedInputMessaging: "Der Inhalt konnte nicht verarbeitet werden."
+      BlockedOutputsMessaging: "Der Inhalt konnte nicht verarbeitet werden."
+      ContentPolicyConfig:
+        FiltersConfig:
+          - Type: SEXUAL
+            InputStrength: HIGH
+            OutputStrength: HIGH
+          - Type: VIOLENCE
+            InputStrength: HIGH
+            OutputStrength: HIGH
+          - Type: HATE
+            InputStrength: MEDIUM
+            OutputStrength: MEDIUM
+          - Type: INSULTS
+            InputStrength: MEDIUM
+            OutputStrength: MEDIUM
+          - Type: MISCONDUCT
+            InputStrength: MEDIUM
+            OutputStrength: MEDIUM
+          # Prompt-attack filtering only applies to the input; output strength must be NONE.
+          - Type: PROMPT_ATTACK
+            InputStrength: HIGH
+            OutputStrength: NONE
+      Tags:
+        - Key: Project
+          Value: VocabTrainer
+        - Key: Environment
+          Value: !Ref Environment
+
+  ExtractionGuardrailVersion:
+    Type: AWS::Bedrock::GuardrailVersion
+    Properties:
+      GuardrailIdentifier: !GetAtt ExtractionGuardrail.GuardrailId
+      Description: !Sub Deployed version for ${Environment}
 
   # ============================================================
   # League Lambda Function

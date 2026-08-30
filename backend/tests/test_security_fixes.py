@@ -118,6 +118,71 @@ class TestExtractionRateLimit:
 
 
 # ---------------------------------------------------------------------------
+# Bedrock Guardrail (content filter + prompt attack) on the extraction call
+# ---------------------------------------------------------------------------
+class _FakeBedrock:
+    """Stand-in for bedrock_client. Records the last converse kwargs and
+    returns a preset response."""
+    def __init__(self, response):
+        self._response = response
+        self.last_kwargs = None
+
+    def converse(self, **kwargs):
+        self.last_kwargs = kwargs
+        return self._response
+
+
+class TestGuardrail:
+    def test_guardrail_config_none_when_unset(self):
+        app = _load_extraction_app(_BASE_ENV)  # no GUARDRAIL_ID / VERSION
+        assert app._guardrail_config() is None
+
+    def test_guardrail_config_set_when_env_present(self):
+        app = _load_extraction_app({
+            **_BASE_ENV, 'GUARDRAIL_ID': 'gr-123', 'GUARDRAIL_VERSION': '1',
+        })
+        cfg = app._guardrail_config()
+        assert cfg == {'guardrailIdentifier': 'gr-123', 'guardrailVersion': '1'}
+
+    def test_converse_injects_guardrail_when_configured(self):
+        app = _load_extraction_app({
+            **_BASE_ENV, 'GUARDRAIL_ID': 'gr-123', 'GUARDRAIL_VERSION': '1',
+        })
+        fake = _FakeBedrock({'stopReason': 'end_turn',
+                             'output': {'message': {'content': [{'text': '[]'}]}}})
+        app.bedrock_client = fake
+        app._converse(modelId='m', messages=[], inferenceConfig={})
+        assert fake.last_kwargs.get('guardrailConfig') == {
+            'guardrailIdentifier': 'gr-123', 'guardrailVersion': '1'
+        }
+
+    def test_extract_returns_empty_on_guardrail_block(self):
+        app = _load_extraction_app({
+            **_BASE_ENV, 'GUARDRAIL_ID': 'gr-123', 'GUARDRAIL_VERSION': '1',
+        })
+        # Guardrail blocks the (malicious/inappropriate) content.
+        app.bedrock_client = _FakeBedrock({'stopReason': 'guardrail_intervened'})
+        result = app.extract_with_bedrock_from_text('some ocr text that is long enough to process', 'fr')
+        assert result == []
+
+    def test_verify_returns_empty_on_guardrail_block(self):
+        app = _load_extraction_app({
+            **_BASE_ENV, 'GUARDRAIL_ID': 'gr-123', 'GUARDRAIL_VERSION': '1',
+        })
+        app.bedrock_client = _FakeBedrock({'stopReason': 'guardrail_intervened'})
+        result = app.verify_with_bedrock([{'source': 'Haus', 'target': 'maison'}], 'fr')
+        assert result == []
+
+    def test_detect_language_returns_none_on_guardrail_block(self):
+        app = _load_extraction_app({
+            **_BASE_ENV, 'GUARDRAIL_ID': 'gr-123', 'GUARDRAIL_VERSION': '1',
+        })
+        app.bedrock_client = _FakeBedrock({'stopReason': 'guardrail_intervened'})
+        result = app.detect_target_language('a' * 60)  # long enough to attempt detection
+        assert result is None
+
+
+# ---------------------------------------------------------------------------
 # Prio 3 — Race-safe owned-set counter (lib.plans)
 # ---------------------------------------------------------------------------
 class TestSetSlotCounter:
