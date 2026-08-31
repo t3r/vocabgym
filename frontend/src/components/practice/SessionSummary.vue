@@ -1,5 +1,14 @@
 <template>
   <div class="card text-center">
+    <!-- Milestone celebration overlay (confetti/fireworks) -->
+    <Celebration ref="celebration" />
+
+    <!-- Set-mastered milestone banner -->
+    <div v-if="results.setJustMastered" class="mb-6 px-4 py-3 bg-gradient-to-r from-primary-100 to-purple-100 dark:from-primary-900/40 dark:to-purple-900/40 rounded-lg border border-primary-200 dark:border-primary-800">
+      <p class="text-lg font-bold text-primary-700 dark:text-primary-200">🎆 Set gemeistert!</p>
+      <p class="text-sm text-gray-600 dark:text-gray-300">Du beherrschst jetzt alle Wörter dieses Sets. Weiter so!</p>
+    </div>
+
     <!-- Score Display -->
     <div class="mb-6">
       <div class="text-5xl font-bold mb-2" :class="scoreColorClass">
@@ -107,6 +116,8 @@
 <script setup>
 import { computed, ref, onMounted } from 'vue'
 import { formatDuration } from '@/utils/formatters'
+import { pickCelebration } from '@/utils/celebration'
+import Celebration from '@/components/common/Celebration.vue'
 import api from '@/services/api'
 
 const props = defineProps({
@@ -114,6 +125,16 @@ const props = defineProps({
 })
 
 defineEmits(['practice-again', 'back'])
+
+const celebration = ref(null)
+
+// Play the milestone celebration once when the summary appears.
+onMounted(() => {
+  const level = pickCelebration(props.results)
+  if (level && celebration.value) {
+    celebration.value.celebrate(level)
+  }
+})
 
 const scoreColorClass = computed(() => {
   const pct = props.results.score.percentage
