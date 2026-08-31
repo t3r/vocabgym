@@ -6,6 +6,7 @@ import os
 import random
 import string
 import datetime
+from zoneinfo import ZoneInfo
 
 import boto3
 from boto3.dynamodb.conditions import Key
@@ -19,6 +20,7 @@ from lib.utils import (
     parse_body,
     get_path_parameter,
 )
+from lib.languages import LANGUAGES
 
 logger = logging.getLogger()
 logger.setLevel(os.environ.get('LOG_LEVEL', 'INFO'))
@@ -164,10 +166,20 @@ def handle_get_profile(event, user_id):
     """
     user = _get_user(user_id)
     display_name = (user or {}).get('displayName', '') or ''
-    identicon_set = ((user or {}).get('preferences') or {}).get('identiconSet') or 'set1'
+    prefs = ((user or {}).get('preferences') or {})
+    identicon_set = prefs.get('identiconSet') or 'set1'
     if identicon_set not in ('set1', 'set4'):
         identicon_set = 'set1'
-    return build_response(200, {'displayName': display_name, 'identiconSet': identicon_set})
+    # UI language + timezone (per-user i18n prep). Defaults preserve the current
+    # German / Europe/Berlin behaviour for users who never set them.
+    ui_language = prefs.get('uiLanguage') or 'de'
+    timezone = prefs.get('timezone') or 'Europe/Berlin'
+    return build_response(200, {
+        'displayName': display_name,
+        'identiconSet': identicon_set,
+        'uiLanguage': ui_language,
+        'timezone': timezone,
+    })
 
 
 def handle_update_profile(event, user_id):
@@ -182,9 +194,11 @@ def handle_update_profile(event, user_id):
     body = parse_body(event)
     has_display_name = 'displayName' in body
     has_icon_set = 'identiconSet' in body
+    has_ui_language = 'uiLanguage' in body
+    has_timezone = 'timezone' in body
 
-    if not has_display_name and not has_icon_set:
-        return build_response(400, {'error': 'displayName or identiconSet is required'})
+    if not (has_display_name or has_icon_set or has_ui_language or has_timezone):
+        return build_response(400, {'error': 'displayName, identiconSet, uiLanguage or timezone is required'})
 
     users_table = dynamodb.Table(USERS_TABLE)
     set_parts = []
@@ -200,17 +214,41 @@ def handle_update_profile(event, user_id):
         set_parts.append('displayName = :name')
         expr_values[':name'] = display_name
 
+    # Collect preference changes (identiconSet / uiLanguage / timezone) and merge
+    # them into the existing preferences map in a single write.
     icon_set = None
+    ui_language = None
+    timezone = None
+    pref_changed = False
+    merged_prefs = (_get_user(user_id) or {}).get('preferences') or {}
+
     if has_icon_set:
         icon_set = body.get('identiconSet')
         if icon_set not in ('set1', 'set4'):
             return build_response(400, {'error': "identiconSet must be 'set1' or 'set4'"})
-        # Stored under the preferences map; if_not_exists guards a first write.
+        merged_prefs['identiconSet'] = icon_set
+        pref_changed = True
+
+    if has_ui_language:
+        ui_language = body.get('uiLanguage')
+        if ui_language not in LANGUAGES:
+            return build_response(400, {'error': 'uiLanguage is not a supported language'})
+        merged_prefs['uiLanguage'] = ui_language
+        pref_changed = True
+
+    if has_timezone:
+        timezone = body.get('timezone')
+        # Validate against the IANA tz database.
+        try:
+            ZoneInfo(timezone)
+        except Exception:
+            return build_response(400, {'error': 'timezone is not a valid IANA timezone'})
+        merged_prefs['timezone'] = timezone
+        pref_changed = True
+
+    if pref_changed:
         set_parts.append('preferences = :prefs')
-        # Merge into existing preferences to avoid clobbering other keys.
-        existing = (_get_user(user_id) or {}).get('preferences') or {}
-        existing['identiconSet'] = icon_set
-        expr_values[':prefs'] = existing
+        expr_values[':prefs'] = merged_prefs
 
     users_table.update_item(
         Key={'userId': user_id},
@@ -237,6 +275,10 @@ def handle_update_profile(event, user_id):
         result['displayName'] = display_name
     if icon_set is not None:
         result['identiconSet'] = icon_set
+    if ui_language is not None:
+        result['uiLanguage'] = ui_language
+    if timezone is not None:
+        result['timezone'] = timezone
     return build_response(200, result)
 
 

@@ -119,3 +119,72 @@ def test_put_profile_preserves_other_preferences():
     stored = users.get_item(Key={'userId': 'u1'})['Item']['preferences']
     assert stored['identiconSet'] == 'set4'
     assert int(stored['sessionLength']) == 20  # untouched
+
+
+@mock_aws
+def test_get_profile_defaults_ui_language_and_timezone():
+    _users_table()
+    app = _load(_ENV)
+    import json
+    resp = app.handle_get_profile(_event('GET'), 'u1')
+    assert resp['statusCode'] == 200
+    body = json.loads(resp['body'])
+    assert body['uiLanguage'] == 'de'
+    assert body['timezone'] == 'Europe/Berlin'
+
+
+@mock_aws
+def test_put_profile_sets_ui_language_and_timezone():
+    _users_table()
+    app = _load(_ENV)
+    import json
+    resp = app.handle_update_profile(
+        _event('PUT', '{"uiLanguage": "en", "timezone": "America/New_York"}'), 'u1'
+    )
+    assert resp['statusCode'] == 200
+    body = json.loads(resp['body'])
+    assert body['uiLanguage'] == 'en'
+    assert body['timezone'] == 'America/New_York'
+    # Persisted + returned by GET
+    resp2 = app.handle_get_profile(_event('GET'), 'u1')
+    body2 = json.loads(resp2['body'])
+    assert body2['uiLanguage'] == 'en'
+    assert body2['timezone'] == 'America/New_York'
+
+
+@mock_aws
+def test_put_profile_rejects_invalid_ui_language():
+    _users_table()
+    app = _load(_ENV)
+    resp = app.handle_update_profile(_event('PUT', '{"uiLanguage": "xx"}'), 'u1')
+    assert resp['statusCode'] == 400
+
+
+@mock_aws
+def test_put_profile_rejects_invalid_timezone():
+    _users_table()
+    app = _load(_ENV)
+    resp = app.handle_update_profile(_event('PUT', '{"timezone": "Mars/Olympus"}'), 'u1')
+    assert resp['statusCode'] == 400
+
+
+@mock_aws
+def test_put_profile_prefs_merge_ui_language_and_icon_and_existing():
+    users = _users_table()
+    users.put_item(Item={'userId': 'u1', 'preferences': {'sessionLength': 20}})
+    app = _load(_ENV)
+    app.handle_update_profile(
+        _event('PUT', '{"identiconSet": "set4", "uiLanguage": "es"}'), 'u1'
+    )
+    stored = users.get_item(Key={'userId': 'u1'})['Item']['preferences']
+    assert stored['identiconSet'] == 'set4'
+    assert stored['uiLanguage'] == 'es'
+    assert int(stored['sessionLength']) == 20  # untouched
+
+
+@mock_aws
+def test_put_profile_still_requires_at_least_one_field():
+    _users_table()
+    app = _load(_ENV)
+    resp = app.handle_update_profile(_event('PUT', '{}'), 'u1')
+    assert resp['statusCode'] == 400

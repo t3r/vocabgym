@@ -1,0 +1,3 @@
+# zoneinfo needs the IANA tz database; Lambda's base image may not ship it, so
+# bundle the pure-Python tzdata package to guarantee timezone validation works.
+tzdata==2026.3
