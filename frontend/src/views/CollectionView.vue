@@ -3,8 +3,8 @@
     <div class="mb-6">
       <h1 class="text-2xl font-bold text-gray-900 dark:text-white">Deine Sammlung</h1>
       <p class="text-gray-600 dark:text-gray-300 mt-1">
-        Jede freigegebene Vokabelseite wird zu einem Avatar in deiner Sammlung.
-        Je mehr du freigibst, desto voller wird sie! 🏆
+        Für jedes Set, das du komplett gelernt hast, kommt ein Avatar in deine
+        Sammlung. Je mehr Sets du meisterst, desto voller wird sie! 🏆
       </p>
     </div>
 
@@ -19,11 +19,11 @@
       class="text-center py-16 border-2 border-dashed border-gray-200 dark:border-gray-700 rounded-lg"
     >
       <p class="text-5xl mb-3">🗃️</p>
-      <p class="text-gray-700 dark:text-gray-200 font-medium">Noch keine Avatare gesammelt</p>
+      <p class="text-gray-700 dark:text-gray-200 font-medium">Noch keine Sets gemeistert</p>
       <p class="text-gray-500 dark:text-gray-400 text-sm mt-1">
-        Lade eine Arbeitsbuchseite hoch und gib sie frei — dein erster Avatar erscheint hier.
+        Übe ein Set, bis du alle Vokabeln beherrschst — dann erscheint sein Avatar hier.
       </p>
-      <router-link to="/upload" class="btn-primary inline-block mt-4">Seite hochladen</router-link>
+      <router-link to="/dashboard" class="btn-primary inline-block mt-4">Zum Üben</router-link>
     </div>
 
     <template v-else>
@@ -70,11 +70,13 @@ import { useVocabStore } from '@/stores/vocab'
 
 const vocabStore = useVocabStore()
 
-// Milestones = approved sets, newest first, that have an avatar to show.
+// Milestones = fully learned (mastered) sets, newest first, that have an avatar.
+// "mastered" comes from the backend (every item at masteryLevel >= 4), the same
+// definition that triggers the big milestone celebration.
 const approvedSets = computed(() =>
   [...vocabStore.vocabSets]
-    .filter((s) => s.extractionStatus === 'approved')
-    .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))
+    .filter((s) => s.mastered)
+    .sort((a, b) => (b.lastPracticedAt || 0) - (a.lastPracticedAt || 0))
 )
 
 onMounted(() => {

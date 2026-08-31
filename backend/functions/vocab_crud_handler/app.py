@@ -192,6 +192,7 @@ def handle_list(event, user_id):
         # Query progress for this set
         mastery = 0
         last_practiced = 0
+        mastered = False
         if item_count > 0:
             progress_key = f"{user_id}#{vocab_set_id}"
             prog_response = progress_table.query(
@@ -205,6 +206,16 @@ def handle_list(event, user_id):
                 mastery = int((total_correct / total_attempts * 100) if total_attempts > 0 else 0)
                 last_practiced = max(int(p.get('lastPracticedAt', 0)) for p in progress_items)
 
+                # "mastered" mirrors practice_handler._set_mastery_state: the set
+                # counts as fully learned when every item has a progress record
+                # at masteryLevel >= 4. (Drives the Sammlung / milestone view.)
+                MASTERY_THRESHOLD = 4
+                items_at_level = sum(
+                    1 for p in progress_items
+                    if int(p.get('masteryLevel', 0)) >= MASTERY_THRESHOLD
+                )
+                mastered = items_at_level >= item_count
+
         enriched_sets.append({
             'vocabSetId': vocab_set_id,
             'title': vs.get('title', ''),
@@ -214,6 +225,7 @@ def handle_list(event, user_id):
             'createdAt': vs.get('createdAt', 0),
             'updatedAt': vs.get('updatedAt', 0),
             'mastery': mastery,
+            'mastered': mastered,
             'lastPracticedAt': last_practiced,
             'identiconSet': icon_set,
             'identiconUrl': _list_identicon_url(vs, icon_set),
