@@ -8,11 +8,22 @@
     <!-- Has League: Show leaderboard -->
     <template v-else-if="authStore.leagueId && league">
       <!-- League Header -->
-      <div class="mb-6">
-        <h1 class="text-2xl font-bold text-gray-900 dark:text-white">{{ league.name }}</h1>
-        <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">
-          {{ leaderboard.length }} Teilnehmer · Score-Modus: {{ scoreModeLabel(league.scoreMode) }}
-        </p>
+      <div class="mb-6 flex items-start justify-between gap-4">
+        <div>
+          <h1 class="text-2xl font-bold text-gray-900 dark:text-white">{{ league.name }}</h1>
+          <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">
+            {{ leaderboard.length }} Teilnehmer · Score-Modus: {{ scoreModeLabel(league.scoreMode) }}
+          </p>
+        </div>
+        <!-- Students can leave the league (teachers must delete it instead). -->
+        <button
+          v-if="authStore.role !== 'teacher'"
+          @click="leaveLeague"
+          class="btn-secondary text-sm flex-shrink-0"
+          :disabled="leavingLeague"
+        >
+          {{ leavingLeague ? 'Verlasse...' : 'Liga verlassen' }}
+        </button>
       </div>
 
       <!-- Own Stats Banner -->
@@ -446,6 +457,7 @@ const myVocabSets = ref([])
 const joinCode = ref('')
 const joining = ref(false)
 const joinError = ref(null)
+const leavingLeague = ref(false)
 
 // Create form state
 const newLeagueName = ref('')
@@ -556,6 +568,24 @@ async function handleJoin() {
     joinError.value = err.response?.data?.error || 'Beitritt fehlgeschlagen. Bitte Code prüfen.'
   } finally {
     joining.value = false
+  }
+}
+
+async function leaveLeague() {
+  if (!confirm('Möchtest du diese Liga wirklich verlassen?')) return
+  leavingLeague.value = true
+  try {
+    await api.post('/league/leave', {})
+    authStore.setLeagueId(null)
+    // Reset local view state so the join form is shown again.
+    league.value = null
+    leaderboard.value = []
+    members.value = []
+    showSuccess('Du hast die Liga verlassen.')
+  } catch (err) {
+    showToastError(err.response?.data?.error || 'Liga konnte nicht verlassen werden.')
+  } finally {
+    leavingLeague.value = false
   }
 }
 

@@ -69,6 +69,10 @@ def lambda_handler(event, context):
         if http_method == 'POST' and path.endswith('/league/join'):
             return handle_join(event, user_id)
 
+        # POST /league/leave
+        if http_method == 'POST' and path.endswith('/league/leave'):
+            return handle_leave(event, user_id)
+
         # POST /league/{leagueId}/invite (teacher invites student)
         if http_method == 'POST' and '/invite' in path:
             return handle_invite_student(event, user_id)
@@ -611,6 +615,48 @@ def handle_join(event, user_id):
         'joinCode': league['joinCode'],
         'scoreMode': league.get('scoreMode', 'weekly'),
     })
+
+
+def handle_leave(event, user_id):
+    """Handle POST /league/leave — Student leaves their current league.
+
+    No body needed. The user's leagueId is read from their user record.
+    Cleanup: delete LeagueMembers record + remove leagueId from Users.
+    Teachers cannot leave — they must delete the league instead.
+    """
+    user = _get_user(user_id)
+    league_id = (user or {}).get('leagueId')
+    if not league_id:
+        return build_response(400, {'error': 'Du bist in keiner Liga.'})
+
+    # Teachers own their league — they must delete it, not leave.
+    league = _get_league(league_id)
+    if league and league.get('teacherUserId') == user_id:
+        return build_response(400, {
+            'error': 'Als Lehrkraft können Sie Ihre Liga nicht verlassen. Löschen Sie die Liga stattdessen.'
+        })
+
+    # Remove the LeagueMembers record
+    members_table = dynamodb.Table(LEAGUE_MEMBERS_TABLE)
+    members_table.delete_item(Key={
+        'leagueId': league_id,
+        'userId': user_id,
+    })
+
+    # Clear leagueId from the user record
+    users_table = dynamodb.Table(USERS_TABLE)
+    users_table.update_item(
+        Key={'userId': user_id},
+        UpdateExpression='REMOVE leagueId',
+    )
+
+    logger.info(json.dumps({
+        'event': 'league_left',
+        'leagueId': league_id,
+        'userId': user_id,
+    }))
+
+    return build_response(200, {'message': 'Du hast die Liga verlassen.'})
 
 
 def handle_get_league(event, user_id):

@@ -1007,6 +1007,12 @@ Resources:
             RestApiId: !Ref VocabTrainerApi
             Path: /league/join
             Method: POST
+        LeaveLeague:
+          Type: Api
+          Properties:
+            RestApiId: !Ref VocabTrainerApi
+            Path: /league/leave
+            Method: POST
         GetLeaderboard:
           Type: Api
           Properties:
