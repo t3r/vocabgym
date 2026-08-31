@@ -32,6 +32,13 @@
             Fortschritt
           </router-link>
           <router-link
+            to="/sammlung"
+            class="text-gray-600 hover:text-gray-900 dark:text-white font-medium transition-colors dark:text-gray-300 dark:hover:text-white"
+            active-class="text-primary-600 dark:text-primary-400"
+          >
+            Sammlung
+          </router-link>
+          <router-link
             to="/league"
             class="text-gray-600 hover:text-gray-900 dark:text-white font-medium transition-colors dark:text-gray-300 dark:hover:text-white"
             active-class="text-primary-600 dark:text-primary-400"
@@ -139,6 +146,7 @@
           <router-link to="/dashboard" class="px-3 py-2 rounded-md text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700" @click="mobileMenuOpen = false">Dashboard</router-link>
           <router-link to="/upload" class="px-3 py-2 rounded-md text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700" @click="mobileMenuOpen = false">Hochladen</router-link>
           <router-link to="/progress" class="px-3 py-2 rounded-md text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700" @click="mobileMenuOpen = false">Fortschritt</router-link>
+          <router-link to="/sammlung" class="px-3 py-2 rounded-md text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700" @click="mobileMenuOpen = false">Sammlung</router-link>
           <router-link to="/league" class="px-3 py-2 rounded-md text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700" @click="mobileMenuOpen = false">Liga</router-link>
           <router-link to="/help" class="px-3 py-2 rounded-md text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700" @click="mobileMenuOpen = false">Hilfe</router-link>
         </div>

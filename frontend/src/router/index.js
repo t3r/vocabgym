@@ -48,6 +48,12 @@ const routes = [
     meta: { requiresAuth: true, title: 'Fortschritt' }
   },
   {
+    path: '/sammlung',
+    name: 'Collection',
+    component: () => import('@/views/CollectionView.vue'),
+    meta: { requiresAuth: true, title: 'Sammlung' }
+  },
+  {
     path: '/vocab/:vocabSetId',
     name: 'VocabSetDetail',
     component: () => import('@/views/VocabSetDetailView.vue'),
