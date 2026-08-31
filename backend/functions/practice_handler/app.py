@@ -3,6 +3,7 @@
 import datetime
 import json
 import logging
+import math
 import os
 import random
 
@@ -38,6 +39,10 @@ USERS_TABLE = os.environ.get('USERS_TABLE', '')
 
 # TTL: 90 days for practice sessions
 SESSION_TTL_DAYS = 90
+
+# Smart Repetition defaults
+DEFAULT_SESSION_LENGTH = 20   # questions per session when client doesn't specify
+MAX_REPEATS_PER_ITEM = 3      # max times one word can appear in a single session
 
 
 def lambda_handler(event, context):
@@ -164,11 +169,12 @@ def handle_start(event, user_id):
     if not active_items:
         return build_response(404, {'error': 'No active vocabulary items found'})
 
-    # Smart Repetition: prioritize weak words based on progress data
-    active_items = _prioritize_items(active_items, user_id, vocab_set_id)
-
-    if question_count and question_count < len(active_items):
-        active_items = active_items[:question_count]
+    # Smart Repetition: build the session by WEIGHTED SELECTION (not just
+    # ordering). Weak words are far more likely and may appear multiple times in
+    # one session; mastered words are strongly under-weighted but never fully
+    # excluded, so they still get occasional refreshes (avoid forgetting).
+    session_length = question_count or min(DEFAULT_SESSION_LENGTH, len(active_items))
+    selected_items = _select_items_weighted(active_items, user_id, vocab_set_id, session_length)
 
     # Load progress to flag words that were never answered correctly ("new"),
     # so the client can offer the solution/pronunciation immediately.
@@ -181,7 +187,7 @@ def handle_start(event, user_id):
 
     # Build questions
     questions = []
-    for i, item in enumerate(active_items):
+    for i, item in enumerate(selected_items):
         question_id = generate_uuid()
         source_text = item.get('source', item.get('german', ''))
         target_text = item.get('target', item.get('french', ''))
@@ -628,26 +634,25 @@ def _get_correct_counts(user_id, vocab_set_id):
         return {}
 
 
-def _prioritize_items(active_items, user_id, vocab_set_id):
-    """Prioritize vocabulary items based on progress data.
+def _select_items_weighted(active_items, user_id, vocab_set_id, count):
+    """Select *count* questions via weighted random draw (with replacement).
 
-    Weak words (low mastery, recent errors, low consecutive correct) appear
-    earlier in the list. New words (never practiced) are mixed in.
+    Unlike the old _prioritize_items which only sorted all items:
+    - Weak/error-prone words are drawn FAR more often and may appear multiple
+      times per session (capped at MAX_REPEATS_PER_ITEM).
+    - Mastered words (mastery 5, high consecutive-correct) get a very low weight
+      but are never fully excluded, so they receive occasional refreshes.
+    - The result is a list of *count* items (possibly shorter if the pool is
+      tiny) that genuinely reflects the 'practise weakness more' design intent.
 
-    Uses weighted random sort: each item gets a priority score, then items
-    are sorted by score (highest first) with some randomization to avoid
-    always the same order.
-
-    Priority factors:
-    - Low mastery level → higher priority
-    - Recent errors → higher priority
-    - Never practiced → medium priority (new words should appear)
-    - High mastery → lower priority (already known)
+    Weight formula (roughly):
+      w = (6 - mastery)² + recent_error_boost + error_rate_boost
+      … clamped to a minimum of 0.3 so mastered words still have a non-zero
+      chance.
     """
     progress_table = dynamodb.Table(PROGRESS_TABLE)
     progress_key = f"{user_id}#{vocab_set_id}"
 
-    # Fetch all progress records for this user+set
     try:
         progress_response = progress_table.query(
             KeyConditionExpression=Key('progressKey').eq(progress_key)
@@ -656,16 +661,14 @@ def _prioritize_items(active_items, user_id, vocab_set_id):
             p['itemId']: p for p in progress_response.get('Items', [])
         }
     except Exception as e:
-        logger.warning(f"Failed to fetch progress for prioritization: {e}")
-        # Fallback to random shuffle
+        logger.warning(f"Failed to fetch progress for weighted selection: {e}")
         random.shuffle(active_items)
-        return active_items
+        return active_items[:count]
 
-    # Calculate priority score for each item
-    scored_items = []
+    # --- Compute weight per item -----------------------------------------
+    item_weights = []
     for item in active_items:
-        item_id = item['itemId']
-        progress = progress_items.get(item_id, {})
+        progress = progress_items.get(item['itemId'], {})
 
         mastery = int(progress.get('masteryLevel', 0))
         consecutive_correct = int(progress.get('consecutiveCorrect', 0))
@@ -673,35 +676,94 @@ def _prioritize_items(active_items, user_id, vocab_set_id):
         correct_count = int(progress.get('correctCount', 0))
         recent_errors = progress.get('recentErrors', [])
 
-        # Priority score: higher = should appear earlier
         if correct_count == 0 and incorrect_count == 0:
-            # Never practiced — medium priority
-            priority = 5.0
+            # Never practised — high weight to introduce early
+            weight = 20.0
         else:
-            # Base: inverse of mastery (0-5 mastery → 5-0 priority)
-            priority = 5.0 - mastery
+            # Base: square of inverse mastery → big gap between weak and strong
+            weight = (6 - mastery) ** 2  # mastery 0→36, 3→9, 5→1
 
-            # Boost for recent errors
-            priority += min(len(recent_errors), 3) * 1.5
+            # Boost for recent errors (up to +12)
+            weight += min(len(recent_errors), 3) * 4.0
 
-            # Boost for low accuracy
+            # Boost for overall error rate (up to +8)
             total = correct_count + incorrect_count
             if total > 0:
-                error_rate = incorrect_count / total
-                priority += error_rate * 2.0
+                weight += (incorrect_count / total) * 8.0
 
-            # Penalize high consecutive correct (well-known)
-            priority -= min(consecutive_correct, 3) * 0.5
+            # Penalise long streaks of correct answers
+            weight -= min(consecutive_correct, 5) * 1.5
 
-        # Add small random factor to avoid identical ordering
-        priority += random.uniform(0, 1.5)
+        # Floor: mastered words still get a non-zero chance (refreshes)
+        weight = max(weight, 0.3)
+        item_weights.append((item, weight))
 
-        scored_items.append((priority, item))
+    # --- Weighted draw with capped repetitions ---------------------------
+    total_weight = sum(w for _, w in item_weights)
+    probabilities = [w / total_weight for _, w in item_weights]
 
-    # Sort by priority descending (weakest words first)
-    scored_items.sort(key=lambda x: x[0], reverse=True)
+    # Repeat cap scales with pool size: for small sets a word must be allowed to
+    # repeat more often to both fill the session AND preserve the weak/strong
+    # imbalance. e.g. 2 words / 10 questions → cap high enough to let the weak
+    # word dominate; large sets keep the small default.
+    pool_size = len(item_weights)
+    repeat_cap = max(MAX_REPEATS_PER_ITEM, math.ceil(count / max(pool_size, 1)) + 1)
 
-    return [item for _, item in scored_items]
+    selected = []
+    repeat_counts = {}  # itemId → how often already drawn
+
+    for _ in range(count):
+        # Build a filtered probability list (exclude maxed-out items)
+        filtered = []
+        filt_probs = []
+        for idx, (item, _w) in enumerate(item_weights):
+            iid = item['itemId']
+            if repeat_counts.get(iid, 0) >= repeat_cap:
+                continue
+            filtered.append(idx)
+            filt_probs.append(probabilities[idx])
+
+        if not filtered:
+            break  # all items maxed out (tiny set, long session)
+
+        # Normalise after filtering
+        psum = sum(filt_probs)
+        filt_probs = [p / psum for p in filt_probs]
+
+        # Weighted random choice
+        r = random.random()
+        cumulative = 0.0
+        chosen_idx = filtered[0]
+        for fi, fp in zip(filtered, filt_probs):
+            cumulative += fp
+            if r <= cumulative:
+                chosen_idx = fi
+                break
+
+        chosen_item = item_weights[chosen_idx][0]
+        selected.append(chosen_item)
+        repeat_counts[chosen_item['itemId']] = repeat_counts.get(chosen_item['itemId'], 0) + 1
+
+    # --- Spread repeats: avoid the same word twice in a row ---------------
+    _spread_repeats(selected)
+
+    return selected
+
+
+def _spread_repeats(items):
+    """Reorder items in-place so the same itemId doesn't appear consecutively.
+
+    Simple greedy swap: whenever item[i] == item[i-1], find the nearest
+    different item ahead and swap.  Best-effort — if the session is very short
+    and dominated by one word, some consecutive repeats may remain.
+    """
+    for i in range(1, len(items)):
+        if items[i]['itemId'] == items[i - 1]['itemId']:
+            # Find closest different item to swap with
+            for j in range(i + 1, len(items)):
+                if items[j]['itemId'] != items[i - 1]['itemId']:
+                    items[i], items[j] = items[j], items[i]
+                    break
 
 
 def _update_item_progress(user_id, vocab_set_id, item_id, is_correct, user_answer=None):

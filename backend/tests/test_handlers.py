@@ -341,7 +341,9 @@ class TestErrorPatternDetection:
 # ======================================================================
 
 class TestSmartRepetition:
-    """_prioritize_items should put weak words before strong ones."""
+    """_select_items_weighted should draw weak words far more often than strong
+    ones, allow weak words to repeat within a session, and still give mastered
+    words an occasional (non-zero) refresh."""
 
     def _seed_progress(self, ddb):
         """Seed progress data for strong and weak items."""
@@ -363,33 +365,78 @@ class TestSmartRepetition:
             ],
         })
 
-    def test_weak_before_strong(self, mocked_aws):
+    def test_weak_drawn_more_than_strong(self, mocked_aws):
         ddb, practice_app, _ = mocked_aws
         self._seed_progress(ddb)
+        # Realistic set: one weak word among several well-mastered ones. With a
+        # session shorter than the pool, the weak word should dominate the draw
+        # rather than every word being forced in equally.
+        table = ddb.Table(os.environ['PROGRESS_TABLE'])
+        pk = 'user-1#vs-1'
         items = [
-            {'itemId': 'strong-item', 'source': 'das Haus', 'target': 'la maison'},
             {'itemId': 'weak-item', 'source': 'die Schule', 'target': "l'école"},
         ]
-        weak_first = sum(
-            1 for _ in range(50)
-            if practice_app._prioritize_items(list(items), 'user-1', 'vs-1')[0]['itemId'] == 'weak-item'
-        )
-        assert weak_first > 35, f"Weak item first only {weak_first}/50 times"
+        for n in range(7):
+            iid = f'strong-{n}'
+            table.put_item(Item={
+                'progressKey': pk, 'itemId': iid,
+                'masteryLevel': 5, 'correctCount': 20, 'incorrectCount': 0,
+                'consecutiveCorrect': 10, 'recentErrors': [],
+            })
+            items.append({'itemId': iid, 'source': f's{n}', 'target': f't{n}'})
 
-    def test_new_item_before_strong(self, mocked_aws):
+        weak = strong = 0
+        for _ in range(50):
+            picked = practice_app._select_items_weighted(list(items), 'user-1', 'vs-1', 8)
+            weak += sum(1 for p in picked if p['itemId'] == 'weak-item')
+            strong += sum(1 for p in picked if p['itemId'] != 'weak-item')
+        # The single weak word should be drawn far more than any average strong
+        # word. 7 strong words share 'strong'; compare weak to per-strong average.
+        avg_strong = strong / 7
+        assert weak > avg_strong * 3, f"weak={weak} avg_strong={avg_strong:.1f}"
+
+    def test_weak_word_can_repeat_in_session(self, mocked_aws):
         ddb, practice_app, _ = mocked_aws
         self._seed_progress(ddb)
         items = [
             {'itemId': 'strong-item', 'source': 'das Haus', 'target': 'la maison'},
-            {'itemId': 'new-item', 'source': 'der Tisch', 'target': 'la table'},
             {'itemId': 'weak-item', 'source': 'die Schule', 'target': "l'école"},
         ]
-        new_before_strong = 0
+        # Over several sessions, the weak word should appear more than once in
+        # at least one session (repetition within a session is allowed/expected).
+        saw_repeat = False
+        for _ in range(30):
+            picked = practice_app._select_items_weighted(list(items), 'user-1', 'vs-1', 10)
+            if sum(1 for p in picked if p['itemId'] == 'weak-item') >= 2:
+                saw_repeat = True
+                break
+        assert saw_repeat, "weak word never repeated within a session"
+
+    def test_mastered_word_not_fully_excluded(self, mocked_aws):
+        ddb, practice_app, _ = mocked_aws
+        self._seed_progress(ddb)
+        items = [
+            {'itemId': 'strong-item', 'source': 'das Haus', 'target': 'la maison'},
+            {'itemId': 'weak-item', 'source': 'die Schule', 'target': "l'école"},
+        ]
+        # Across many sessions the mastered word should still appear at least
+        # sometimes (occasional refresh, never permanently dropped).
+        strong_seen = 0
         for _ in range(50):
-            ids = [p['itemId'] for p in practice_app._prioritize_items(list(items), 'user-1', 'vs-1')]
-            if ids.index('new-item') < ids.index('strong-item'):
-                new_before_strong += 1
-        assert new_before_strong > 35, f"New before strong only {new_before_strong}/50 times"
+            picked = practice_app._select_items_weighted(list(items), 'user-1', 'vs-1', 10)
+            if any(p['itemId'] == 'strong-item' for p in picked):
+                strong_seen += 1
+        assert strong_seen > 0, "mastered word was never selected (should get refreshes)"
+
+    def test_respects_session_length(self, mocked_aws):
+        ddb, practice_app, _ = mocked_aws
+        self._seed_progress(ddb)
+        items = [
+            {'itemId': 'strong-item', 'source': 'das Haus', 'target': 'la maison'},
+            {'itemId': 'weak-item', 'source': 'die Schule', 'target': "l'école"},
+        ]
+        picked = practice_app._select_items_weighted(list(items), 'user-1', 'vs-1', 8)
+        assert len(picked) == 8, f"expected 8 questions, got {len(picked)}"
 
 
 # ======================================================================
