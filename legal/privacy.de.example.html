@@ -62,8 +62,23 @@
   zur Vokabelerkennung an Amazon Textract (OCR) und Amazon Bedrock (Modell
   „Amazon Nova Pro") übergeben.
 </p>
+<p>
+  Aus dem Speicherort jeder hochgeladenen Seite wird ein wiedererkennbares,
+  <strong>nicht umkehrbares</strong> Symbolbild (Avatar) erzeugt. In dieses
+  Symbolbild fließt <strong>kein Bildinhalt</strong> des Fotos ein; es lässt
+  keine Rückschlüsse auf die ursprüngliche Buchseite zu.
+</p>
 <ul>
-  <li><strong>Speicherdauer:</strong> Bilder werden automatisch nach 90 Tagen gelöscht.</li>
+  <li>
+    <strong>Löschung des Originalfotos:</strong> Sobald ein Vokabelset
+    freigegeben (gespeichert) wird, wird das zugehörige Originalfoto umgehend
+    aus Amazon S3 gelöscht. Es verbleibt lediglich der generierte Avatar zur
+    visuellen Wiedererkennung des Sets.
+  </li>
+  <li>
+    <strong>Nicht freigegebene Bilder:</strong> Fotos zu Seiten, die nicht
+    freigegeben werden, werden spätestens nach 30 Tagen automatisch gelöscht.
+  </li>
 </ul>
 
 <h2>6. Übungsdaten &amp; Fortschritt</h2>

@@ -10,13 +10,23 @@ In git sind nur die `*.example.html`-Vorlagen (mit Platzhaltern).
 
 ## Einmalige Einrichtung pro Umgebung
 
-1. Vorlagen kopieren und ausfüllen (echte Dateien sind git-ignored):
+1. Werte in einer `.env` hinterlegen und die echten Dateien generieren
+   (echte `*.html` sind git-ignored, `legal/.env` ebenfalls):
 
    ```bash
-   cp legal/privacy.de.example.html   legal/privacy.de.html
-   cp legal/impressum.de.example.html legal/impressum.de.html
-   # Platzhalter [ ... ] in beiden Dateien durch echte Angaben ersetzen
+   cp legal/.env.example legal/.env
+   # legal/.env ausfüllen (Name, Anschrift, E-Mail, ...)
+   python3 scripts/render_legal.py            # erzeugt legal/privacy.de.html + impressum.de.html
+   # optional vorab prüfen, ohne zu schreiben:
+   python3 scripts/render_legal.py --check
    ```
+
+   Der Generator ersetzt die `[Platzhalter]` aus den `*.example.html`-Vorlagen
+   mit den Werten aus `legal/.env`, entfernt den Entwickler-Kommentarblock und
+   bricht ab, falls ein Platzhalter unbefüllt bleibt (kein versehentliches
+   Veröffentlichen von Vorlagentext). Ein leeres `LEGAL_PHONE` lässt die
+   Telefonzeile entfallen; ein leeres `LEGAL_PRIVACY_DATE` setzt das heutige
+   Datum.
 
 2. Frontend-Bucketnamen aus dem Stack holen (dev oder prod):
 
