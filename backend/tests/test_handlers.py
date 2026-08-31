@@ -590,3 +590,38 @@ class TestGoalStatusCalculation:
         assert s['totalWords'] == 20
         assert s['masteredWords'] == 10
         assert s['progressPercent'] == 50.0
+
+    def test_deadline_today_is_expired(self, mocked_aws):
+        """A goal is due at 00:00 of the deadline day. So if the deadline is
+        *today*, the time is already up → status must be 'expired', not on_track,
+        and daysRemaining must be <= 0."""
+        ddb, _, goal_app = mocked_aws
+        self._seed(ddb, 'vs-today', 'u-today', 10, 3)
+        # Use Berlin-local today to match the handler's own clock and avoid a
+        # UTC/Berlin off-by-one at the day boundary.
+        berlin_today = goal_app._today_local()
+        g = {
+            'vocabSetIds': ['vs-today'],
+            'deadline': berlin_today.isoformat(),
+            'targetMastery': 4,
+            'createdAt': (berlin_today - timedelta(days=10)).isoformat(),
+        }
+        s = goal_app.calculate_goal_status(g, 'u-today')
+        assert s['daysRemaining'] <= 0, f"daysRemaining={s['daysRemaining']}"
+        assert s['status'] == 'expired', f"status={s['status']}"
+
+    def test_deadline_tomorrow_has_one_day_left(self, mocked_aws):
+        """Deadline tomorrow → today is the last full practice day → 1 day left,
+        and the goal is NOT yet expired."""
+        ddb, _, goal_app = mocked_aws
+        self._seed(ddb, 'vs-tom', 'u-tom', 10, 7)
+        berlin_today = goal_app._today_local()
+        g = {
+            'vocabSetIds': ['vs-tom'],
+            'deadline': (berlin_today + timedelta(days=1)).isoformat(),
+            'targetMastery': 4,
+            'createdAt': (berlin_today - timedelta(days=7)).isoformat(),
+        }
+        s = goal_app.calculate_goal_status(g, 'u-tom')
+        assert s['daysRemaining'] == 1, f"daysRemaining={s['daysRemaining']}"
+        assert s['status'] != 'expired'

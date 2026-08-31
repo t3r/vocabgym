@@ -5,6 +5,16 @@ import logging
 import math
 import os
 from datetime import date, datetime
+from zoneinfo import ZoneInfo
+
+# The deadline is due at 00:00 (local) of the set day. Compute "today" in the
+# users' timezone so day boundaries match their expectation (not UTC).
+BERLIN_TZ = ZoneInfo('Europe/Berlin')
+
+
+def _today_local():
+    """Return today's date in Europe/Berlin (DST-aware)."""
+    return datetime.now(BERLIN_TZ).date()
 
 import boto3
 from boto3.dynamodb.conditions import Key
@@ -152,8 +162,9 @@ def calculate_goal_status(goal, user_id):
     deadline_str = goal.get('deadline', '')
     created_at_str = goal.get('createdAt', '')
 
-    # Parse dates
-    today = date.today()
+    # Parse dates. "today" is Berlin-local so the 00:00 deadline boundary
+    # matches the user's calendar day (see _today_local).
+    today = _today_local()
     try:
         deadline = _parse_date(deadline_str)
     except ValueError:
@@ -168,7 +179,7 @@ def calculate_goal_status(goal, user_id):
     else:
         # Unix timestamp
         try:
-            created_date = datetime.fromtimestamp(int(created_at_str)).date()
+            created_date = datetime.fromtimestamp(int(created_at_str), BERLIN_TZ).date()
         except (ValueError, TypeError, OSError):
             created_date = today
 
@@ -346,7 +357,7 @@ def handle_create(event, user_id):
             return build_response(403, {'error': 'Sie können nur Ziele für Ihre eigene Liga erstellen'})
 
     goal_id = generate_uuid()
-    today_str = date.today().isoformat()
+    today_str = _today_local().isoformat()
 
     goal_item = {
         'goalId': goal_id,
