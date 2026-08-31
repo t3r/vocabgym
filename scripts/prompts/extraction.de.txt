@@ -8,13 +8,35 @@ Das Layout der Seite kann variieren:
 - Manchmal gibt es Beispielsätze — diese NICHT als Vokabelpaar aufnehmen
 - Manchmal steht die Übersetzung in mehreren Teilen (z.B. "etw. tauschen; etw. austauschen")
 
+ABSOLUT WICHTIG — KEINE GANZEN SÄTZE:
+Vokabelseiten enthalten oft Beispielsätze MIT Übersetzung, direkt neben den
+Vokabeln. Ein übersetztes Satzpaar sieht strukturell aus wie ein Vokabelpaar —
+ist aber KEINES. Nimm einen Eintrag NICHT auf, wenn eine der beiden Seiten ein
+vollständiger Satz ist. Ein vollständiger Satz erkennt man an MINDESTENS EINEM:
+- endet mit ".", "!" oder "?"
+- enthält ein konjugiertes Verb (z.B. "ist", "habe", "kann", "c'est", "j'ai", "il y a", "je dors")
+- ist länger als ~6 Wörter und bildet eine Aussage/Frage
+Überspringe solche Satzpaare KOMPLETT — auch wenn beide Seiten sauber übersetzt sind.
+
+NEGATIV-BEISPIELE (NICHT aufnehmen):
+- "Ich habe dieses Buch fast zu Ende gelesen." ↔ "J'ai presque fini ce livre."
+- "Hast du deine Lösung überprüft?" ↔ "Tu as vérifié ta solution?"
+- "Es gibt Millionen verschiedener Musiktitel." ↔ "Il y a des millions de musiques différentes."
+- "C'est écologique, c'est bon pour l'environnement." ↔ "Das ist ökologisch, das ist gut für die Umwelt."
+
+POSITIV-BEISPIELE (aufnehmen — Wort/Wendung, kein Satz):
+- "etw. herunterladen" ↔ "télécharger qc"
+- "eine Internetseite" ↔ "un site Internet"
+- "im Augenblick; zurzeit" ↔ "en ce moment"
+- "jdm. etw. vorstellen; etw. präsentieren" ↔ "présenter qc à qn"
+
 Regeln:
-1. Extrahiere NUR echte Vokabelpaare — ein $lang_name_de Wort/Phrase und seine deutsche Übersetzung
-2. "source" = deutsches Wort/Phrase, "target" = $lang_name_de Wort/Phrase
+1. Extrahiere NUR echte Vokabelpaare — ein $lang_name_de Wort/eine Wendung und seine deutsche Übersetzung. NIEMALS ganze Sätze (siehe oben).
+2. "source" = IMMER das DEUTSCHE Wort/die deutsche Wendung, "target" = IMMER das $lang_name_de Wort. Vertausche die Richtung nie, egal wie sie im Text angeordnet sind.
 3. Behalte Artikel (le/la/les, der/die/das, un/une) bei
 4. Behalte Abkürzungen wie "etw." (etwas), "jdn." (jemanden), "jdm." (jemandem), "qc" (quelque chose), "qn" (quelqu'un) bei
 5. Wenn eine Übersetzung mehrere Bedeutungen hat, fasse sie mit Semikolon zusammen (z.B. "etw. tauschen; etw. austauschen")
-6. Ignoriere: Lautschrift, Beispielsätze, Grammatik-Erklärungen, Konjugationstabellen, Seitenzahlen, Überschriften, Abschnittstitel (z.B. "Des appareils numériques — Digitale Geräte")
+6. Ignoriere: vollständige Sätze/Beispielsätze (auch mit Übersetzung), Lautschrift, Grammatik-Erklärungen, Konjugationstabellen, Seitenzahlen, Überschriften, Abschnittstitel (z.B. "Des appareils numériques — Digitale Geräte")
 7. Nimm auch bildbasierte Vokabeln auf (z.B. "un ordinateur portable" → "ein Laptop-Computer")
 8. Keine Duplikate — wenn dasselbe Wort mehrfach vorkommt, nimm es nur einmal auf
 9. Korrigiere OCR-Artefakte: z.B. "fun smartphone" → "un smartphone" (das f gehört nicht zum Wort)

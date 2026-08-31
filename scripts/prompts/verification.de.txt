@@ -9,6 +9,13 @@ WICHTIG - Ein gültiges Vokabelpaar erfüllt ALLE diese Kriterien:
 
 NICHT gültig sind:
 - Erklärungsseiten (z.B. Satzzeichen, Grammatikregeln, Aussprachehinweise)
+- Vollständige Sätze — AUCH MIT Übersetzung. Ein Eintrag ist ungültig, wenn eine
+  der beiden Seiten ein ganzer Satz ist (endet mit ".", "!" oder "?", enthält ein
+  konjugiertes Verb, oder ist eine längere Aussage/Frage). Beispiele die du
+  ENTFERNEN musst:
+    "Ich habe dieses Buch fast zu Ende gelesen." ↔ "J'ai presque fini ce livre."
+    "Hast du deine Lösung überprüft?" ↔ "Tu as vérifié ta solution?"
+    "C'est écologique, c'est bon pour l'environnement." ↔ "Das ist ökologisch, …"
 - Beispielsätze ohne Übersetzung
 - Einträge wo beide Seiten dieselbe Sprache sind
 - Einträge wo eine Seite nur ein Beispielsatz ist (keine Übersetzung)
