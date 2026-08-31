@@ -89,6 +89,10 @@
             <!-- Inline Name Editor -->
             <div v-if="editingName" class="fixed inset-0 z-50 flex items-start justify-center pt-20" @click.self="editingName = false">
               <div class="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-4 w-72 border border-gray-200 dark:border-gray-700">
+                <div v-if="authStore.role === 'teacher'" class="flex items-center gap-1.5 mb-3 px-2 py-1 bg-primary-50 dark:bg-primary-900/30 rounded text-xs font-medium text-primary-700 dark:text-primary-300">
+                  <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4.26 10.147a60.438 60.438 0 0 0-.491 6.347A48.62 48.62 0 0 1 12 20.904a48.62 48.62 0 0 1 8.232-4.41 60.46 60.46 0 0 0-.491-6.347m-15.482 0a50.636 50.636 0 0 0-2.658-.813A59.906 59.906 0 0 1 12 3.493a59.903 59.903 0 0 1 10.399 5.84c-.896.248-1.783.52-2.658.814m-15.482 0A50.717 50.717 0 0 1 12 13.489a50.702 50.702 0 0 1 7.74-3.342" /></svg>
+                  Lehrkraft
+                </div>
                 <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Anzeigename</label>
                 <input
                   v-model="newDisplayName"
