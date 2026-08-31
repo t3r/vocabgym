@@ -356,7 +356,11 @@ async function handleSave() {
         pageNumber: metadata.pageNumber ? Number(metadata.pageNumber) : null,
         topic: metadata.topic
       },
-      items: items.value
+      items: items.value,
+      // "Speichern & Freigeben" must approve the set: the backend only sets
+      // extractionStatus=approved (and deletes the original scans) when it
+      // receives approve:true. Without this the status stayed on "review".
+      approve: true
     })
     showSuccess('Vokabelset gespeichert!')
     router.push({ name: 'Dashboard' })

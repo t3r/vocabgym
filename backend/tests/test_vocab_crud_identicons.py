@@ -142,6 +142,74 @@ def test_approve_deletes_original_scans():
 
 
 @mock_aws
+def test_update_without_approve_keeps_review_and_scans():
+    """Regression: a PUT that saves title/items but omits approve must NOT
+    approve the set — status stays 'review' and the original scans survive.
+
+    (The 'Speichern & Freigeben' bug was the frontend omitting approve:true, so
+    the set stayed in review with its scans. This pins the backend contract:
+    approval only happens with an explicit approve flag.)
+    """
+    import uuid
+    region = 'eu-central-1'
+    set_id = str(uuid.uuid4())
+    s3 = boto3.client('s3', region_name=region)
+    s3.create_bucket(
+        Bucket='vc-images',
+        CreateBucketConfiguration={'LocationConstraint': region},
+    )
+    dynamodb = boto3.resource('dynamodb', region_name=region)
+    vocabsets = dynamodb.create_table(
+        TableName='vc-vocabsets',
+        KeySchema=[
+            {'AttributeName': 'vocabSetId', 'KeyType': 'HASH'},
+            {'AttributeName': 'userId', 'KeyType': 'RANGE'},
+        ],
+        AttributeDefinitions=[
+            {'AttributeName': 'vocabSetId', 'AttributeType': 'S'},
+            {'AttributeName': 'userId', 'AttributeType': 'S'},
+        ],
+        BillingMode='PAY_PER_REQUEST',
+    )
+    dynamodb.create_table(
+        TableName='vc-vocabitems',
+        KeySchema=[
+            {'AttributeName': 'vocabSetId', 'KeyType': 'HASH'},
+            {'AttributeName': 'itemId', 'KeyType': 'RANGE'},
+        ],
+        AttributeDefinitions=[
+            {'AttributeName': 'vocabSetId', 'AttributeType': 'S'},
+            {'AttributeName': 'itemId', 'AttributeType': 'S'},
+        ],
+        BillingMode='PAY_PER_REQUEST',
+    )
+
+    k1 = f'images/u1/{set_id}/100-original.jpg'
+    s3.put_object(Bucket='vc-images', Key=k1, Body=b'JPEGDATA')
+    vocabsets.put_item(Item={
+        'vocabSetId': set_id, 'userId': 'u1', 'title': '',
+        'sourceImageKey': k1, 'imageKeys': [k1],
+        'extractionStatus': 'review', 'itemCount': 0, 'metadata': {},
+    })
+
+    vc = _load(_VC_PATH, 'vc_app_noapprove', _ENV)
+    event = {
+        'httpMethod': 'PUT',
+        'pathParameters': {'vocabSetId': set_id},
+        'requestContext': {'authorizer': {'claims': {'sub': 'u1'}}},
+        'body': '{"title": "Les Medias et moi"}',  # save only, no approve
+    }
+    resp = vc.lambda_handler(event, None)
+    assert resp['statusCode'] == 200
+
+    item = vocabsets.get_item(Key={'vocabSetId': set_id, 'userId': 'u1'})['Item']
+    assert item['extractionStatus'] == 'review'  # NOT approved
+    assert item['title'] == 'Les Medias et moi'  # save still happened
+    # Original scan preserved (not deleted without approval)
+    assert s3.list_objects_v2(Bucket='vc-images', Prefix='images/').get('Contents', [])
+
+
+@mock_aws
 def test_delete_removes_all_originals_and_identicons():
     """Deleting a set must remove every original scan AND every identicon."""
     import uuid
