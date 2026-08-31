@@ -38,8 +38,11 @@
       <!-- Image groups -->
       <div v-for="(group, groupIndex) in imageGroups" :key="group.imageKey" class="card">
         <!-- Scan + Avatar side by side -->
-        <div v-if="group.imageUrl" class="mb-4 flex flex-col sm:flex-row gap-4 items-start">
-          <div class="flex-1 rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700">
+        <div v-if="(group.imageUrl && !isApproved) || group.identiconUrl" class="mb-4 flex flex-col sm:flex-row gap-4 items-start">
+          <!-- Original scan preview: only while in review. After approval the
+               scans are deleted from S3, so we must not render the (now 404)
+               <img> — otherwise it shows as a broken image. -->
+          <div v-if="group.imageUrl && !isApproved" class="flex-1 rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700">
             <img
               :src="group.imageUrl"
               :alt="`Seite ${groupIndex + 1}`"
@@ -56,8 +59,14 @@
               loading="lazy"
             />
             <p class="mt-2 text-xs text-gray-500 dark:text-gray-400 leading-snug">
-              Das ist der Avatar dieser Buchseite. Dein Foto wird gelöscht, sobald
-              du das Set freigibst – dieser Avatar bleibt als Wiedererkennung.
+              <template v-if="isApproved">
+                Das ist der Avatar dieser Buchseite. Dein Originalfoto wurde bei
+                der Freigabe gelöscht – dieser Avatar bleibt als Wiedererkennung.
+              </template>
+              <template v-else>
+                Das ist der Avatar dieser Buchseite. Dein Foto wird gelöscht, sobald
+                du das Set freigibst – dieser Avatar bleibt als Wiedererkennung.
+              </template>
             </p>
           </div>
         </div>
@@ -278,6 +287,11 @@ const imageGroups = computed(() => {
 
   return groups
 })
+
+// After approval the backend deletes the original scans from S3, so their
+// presigned URLs 404 (broken images). Only render the scan preview while the
+// set is still in review; the avatar (identicon) is kept and shown regardless.
+const isApproved = computed(() => vocabSet.value?.extractionStatus === 'approved')
 
 /**
  * Items without an imageKey (legacy data or manually added without assignment).
