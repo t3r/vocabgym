@@ -464,6 +464,12 @@ def handle_complete(event, user_id):
 
     # Update progress for each answered item
     vocab_set_id = session.get('vocabSetId', '')
+
+    # Milestone detection: was the whole set already mastered BEFORE this
+    # session's progress update? Compared against the state AFTER, so we can
+    # celebrate the not-mastered -> mastered transition (every time it happens).
+    was_mastered = _set_mastery_state(user_id, vocab_set_id)
+
     for result in client_results:
         item_id = result.get('itemId')
         if item_id:
@@ -472,6 +478,9 @@ def handle_complete(event, user_id):
                 result.get('correct', False),
                 user_answer=result.get('userAnswer')
             )
+
+    is_mastered = _set_mastery_state(user_id, vocab_set_id)
+    set_just_mastered = (not was_mastered) and is_mastered
 
     logger.info(json.dumps({
         'event': 'practice_completed',
@@ -496,6 +505,8 @@ def handle_complete(event, user_id):
         'duration': duration,
         'mode': session.get('mode', 'practice'),
         'detailedResults': client_results,
+        'setMastered': is_mastered,
+        'setJustMastered': set_just_mastered,
     }
     if league_update:
         response_body['leagueUpdate'] = league_update
@@ -834,7 +845,42 @@ def _update_item_progress(user_id, vocab_set_id, item_id, is_correct, user_answe
         logger.warning(f"Failed to update progress for item {item_id}: {e}")
 
 
-def _update_league_stats(user_id, correct_count, total_questions):
+def _set_mastery_state(user_id, vocab_set_id):
+    """Return True if the whole set is 'mastered' for this user.
+
+    Mastered = there is at least one active item AND every active item has a
+    progress record with masteryLevel >= 4. Items without a progress record (or
+    inactive items) count as not mastered. Used to detect the transition from
+    not-mastered -> mastered when a session completes (milestone celebration).
+
+    Robust: any failure returns False (never blocks completion).
+    """
+    MASTERY_THRESHOLD = 4
+    try:
+        items_table = dynamodb.Table(VOCABITEMS_TABLE)
+        items_resp = items_table.query(
+            KeyConditionExpression=Key('vocabSetId').eq(vocab_set_id)
+        )
+        active_item_ids = {
+            it['itemId'] for it in items_resp.get('Items', [])
+            if it.get('isActive', True)
+        }
+        if not active_item_ids:
+            return False
+
+        progress_table = dynamodb.Table(PROGRESS_TABLE)
+        progress_resp = progress_table.query(
+            KeyConditionExpression=Key('progressKey').eq(f"{user_id}#{vocab_set_id}")
+        )
+        mastered_ids = {
+            p['itemId'] for p in progress_resp.get('Items', [])
+            if int(p.get('masteryLevel', 0)) >= MASTERY_THRESHOLD
+        }
+        # Every active item must be mastered.
+        return active_item_ids.issubset(mastered_ids)
+    except Exception as e:
+        logger.warning(f"Failed to compute set mastery state for {vocab_set_id}: {e}")
+        return False
     """Update league member stats after a practice session.
 
     Args:

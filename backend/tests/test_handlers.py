@@ -340,6 +340,64 @@ class TestErrorPatternDetection:
 # 5. Smart repetition — _prioritize_items
 # ======================================================================
 
+class TestSetMasteryState:
+    """_set_mastery_state → whole-set mastery detection for the milestone
+    celebration (all active items masteryLevel >= 4)."""
+
+    def _add_items(self, ddb, set_id, n, active=True):
+        it = ddb.Table(os.environ['VOCABITEMS_TABLE'])
+        for i in range(n):
+            it.put_item(Item={
+                'vocabSetId': set_id, 'itemId': f'{set_id}-i{i}',
+                'source': f's{i}', 'target': f't{i}', 'isActive': active,
+            })
+
+    def _set_mastery(self, ddb, user_id, set_id, item_id, level):
+        pt = ddb.Table(os.environ['PROGRESS_TABLE'])
+        pt.put_item(Item={
+            'progressKey': f'{user_id}#{set_id}', 'itemId': item_id,
+            'masteryLevel': level, 'correctCount': 10, 'incorrectCount': 0,
+        })
+
+    def test_all_mastered_returns_true(self, mocked_aws):
+        ddb, practice_app, _ = mocked_aws
+        self._add_items(ddb, 'sm1', 2)
+        self._set_mastery(ddb, 'u1', 'sm1', 'sm1-i0', 4)
+        self._set_mastery(ddb, 'u1', 'sm1', 'sm1-i1', 5)
+        assert practice_app._set_mastery_state('u1', 'sm1') is True
+
+    def test_one_below_threshold_returns_false(self, mocked_aws):
+        ddb, practice_app, _ = mocked_aws
+        self._add_items(ddb, 'sm2', 2)
+        self._set_mastery(ddb, 'u1', 'sm2', 'sm2-i0', 4)
+        self._set_mastery(ddb, 'u1', 'sm2', 'sm2-i1', 3)  # below 4
+        assert practice_app._set_mastery_state('u1', 'sm2') is False
+
+    def test_item_without_progress_returns_false(self, mocked_aws):
+        ddb, practice_app, _ = mocked_aws
+        self._add_items(ddb, 'sm3', 2)
+        self._set_mastery(ddb, 'u1', 'sm3', 'sm3-i0', 5)
+        # i1 has no progress record at all
+        assert practice_app._set_mastery_state('u1', 'sm3') is False
+
+    def test_empty_set_returns_false(self, mocked_aws):
+        _, practice_app, _ = mocked_aws
+        assert practice_app._set_mastery_state('u1', 'no-items') is False
+
+    def test_inactive_items_ignored(self, mocked_aws):
+        ddb, practice_app, _ = mocked_aws
+        # One active mastered item + one inactive (soft-deleted) item without progress
+        self._add_items(ddb, 'sm4', 1, active=True)
+        it = ddb.Table(os.environ['VOCABITEMS_TABLE'])
+        it.put_item(Item={
+            'vocabSetId': 'sm4', 'itemId': 'sm4-inactive',
+            'source': 'x', 'target': 'y', 'isActive': False,
+        })
+        self._set_mastery(ddb, 'u1', 'sm4', 'sm4-i0', 5)
+        # Inactive item must not block mastery
+        assert practice_app._set_mastery_state('u1', 'sm4') is True
+
+
 class TestSmartRepetition:
     """_select_items_weighted should draw weak words far more often than strong
     ones, allow weak words to repeat within a session, and still give mastered
