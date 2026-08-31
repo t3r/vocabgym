@@ -162,6 +162,38 @@
           <p class="text-sm text-gray-500 dark:text-gray-400 mb-4">
             Erstellen Sie ein Lernziel für Ihre Liga. Alle Teilnehmer sehen das Ziel und ihren Fortschritt.
           </p>
+
+          <!-- Existing league goals -->
+          <div v-if="leagueGoals.length" class="mb-5 space-y-2">
+            <div
+              v-for="goal in leagueGoals"
+              :key="goal.goalId"
+              class="flex items-center justify-between gap-3 p-3 rounded-lg border border-gray-200 dark:border-gray-700"
+              :class="editingGoalId === goal.goalId ? 'ring-2 ring-primary-500' : ''"
+            >
+              <div class="min-w-0">
+                <p class="font-medium text-gray-900 dark:text-white truncate">{{ goal.title }}</p>
+                <p class="text-xs text-gray-500 dark:text-gray-400">
+                  📅 {{ goal.deadline }} · Ziel-Level {{ goal.targetMastery }}
+                  · {{ (goal.vocabSetIds || []).length }} {{ (goal.vocabSetIds || []).length === 1 ? 'Set' : 'Sets' }}
+                  <span v-if="goal.progress"> · {{ goal.progress.progressPercent }}%</span>
+                </p>
+              </div>
+              <div class="flex items-center gap-2 flex-shrink-0">
+                <button @click="startEditGoal(goal)" class="btn-secondary text-xs px-3 py-1.5">Bearbeiten</button>
+                <button
+                  @click="deleteLeagueGoal(goal)"
+                  class="text-gray-400 hover:text-error p-1.5 rounded-md hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+                  aria-label="Lernziel löschen"
+                >
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+          </div>
+
           <div class="space-y-4">
             <div>
               <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Titel</label>
@@ -212,13 +244,23 @@
               </div>
             </div>
           </div>
-          <button
-            @click="createLeagueGoal"
-            class="btn-primary text-sm mt-4"
-            :disabled="creatingLeagueGoal || !leagueGoalForm.title.trim() || !leagueGoalForm.deadline || leagueGoalForm.vocabSetIds.length === 0"
-          >
-            {{ creatingLeagueGoal ? 'Erstellt...' : 'Lernziel erstellen' }}
-          </button>
+          <div class="flex items-center gap-2 mt-4">
+            <button
+              @click="createLeagueGoal"
+              class="btn-primary text-sm"
+              :disabled="creatingLeagueGoal || !leagueGoalForm.title.trim() || !leagueGoalForm.deadline || leagueGoalForm.vocabSetIds.length === 0"
+            >
+              {{ creatingLeagueGoal ? 'Speichert...' : (editingGoalId ? 'Änderungen speichern' : 'Lernziel erstellen') }}
+            </button>
+            <button
+              v-if="editingGoalId"
+              @click="cancelEditGoal"
+              class="btn-secondary text-sm"
+              :disabled="creatingLeagueGoal"
+            >
+              Abbrechen
+            </button>
+          </div>
         </div>
 
         <!-- Invite Student -->
@@ -431,6 +473,9 @@ const leagueGoalForm = ref({
   vocabSetIds: []
 })
 const creatingLeagueGoal = ref(false)
+// Existing league goals + which one is currently being edited (null = create mode).
+const leagueGoals = ref([])
+const editingGoalId = ref(null)
 
 const tomorrowDate = computed(() => {
   const d = new Date()
@@ -483,6 +528,7 @@ async function loadLeagueData() {
       ])
       members.value = membersRes.data.members || membersRes.data || []
       myVocabSets.value = vocabRes.data.vocabSets || vocabRes.data || []
+      await loadLeagueGoals()
     }
   } catch (err) {
     // If league not found, clear the stored leagueId
@@ -557,25 +603,80 @@ async function saveAssignedSets() {
     savingVocabSets.value = false
   }
 }
+async function loadLeagueGoals() {
+  // GET /goals returns the caller's own goals + their league's goals. Keep only
+  // the goals assigned to this league (the ones with a matching leagueId).
+  try {
+    const res = await api.get('/goals')
+    const all = res.data.goals || res.data || []
+    leagueGoals.value = all.filter(g => g.leagueId === authStore.leagueId)
+  } catch {
+    // Non-fatal: the create form still works even if the list fails to load.
+    leagueGoals.value = []
+  }
+}
+
+function resetGoalForm() {
+  editingGoalId.value = null
+  leagueGoalForm.value = { title: '', deadline: '', targetMastery: 4, vocabSetIds: [] }
+}
+
+function startEditGoal(goal) {
+  editingGoalId.value = goal.goalId
+  leagueGoalForm.value = {
+    title: goal.title || '',
+    deadline: goal.deadline || '',
+    targetMastery: Number(goal.targetMastery) || 4,
+    vocabSetIds: [...(goal.vocabSetIds || [])],
+  }
+}
+
+function cancelEditGoal() {
+  resetGoalForm()
+}
 
 async function createLeagueGoal() {
   const form = leagueGoalForm.value
   if (!form.title.trim() || !form.deadline || form.vocabSetIds.length === 0) return
   creatingLeagueGoal.value = true
   try {
-    await api.post('/goals', {
-      title: form.title.trim(),
-      vocabSetIds: form.vocabSetIds,
-      deadline: form.deadline,
-      targetMastery: form.targetMastery,
-      leagueId: authStore.leagueId
-    })
-    showSuccess('Lernziel für Liga erstellt!')
-    leagueGoalForm.value = { title: '', deadline: '', targetMastery: 4, vocabSetIds: [] }
+    if (editingGoalId.value) {
+      // Edit mode → PUT (only the editable fields; leagueId stays unchanged).
+      await api.put(`/goals/${editingGoalId.value}`, {
+        title: form.title.trim(),
+        vocabSetIds: form.vocabSetIds,
+        deadline: form.deadline,
+        targetMastery: form.targetMastery,
+      })
+      showSuccess('Lernziel aktualisiert!')
+    } else {
+      await api.post('/goals', {
+        title: form.title.trim(),
+        vocabSetIds: form.vocabSetIds,
+        deadline: form.deadline,
+        targetMastery: form.targetMastery,
+        leagueId: authStore.leagueId
+      })
+      showSuccess('Lernziel für Liga erstellt!')
+    }
+    resetGoalForm()
+    await loadLeagueGoals()  // reload so the list reflects the change immediately
   } catch (err) {
-    showToastError(err.response?.data?.error || 'Fehler beim Erstellen des Lernziels')
+    showToastError(err.response?.data?.error || 'Fehler beim Speichern des Lernziels')
   } finally {
     creatingLeagueGoal.value = false
+  }
+}
+
+async function deleteLeagueGoal(goal) {
+  if (!confirm(`Lernziel "${goal.title}" wirklich löschen?`)) return
+  try {
+    await api.delete(`/goals/${goal.goalId}`)
+    if (editingGoalId.value === goal.goalId) resetGoalForm()
+    showSuccess('Lernziel gelöscht')
+    await loadLeagueGoals()
+  } catch (err) {
+    showToastError(err.response?.data?.error || 'Fehler beim Löschen des Lernziels')
   }
 }
 
