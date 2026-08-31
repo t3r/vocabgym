@@ -348,6 +348,26 @@ def handle_get(event, user_id):
         except Exception as e:
             logger.warning(f"Failed to generate identicon URL for {icon_key}: {e}")
 
+    # "mastered" for THIS caller: every active item has a progress record at
+    # masteryLevel >= 4 (mirrors practice_handler._set_mastery_state). For a
+    # league set the caller is the student, so mastery reflects their own
+    # progress — this is what lets a mastered league set appear in the Sammlung.
+    mastered = False
+    active_item_ids = {it['itemId'] for it in items if it.get('isActive', True)}
+    if active_item_ids:
+        try:
+            progress_table = dynamodb.Table(os.environ['PROGRESS_TABLE'])
+            prog = progress_table.query(
+                KeyConditionExpression=Key('progressKey').eq(f"{user_id}#{vocab_set_id}")
+            ).get('Items', [])
+            mastered_ids = {
+                p['itemId'] for p in prog
+                if int(p.get('masteryLevel', 0)) >= 4
+            }
+            mastered = active_item_ids.issubset(mastered_ids)
+        except Exception as e:
+            logger.warning(f"Failed to compute mastered for {vocab_set_id}: {e}")
+
     response_body = {
         'vocabSetId': vocab_set['vocabSetId'],
         'userId': vocab_set['userId'],
@@ -360,6 +380,7 @@ def handle_get(event, user_id):
         'identiconUrl': identicon_urls[0] if identicon_urls else None,
         'identiconUrls': identicon_urls,
         'extractionStatus': vocab_set.get('extractionStatus', 'pending'),
+        'mastered': mastered,
         'metadata': vocab_set.get('metadata', {}),
         'itemCount': len(items),
         'createdAt': vocab_set.get('createdAt', 0),

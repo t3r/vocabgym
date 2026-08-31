@@ -24,6 +24,21 @@ os.environ.setdefault('AWS_ACCESS_KEY_ID', 'testing')
 os.environ.setdefault('AWS_SECRET_ACCESS_KEY', 'testing')
 os.environ.setdefault('REGION', 'eu-central-1')
 
+
+def _reset_moto_creds():
+    """Force clean dummy credentials so moto intercepts even when the real
+    environment carries an (expired) AWS session. Without this, a test run in
+    isolation can fail with 'Credentials were refreshed, but ... still expired'.
+    """
+    for _k in (
+        'AWS_SESSION_TOKEN', 'AWS_SECURITY_TOKEN', 'AWS_CREDENTIAL_EXPIRATION',
+        'AWS_SESSION_EXPIRATION', 'AWS_PROFILE',
+    ):
+        os.environ.pop(_k, None)
+    os.environ['AWS_ACCESS_KEY_ID'] = 'testing'
+    os.environ['AWS_SECRET_ACCESS_KEY'] = 'testing'
+    os.environ['AWS_DEFAULT_REGION'] = 'eu-central-1'
+
 _EXTRACTION_DIR = os.path.join(os.path.dirname(__file__), '..', 'functions', 'extraction_handler')
 _EXTRACTION_APP_PATH = os.path.join(_EXTRACTION_DIR, 'app.py')
 
@@ -314,6 +329,7 @@ class TestVocabGetIDOR:
 
     @mock_aws
     def test_foreign_set_returns_404_not_403(self):
+        _reset_moto_creds()
         ddb = boto3.resource('dynamodb', region_name='eu-central-1')
         # Minimal tables the handler touches.
         ddb.create_table(
@@ -347,6 +363,142 @@ class TestVocabGetIDOR:
 
         # Must be a uniform 404 (never 403) so existence is not disclosed.
         assert resp['statusCode'] == 404
+
+    @mock_aws
+    def test_student_mastered_league_set_returns_mastered_true(self):
+        """A league set (owned by the teacher) that the STUDENT has mastered
+        must return mastered:true when the student fetches it — this is what
+        makes a mastered league set appear in the student's Sammlung."""
+        import json as _json
+        _reset_moto_creds()
+        ddb = boto3.resource('dynamodb', region_name='eu-central-1')
+        ddb.create_table(
+            TableName='vocabsets',
+            KeySchema=[
+                {'AttributeName': 'vocabSetId', 'KeyType': 'HASH'},
+                {'AttributeName': 'userId', 'KeyType': 'RANGE'},
+            ],
+            AttributeDefinitions=[
+                {'AttributeName': 'vocabSetId', 'AttributeType': 'S'},
+                {'AttributeName': 'userId', 'AttributeType': 'S'},
+            ],
+            BillingMode='PAY_PER_REQUEST',
+        )
+        ddb.create_table(
+            TableName='vocabitems',
+            KeySchema=[
+                {'AttributeName': 'vocabSetId', 'KeyType': 'HASH'},
+                {'AttributeName': 'itemId', 'KeyType': 'RANGE'},
+            ],
+            AttributeDefinitions=[
+                {'AttributeName': 'vocabSetId', 'AttributeType': 'S'},
+                {'AttributeName': 'itemId', 'AttributeType': 'S'},
+            ],
+            BillingMode='PAY_PER_REQUEST',
+        )
+        ddb.create_table(
+            TableName='users',
+            KeySchema=[{'AttributeName': 'userId', 'KeyType': 'HASH'}],
+            AttributeDefinitions=[{'AttributeName': 'userId', 'AttributeType': 'S'}],
+            BillingMode='PAY_PER_REQUEST',
+        )
+        ddb.create_table(
+            TableName='leagues',
+            KeySchema=[{'AttributeName': 'leagueId', 'KeyType': 'HASH'}],
+            AttributeDefinitions=[{'AttributeName': 'leagueId', 'AttributeType': 'S'}],
+            BillingMode='PAY_PER_REQUEST',
+        )
+        ddb.create_table(
+            TableName='progress',
+            KeySchema=[
+                {'AttributeName': 'progressKey', 'KeyType': 'HASH'},
+                {'AttributeName': 'itemId', 'KeyType': 'RANGE'},
+            ],
+            AttributeDefinitions=[
+                {'AttributeName': 'progressKey', 'AttributeType': 'S'},
+                {'AttributeName': 'itemId', 'AttributeType': 'S'},
+            ],
+            BillingMode='PAY_PER_REQUEST',
+        )
+
+        set_id = '22222222-2222-4222-8222-222222222222'
+        # Set owned by the teacher, assigned to a league the student belongs to.
+        ddb.Table('vocabsets').put_item(Item={
+            'vocabSetId': set_id, 'userId': 'teacher-1', 'title': 'Liga-Set',
+            'extractionStatus': 'approved', 'imageKeys': [],
+        })
+        ddb.Table('vocabitems').put_item(Item={
+            'vocabSetId': set_id, 'itemId': 'i1', 'source': 'a', 'target': 'b', 'isActive': True,
+        })
+        ddb.Table('vocabitems').put_item(Item={
+            'vocabSetId': set_id, 'itemId': 'i2', 'source': 'c', 'target': 'd', 'isActive': True,
+        })
+        ddb.Table('users').put_item(Item={'userId': 'student-1', 'leagueId': 'lg-1'})
+        ddb.Table('leagues').put_item(Item={
+            'leagueId': 'lg-1', 'teacherUserId': 'teacher-1', 'vocabSetIds': [set_id],
+        })
+        # Student's progress: BOTH active items at masteryLevel >= 4 → mastered.
+        for iid in ('i1', 'i2'):
+            ddb.Table('progress').put_item(Item={
+                'progressKey': 'student-1#' + set_id, 'itemId': iid,
+                'masteryLevel': 5, 'correctCount': 5, 'incorrectCount': 0,
+            })
+
+        app = _load_vocab_crud_app(self._ENV)
+        resp = app.lambda_handler(self._event(set_id, 'student-1'), None)
+        assert resp['statusCode'] == 200
+        assert _json.loads(resp['body'])['mastered'] is True
+
+    @mock_aws
+    def test_student_partial_league_set_returns_mastered_false(self):
+        """Same league set but the student has NOT mastered every item → false."""
+        import json as _json
+        _reset_moto_creds()
+        ddb = boto3.resource('dynamodb', region_name='eu-central-1')
+        for name, ks, ad in (
+            ('vocabsets',
+             [{'AttributeName': 'vocabSetId', 'KeyType': 'HASH'}, {'AttributeName': 'userId', 'KeyType': 'RANGE'}],
+             [{'AttributeName': 'vocabSetId', 'AttributeType': 'S'}, {'AttributeName': 'userId', 'AttributeType': 'S'}]),
+            ('vocabitems',
+             [{'AttributeName': 'vocabSetId', 'KeyType': 'HASH'}, {'AttributeName': 'itemId', 'KeyType': 'RANGE'}],
+             [{'AttributeName': 'vocabSetId', 'AttributeType': 'S'}, {'AttributeName': 'itemId', 'AttributeType': 'S'}]),
+            ('users',
+             [{'AttributeName': 'userId', 'KeyType': 'HASH'}],
+             [{'AttributeName': 'userId', 'AttributeType': 'S'}]),
+            ('leagues',
+             [{'AttributeName': 'leagueId', 'KeyType': 'HASH'}],
+             [{'AttributeName': 'leagueId', 'AttributeType': 'S'}]),
+            ('progress',
+             [{'AttributeName': 'progressKey', 'KeyType': 'HASH'}, {'AttributeName': 'itemId', 'KeyType': 'RANGE'}],
+             [{'AttributeName': 'progressKey', 'AttributeType': 'S'}, {'AttributeName': 'itemId', 'AttributeType': 'S'}]),
+        ):
+            ddb.create_table(TableName=name, KeySchema=ks, AttributeDefinitions=ad, BillingMode='PAY_PER_REQUEST')
+
+        set_id = '33333333-3333-4333-8333-333333333333'
+        ddb.Table('vocabsets').put_item(Item={
+            'vocabSetId': set_id, 'userId': 'teacher-1', 'title': 'Liga-Set',
+            'extractionStatus': 'approved', 'imageKeys': [],
+        })
+        ddb.Table('vocabitems').put_item(Item={'vocabSetId': set_id, 'itemId': 'i1', 'isActive': True})
+        ddb.Table('vocabitems').put_item(Item={'vocabSetId': set_id, 'itemId': 'i2', 'isActive': True})
+        ddb.Table('users').put_item(Item={'userId': 'student-1', 'leagueId': 'lg-1'})
+        ddb.Table('leagues').put_item(Item={
+            'leagueId': 'lg-1', 'teacherUserId': 'teacher-1', 'vocabSetIds': [set_id],
+        })
+        # Only one of two items mastered → not mastered.
+        ddb.Table('progress').put_item(Item={
+            'progressKey': 'student-1#' + set_id, 'itemId': 'i1',
+            'masteryLevel': 5, 'correctCount': 5, 'incorrectCount': 0,
+        })
+        ddb.Table('progress').put_item(Item={
+            'progressKey': 'student-1#' + set_id, 'itemId': 'i2',
+            'masteryLevel': 2, 'correctCount': 2, 'incorrectCount': 3,
+        })
+
+        app = _load_vocab_crud_app(self._ENV)
+        resp = app.lambda_handler(self._event(set_id, 'student-1'), None)
+        assert resp['statusCode'] == 200
+        assert _json.loads(resp['body'])['mastered'] is False
 
 
 # ============================================================
