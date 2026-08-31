@@ -2,15 +2,32 @@
   <div class="card hover:shadow-lg transition-shadow cursor-pointer" @click="$emit('view', vocabSet)">
     <!-- Title and Metadata -->
     <div class="mb-3 flex items-center gap-3">
-      <img
-        v-if="vocabSet.identiconUrl"
-        :src="vocabSet.identiconUrl"
-        alt="Set-Symbol"
-        class="w-12 h-12 rounded-lg flex-shrink-0 bg-gray-50 dark:bg-gray-700"
-        loading="lazy"
-      />
+      <div class="relative flex-shrink-0">
+        <img
+          v-if="vocabSet.identiconUrl"
+          :src="vocabSet.identiconUrl"
+          alt="Set-Symbol"
+          class="w-12 h-12 rounded-lg bg-gray-50 dark:bg-gray-700"
+          :class="{ 'opacity-60': vocabSet.mastered }"
+          loading="lazy"
+        />
+        <!-- Mastered: a big green checkmark celebrates the fully learned set. -->
+        <span
+          v-if="vocabSet.mastered"
+          class="absolute -bottom-1 -right-1 w-6 h-6 rounded-full bg-success text-white flex items-center justify-center ring-2 ring-white dark:ring-gray-800 shadow"
+          aria-label="Abgeschlossen"
+          title="Komplett gelernt!"
+        >
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="3" viewBox="0 0 24 24" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
+          </svg>
+        </span>
+      </div>
       <div class="min-w-0">
-        <h3 class="font-semibold text-gray-900 dark:text-white truncate">{{ vocabSet.title || 'Unbenanntes Set' }}</h3>
+        <h3 class="font-semibold text-gray-900 dark:text-white truncate flex items-center gap-1.5">
+          <span class="truncate">{{ vocabSet.title || 'Unbenanntes Set' }}</span>
+          <span v-if="vocabSet.mastered" class="text-success flex-shrink-0" aria-hidden="true">✓</span>
+        </h3>
         <p class="text-sm text-gray-500 mt-1">
           {{ vocabSet.itemCount || 0 }} Vokabeln
           <span v-if="vocabSet.metadata?.chapter"> · Kap. {{ vocabSet.metadata.chapter }}</span>
@@ -28,7 +45,8 @@
     <div class="mb-3">
       <div class="flex justify-between text-xs text-gray-500 mb-1">
         <span>Beherrschung</span>
-        <span>{{ formatPercentage(vocabSet.mastery || 0) }}</span>
+        <span v-if="vocabSet.mastered" class="font-semibold text-success">✓ Geschafft!</span>
+        <span v-else>{{ formatPercentage(vocabSet.mastery || 0) }}</span>
       </div>
       <div class="w-full bg-gray-200 rounded-full h-2">
         <div
