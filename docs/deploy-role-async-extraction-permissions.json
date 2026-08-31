@@ -1,0 +1,35 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "SqsQueueLifecycleForExtraction",
+      "Effect": "Allow",
+      "Action": [
+        "sqs:CreateQueue",
+        "sqs:DeleteQueue",
+        "sqs:GetQueueAttributes",
+        "sqs:SetQueueAttributes",
+        "sqs:GetQueueUrl",
+        "sqs:ListQueueTags",
+        "sqs:TagQueue",
+        "sqs:UntagQueue"
+      ],
+      "Resource": [
+        "arn:aws:sqs:eu-central-1:730335610692:vocabtrainer-extraction-queue-*",
+        "arn:aws:sqs:eu-central-1:730335610692:vocabtrainer-extraction-dlq-*"
+      ]
+    },
+    {
+      "Sid": "LambdaEventSourceMappingForSqsWorker",
+      "Effect": "Allow",
+      "Action": [
+        "lambda:CreateEventSourceMapping",
+        "lambda:DeleteEventSourceMapping",
+        "lambda:UpdateEventSourceMapping",
+        "lambda:GetEventSourceMapping",
+        "lambda:ListEventSourceMappings"
+      ],
+      "Resource": "*"
+    }
+  ]
+}
