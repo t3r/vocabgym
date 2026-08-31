@@ -29,6 +29,7 @@ textract_client = boto3.client('textract')
 bedrock_client = boto3.client('bedrock-runtime')
 dynamodb = boto3.resource('dynamodb')
 ssm_client = boto3.client('ssm')
+sqs_client = boto3.client('sqs')
 
 # Environment variables
 IMAGES_BUCKET = os.environ['IMAGES_BUCKET']
@@ -37,6 +38,7 @@ VOCABITEMS_TABLE = os.environ['VOCABITEMS_TABLE']
 EXTRACTION_PROMPT_PARAM = os.environ.get('EXTRACTION_PROMPT_PARAM', '')
 VERIFICATION_PROMPT_PARAM = os.environ.get('VERIFICATION_PROMPT_PARAM', '')
 EXTRACTION_USAGE_TABLE = os.environ.get('EXTRACTION_USAGE_TABLE', '')
+EXTRACTION_QUEUE_URL = os.environ.get('EXTRACTION_QUEUE_URL', '')
 
 # Bedrock Guardrail (content filter + prompt-attack) for the extraction LLM
 # calls. Applied only when configured, so local/unit runs without a guardrail
@@ -554,7 +556,7 @@ def handle_process(event, user_id):
     if not is_valid:
         return build_response(400, {'error': err})
 
-    # Verify ownership and get image key
+    # Verify ownership and determine which images to process.
     vocabsets_table = dynamodb.Table(VOCABSETS_TABLE)
     response = vocabsets_table.get_item(
         Key={'vocabSetId': vocab_set_id, 'userId': user_id}
@@ -564,48 +566,104 @@ def handle_process(event, user_id):
     if not item:
         return build_response(404, {'error': 'Vocabulary set not found'})
 
-    image_key = body.get('imageKey') or item.get('sourceImageKey')
-    if not image_key:
+    # A single imageKey may be given; otherwise process all pages of the set.
+    explicit_key = body.get('imageKey')
+    if explicit_key:
+        image_keys = [explicit_key]
+    else:
+        image_keys = item.get('imageKeys') or (
+            [item['sourceImageKey']] if item.get('sourceImageKey') else []
+        )
+    if not image_keys:
         return build_response(400, {'error': 'No image associated with this vocabulary set'})
 
-    # Rate-limit expensive extractions (Textract + Bedrock) per user per day.
-    if not _check_and_increment_extraction_limit(user_id):
-        logger.warning(json.dumps({
-            'event': 'extraction_rate_limited',
-            'userId': user_id,
-            'vocabSetId': vocab_set_id,
-        }))
-        return build_response(429, {
-            'error': 'Tageslimit für Extraktionen erreicht. Bitte versuche es morgen erneut.'
-        })
+    # Rate-limit expensive extractions PER IMAGE (Textract + Bedrock cost is per
+    # image). Reserve one slot per image up front; if the cap is hit, reject the
+    # whole request before enqueuing anything.
+    for _ in image_keys:
+        if not _check_and_increment_extraction_limit(user_id):
+            logger.warning(json.dumps({
+                'event': 'extraction_rate_limited',
+                'userId': user_id,
+                'vocabSetId': vocab_set_id,
+            }))
+            return build_response(429, {
+                'error': 'Tageslimit für Extraktionen erreicht. Bitte versuche es morgen erneut.'
+            })
 
-    # Update status to processing
+    pages_total = len(image_keys)
+    target_language = item.get('targetLanguage', '')
+
+    # Initialise progress counters and mark the set as processing. pagesDone /
+    # pagesFailed are RESET to 0 here so a re-process starts clean.
     vocabsets_table.update_item(
         Key={'vocabSetId': vocab_set_id, 'userId': user_id},
-        UpdateExpression='SET extractionStatus = :status, updatedAt = :ts',
+        UpdateExpression=(
+            'SET extractionStatus = :status, updatedAt = :ts, '
+            'pagesTotal = :total, pagesDone = :zero, pagesFailed = :zero'
+        ),
         ExpressionAttributeValues={
             ':status': 'processing',
             ':ts': get_timestamp(),
+            ':total': pages_total,
+            ':zero': 0,
         }
     )
 
-    # Try Textract first for OCR, then use Bedrock for intelligent extraction
+    # Enqueue one SQS message per image. The worker does the heavy lifting.
+    if not EXTRACTION_QUEUE_URL:
+        logger.error(json.dumps({'event': 'no_queue_configured', 'vocabSetId': vocab_set_id}))
+        return build_response(500, {'error': 'Extraction queue not configured'})
+
+    for image_key in image_keys:
+        sqs_client.send_message(
+            QueueUrl=EXTRACTION_QUEUE_URL,
+            MessageBody=json.dumps({
+                'vocabSetId': vocab_set_id,
+                'userId': user_id,
+                'imageKey': image_key,
+                'targetLanguage': target_language,
+            }),
+        )
+
+    logger.info(json.dumps({
+        'event': 'extraction_enqueued',
+        'vocabSetId': vocab_set_id,
+        'userId': user_id,
+        'pagesTotal': pages_total,
+    }))
+
+    # 202 Accepted: work continues asynchronously; the client polls the status.
+    return build_response(202, {
+        'vocabSetId': vocab_set_id,
+        'status': 'processing',
+        'pagesTotal': pages_total,
+    })
+
+
+def process_single_image(vocab_set_id, user_id, image_key, target_language=''):
+    """Run Textract + Bedrock extraction for ONE image and store the items.
+
+    This is the heavy per-image work, called by the async worker. It updates the
+    set's itemCount (ADD) and target language (if auto-detected) but does NOT
+    touch the page counters / final status — the worker owns that after each
+    message so counting stays atomic across concurrent workers.
+
+    Returns:
+        tuple (ok: bool, item_count: int). ok=False signals the page failed
+        (Textract failure or guardrail block) so the worker counts pagesFailed.
+    """
+    vocabsets_table = dynamodb.Table(VOCABSETS_TABLE)
     vocab_pairs = []
     raw_text = ''
     extraction_method = 'textract'
-    target_language = item.get('targetLanguage', '')
 
     try:
         vocab_pairs, confidence, raw_text = extract_with_textract(image_key)
 
-        # Always prefer Bedrock extraction from raw text when raw text is available.
-        # Textract table parsing often misaligns columns on complex workbook layouts,
-        # while the LLM can intelligently parse the full OCR text regardless of layout.
         if raw_text and len(raw_text.strip()) > 50:
-            # Auto-detect language if not set on the VocabSet
             if not target_language:
                 target_language = detect_target_language(raw_text) or DEFAULT_TARGET_LANGUAGE
-                # Save detected language back to the VocabSet
                 vocabsets_table.update_item(
                     Key={'vocabSetId': vocab_set_id, 'userId': user_id},
                     UpdateExpression='SET targetLanguage = :lang',
@@ -618,58 +676,34 @@ def handle_process(event, user_id):
                 }))
 
             bedrock_pairs = extract_with_bedrock_from_text(raw_text, target_language)
-
             if bedrock_pairs and len(bedrock_pairs) >= len(vocab_pairs):
-                logger.info(json.dumps({
-                    'event': 'using_bedrock_extraction',
-                    'textractPairs': len(vocab_pairs),
-                    'bedrockPairs': len(bedrock_pairs),
-                    'rawTextLength': len(raw_text),
-                }))
                 vocab_pairs = bedrock_pairs
                 extraction_method = 'bedrock_from_text'
-            else:
-                logger.info(json.dumps({
-                    'event': 'keeping_textract_pairs',
-                    'textractPairs': len(vocab_pairs),
-                    'bedrockPairs': len(bedrock_pairs) if bedrock_pairs else 0,
-                }))
-
     except Exception as e:
-        logger.warning(f"Textract failed: {e}")
-        # If textract completely fails, there's no raw_text either
+        logger.warning(f"Textract/Bedrock failed for {image_key}: {e}")
         extraction_method = 'failed'
 
-    # Store extracted items
-    if vocab_pairs:
-        if not target_language:
-            target_language = DEFAULT_TARGET_LANGUAGE
+    if not target_language:
+        target_language = DEFAULT_TARGET_LANGUAGE
 
-        # Only verify with Bedrock if extraction came from Textract table parsing
-        # (Bedrock extraction already produces clean pairs)
+    item_count = 0
+    page_ok = True
+    if vocab_pairs:
         if extraction_method == 'textract':
             vocab_pairs = verify_with_bedrock(vocab_pairs, target_language)
-
         if vocab_pairs:
             item_count = store_vocab_items(vocab_set_id, vocab_pairs, image_key=image_key)
-            status = 'review'
-        else:
-            item_count = 0
-            status = 'review'  # Still reviewable, just no valid pairs found
-    else:
-        item_count = 0
-        status = 'failed'
+    elif extraction_method == 'failed':
+        # Textract itself failed (or guardrail blocked everything) → page failed.
+        page_ok = False
 
-    # Update VocabSet record - use ADD for itemCount to support multiple pages
+    # Accumulate itemCount + extractionMethod on the set (page status handled by worker).
     vocabsets_table.update_item(
         Key={'vocabSetId': vocab_set_id, 'userId': user_id},
         UpdateExpression=(
-            'SET extractionStatus = :status, updatedAt = :ts, '
-            'extractionMethod = :method '
-            'ADD itemCount :count'
+            'SET updatedAt = :ts, extractionMethod = :method ADD itemCount :count'
         ),
         ExpressionAttributeValues={
-            ':status': status,
             ':ts': get_timestamp(),
             ':count': item_count,
             ':method': extraction_method,
@@ -677,19 +711,57 @@ def handle_process(event, user_id):
     )
 
     logger.info(json.dumps({
-        'event': 'extraction_complete',
+        'event': 'page_extraction_complete',
         'vocabSetId': vocab_set_id,
-        'status': status,
+        'imageKey': image_key,
         'itemCount': item_count,
         'method': extraction_method,
+        'pageOk': page_ok,
     }))
+    return page_ok, item_count
 
-    return build_response(200, {
-        'vocabSetId': vocab_set_id,
-        'status': status,
-        'itemCount': item_count,
-        'extractionMethod': extraction_method,
-    })
+
+def record_page_result(vocab_set_id, user_id, page_ok):
+    """Atomically record one page's outcome and finalise the set when done.
+
+    Increments pagesDone or pagesFailed (atomic ADD), then reads the fresh
+    counters. When pagesDone + pagesFailed >= pagesTotal the set is finalised:
+    - 'review' if at least one page produced (pagesDone > 0),
+    - 'failed' if every page failed.
+
+    Concurrency-safe: the ADD is atomic, and the finalisation reads the value
+    returned by that same update, so exactly one worker sees the completing
+    increment.
+    """
+    vocabsets_table = dynamodb.Table(VOCABSETS_TABLE)
+    counter = 'pagesDone' if page_ok else 'pagesFailed'
+
+    resp = vocabsets_table.update_item(
+        Key={'vocabSetId': vocab_set_id, 'userId': user_id},
+        UpdateExpression=f'ADD {counter} :one',
+        ExpressionAttributeValues={':one': 1},
+        ReturnValues='ALL_NEW',
+    )
+    attrs = resp.get('Attributes', {})
+    done = int(attrs.get('pagesDone', 0))
+    failed = int(attrs.get('pagesFailed', 0))
+    total = int(attrs.get('pagesTotal', 0))
+
+    if total and (done + failed) >= total:
+        final_status = 'review' if done > 0 else 'failed'
+        vocabsets_table.update_item(
+            Key={'vocabSetId': vocab_set_id, 'userId': user_id},
+            UpdateExpression='SET extractionStatus = :s, updatedAt = :ts',
+            ExpressionAttributeValues={':s': final_status, ':ts': get_timestamp()},
+        )
+        logger.info(json.dumps({
+            'event': 'extraction_set_finalised',
+            'vocabSetId': vocab_set_id,
+            'status': final_status,
+            'pagesDone': done,
+            'pagesFailed': failed,
+            'pagesTotal': total,
+        }))
 
 
 def handle_get_extraction(event, user_id):
@@ -723,6 +795,10 @@ def handle_get_extraction(event, user_id):
         'vocabSetId': vocab_set_id,
         'status': vocab_set.get('extractionStatus'),
         'itemCount': len(items),
+        # Async progress counters (default 0 for legacy sets without them).
+        'pagesTotal': int(vocab_set.get('pagesTotal', 0) or 0),
+        'pagesDone': int(vocab_set.get('pagesDone', 0) or 0),
+        'pagesFailed': int(vocab_set.get('pagesFailed', 0) or 0),
         'items': [
             {
                 'itemId': item['itemId'],

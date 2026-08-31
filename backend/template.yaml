@@ -464,6 +464,7 @@ Resources:
           EXTRACTION_USAGE_TABLE: !Ref ExtractionUsageTable
           GUARDRAIL_ID: !GetAtt ExtractionGuardrail.GuardrailId
           GUARDRAIL_VERSION: !GetAtt ExtractionGuardrailVersion.Version
+          EXTRACTION_QUEUE_URL: !Ref ExtractionQueue
       Policies:
         - S3ReadPolicy:
             BucketName: !Ref ImagesBucket
@@ -473,6 +474,8 @@ Resources:
             TableName: !Ref VocabItemsTable
         - DynamoDBCrudPolicy:
             TableName: !Ref ExtractionUsageTable
+        - SQSSendMessagePolicy:
+            QueueName: !GetAtt ExtractionQueue.QueueName
         - SSMParameterReadPolicy:
             ParameterName: !Sub vocabtrainer/${Environment}/prompts/*
         - Version: '2012-10-17'
@@ -506,6 +509,94 @@ Resources:
             RestApiId: !Ref VocabTrainerApi
             Path: /vocab/extraction/{vocabSetId}
             Method: GET
+
+  # ============================================================
+  # Async extraction: SQS queue + DLQ + worker Lambda
+  # Decouples Textract+Bedrock from the API request (no 29s API Gateway limit).
+  # ============================================================
+  ExtractionDLQ:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub vocabtrainer-extraction-dlq-${Environment}
+      MessageRetentionPeriod: 1209600  # 14 days
+      Tags:
+        - Key: Project
+          Value: VocabTrainer
+        - Key: Environment
+          Value: !Ref Environment
+
+  ExtractionQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub vocabtrainer-extraction-queue-${Environment}
+      # Must be >= 6x the worker function timeout (300s) per AWS guidance.
+      VisibilityTimeout: 1800
+      MessageRetentionPeriod: 345600  # 4 days
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt ExtractionDLQ.Arn
+        maxReceiveCount: 3
+      Tags:
+        - Key: Project
+          Value: VocabTrainer
+        - Key: Environment
+          Value: !Ref Environment
+
+  ExtractionWorkerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub vocabtrainer-extraction-worker-${Environment}
+      CodeUri: functions/extraction_handler/
+      Handler: worker.lambda_handler
+      MemorySize: 1024
+      Timeout: 300
+      Environment:
+        Variables:
+          EXTRACTION_PROMPT_PARAM: !Ref ExtractionPromptParam
+          VERIFICATION_PROMPT_PARAM: !Ref VerificationPromptParam
+          GUARDRAIL_ID: !GetAtt ExtractionGuardrail.GuardrailId
+          GUARDRAIL_VERSION: !GetAtt ExtractionGuardrailVersion.Version
+      Policies:
+        - S3ReadPolicy:
+            BucketName: !Ref ImagesBucket
+        - DynamoDBCrudPolicy:
+            TableName: !Ref VocabSetsTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref VocabItemsTable
+        - SSMParameterReadPolicy:
+            ParameterName: !Sub vocabtrainer/${Environment}/prompts/*
+        - Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action:
+                - textract:AnalyzeDocument
+                - textract:DetectDocumentText
+              Resource: '*'
+            - Effect: Allow
+              Action:
+                - bedrock:InvokeModel
+              Resource:
+                - 'arn:aws:bedrock:*::foundation-model/*'
+                - !Sub 'arn:aws:bedrock:*:${AWS::AccountId}:inference-profile/*'
+            - Effect: Allow
+              Action:
+                - bedrock:ApplyGuardrail
+              Resource:
+                - !GetAtt ExtractionGuardrail.GuardrailArn
+      Events:
+        ExtractionJob:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt ExtractionQueue.Arn
+            BatchSize: 1
+            # Cap concurrent workers so 10+ images don't hammer Bedrock (throttling).
+            ScalingConfig:
+              MaximumConcurrency: 5
+
+  ExtractionWorkerLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/vocabtrainer-extraction-worker-${Environment}
+      RetentionInDays: !If [IsProd, 90, 7]
 
   VocabCrudHandlerFunction:
     Type: AWS::Serverless::Function
