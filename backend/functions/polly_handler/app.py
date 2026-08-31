@@ -219,17 +219,54 @@ def _speakable_text(target):
     """Extract the text to speak from a vocab item's target field.
 
     Keeps the article, but for multiple meanings (separated by ';' or ',')
-    only the first part is used.
+    only the first part is used. Backward-compatible single-string form: for a
+    gender pair like 'faux / fausse' this returns the joined first meaning; use
+    _speakable_parts() to get the individual forms for SSML.
+    """
+    parts = _speakable_parts(target)
+    return ' / '.join(parts)
+
+
+def _speakable_parts(target):
+    """Return the list of speakable forms for a vocab item's target word.
+
+    Rules:
+    - ';' or ',' separate DIFFERENT meanings → keep only the FIRST meaning
+      (unchanged behaviour; we don't read every meaning aloud).
+    - '/' inside that first meaning separates GENDER FORMS of the SAME word
+      (e.g. 'faux / fausse', 'un vendeur / une vendeuse') → return each form as a
+      separate part so they can be spoken with a pause (the '/' is never spoken).
+    - A plain word → single-element list.
     """
     if not target:
-        return ''
+        return []
     text = target.strip()
-    # Cut at the first ';' or ',' — take the first meaning only
+    # 1) Cut at the first ';' or ',' — take the first meaning only.
     for sep in (';', ','):
         idx = text.find(sep)
         if idx != -1:
             text = text[:idx]
-    return text.strip()
+    text = text.strip()
+    # 2) Split the first meaning on '/' into gender forms.
+    parts = [p.strip() for p in text.split('/') if p.strip()]
+    return parts
+
+
+def _xml_escape(s):
+    """Minimal XML escaping for SSML text content."""
+    return (s.replace('&', '&amp;')
+             .replace('<', '&lt;')
+             .replace('>', '&gt;'))
+
+
+def _build_ssml(parts, break_ms=450):
+    """Build an SSML document that speaks each part with a pause in between.
+
+    Only used when there is more than one part (gender forms). The '/' separator
+    itself is never included, so Polly never says 'slash'.
+    """
+    joined = f'<break time="{break_ms}ms"/>'.join(_xml_escape(p) for p in parts)
+    return f'<speak>{joined}</speak>'
 
 
 def _check_and_increment_rate_limit(user_id):
@@ -324,11 +361,22 @@ def handle_synthesize(event, user_id):
     if not item:
         return build_response(404, {'error': 'Vocabulary item not found'})
 
-    text = _speakable_text(item.get('target', ''))
-    if not text:
+    parts = _speakable_parts(item.get('target', ''))
+    if not parts:
         return build_response(400, {'error': 'This item has no target word to pronounce'})
-    if len(text) > MAX_TTS_TEXT_LENGTH:
-        text = text[:MAX_TTS_TEXT_LENGTH]
+    # Cap each part's length defensively.
+    parts = [p[:MAX_TTS_TEXT_LENGTH] for p in parts]
+
+    # Multiple parts = gender forms of the same word (e.g. 'faux' / 'fausse').
+    # Speak them with a pause via SSML; the '/' is never spoken. A single part is
+    # sent as plain text (cheaper, no markup).
+    use_ssml = len(parts) > 1
+    if use_ssml:
+        polly_text = _build_ssml(parts)
+        text_type = 'ssml'
+    else:
+        polly_text = parts[0]
+        text_type = 'text'
 
     # Validate voice against the allowed standard voices for this language
     allowed_voices = _get_allowed_voice_ids(lang)
@@ -337,8 +385,9 @@ def handle_synthesize(event, user_id):
             'error': f'Invalid voice for language {lang}: {voice_id}'
         })
 
-    # Cache lookup: key = sha256(text|voiceId)
-    cache_hash = hashlib.sha256(f'{text}|{voice_id}'.encode('utf-8')).hexdigest()
+    # Cache lookup: key = sha256(polly_text|voiceId). polly_text includes the
+    # SSML for multi-part words, so different forms cache distinctly.
+    cache_hash = hashlib.sha256(f'{polly_text}|{voice_id}'.encode('utf-8')).hexdigest()
     s3_key = f'tts/{lang}/{cache_hash}.mp3'
 
     cached = False
@@ -369,7 +418,8 @@ def handle_synthesize(event, user_id):
                 Engine='standard',
                 OutputFormat='mp3',
                 VoiceId=voice_id,
-                Text=text,
+                Text=polly_text,
+                TextType=text_type,
             )
         except ClientError as e:
             logger.warning(f'Polly synthesize error: {e}')

@@ -214,6 +214,54 @@ class TestSpeakableText:
         assert app._speakable_text(None) == ''
 
 
+class TestSpeakableParts:
+    def test_single_word_one_part(self, polly_app):
+        app, _, _, _ = polly_app
+        assert app._speakable_parts('la maison') == ['la maison']
+
+    def test_slash_gender_forms_split(self, polly_app):
+        app, _, _, _ = polly_app
+        # '/' = gender forms of the same word → both parts, slash dropped
+        assert app._speakable_parts('faux / fausse') == ['faux', 'fausse']
+        assert app._speakable_parts('un vendeur / une vendeuse') == ['un vendeur', 'une vendeuse']
+
+    def test_semicolon_keeps_only_first_meaning(self, polly_app):
+        app, _, _, _ = polly_app
+        # ';' = different meanings → only the first (unchanged behaviour)
+        assert app._speakable_parts('etw. tauschen; etw. austauschen') == ['etw. tauschen']
+
+    def test_semicolon_then_slash(self, polly_app):
+        app, _, _, _ = polly_app
+        # First meaning kept, then its gender forms split
+        assert app._speakable_parts('faux / fausse; unwahr') == ['faux', 'fausse']
+
+    def test_empty(self, polly_app):
+        app, _, _, _ = polly_app
+        assert app._speakable_parts('') == []
+        assert app._speakable_parts(None) == []
+
+
+class TestBuildSsml:
+    def test_multi_part_has_break_and_no_slash(self, polly_app):
+        app, _, _, _ = polly_app
+        ssml = app._build_ssml(['faux', 'fausse'])
+        assert ssml.startswith('<speak>') and ssml.endswith('</speak>')
+        assert '<break' in ssml
+        assert 'faux' in ssml and 'fausse' in ssml
+        # The separator '/' must not appear as spoken content. The only '/' allowed
+        # is inside the self-closing <break .../> tag and the closing </speak>.
+        spoken = ssml.replace('<speak>', '').replace('</speak>', '')
+        import re as _re
+        spoken_no_tags = _re.sub(r'<break[^>]*/>', '', spoken)
+        assert '/' not in spoken_no_tags
+
+    def test_xml_escaping(self, polly_app):
+        app, _, _, _ = polly_app
+        ssml = app._build_ssml(['a & b', 'c'])
+        assert '&amp;' in ssml
+        assert '&' in ssml  # (part of &amp;)
+
+
 # ======================================================================
 # POST /tts/synthesize
 # ======================================================================
@@ -258,6 +306,26 @@ class TestSynthesize:
         assert kwargs['Text'] == 'the house'
         assert kwargs['Engine'] == 'standard'
         assert kwargs['OutputFormat'] == 'mp3'
+
+    def test_gender_pair_synthesized_as_ssml_with_pause(self, polly_app):
+        app, ddb, s3, polly = polly_app
+        # 'faux / fausse' → both forms spoken via SSML, slash never spoken
+        _seed_vocab(ddb, target='faux / fausse', lang='fr')
+        resp = app.lambda_handler(_make_event(
+            'POST', '/tts/synthesize',
+            body={'vocabSetId': 'vs-1', 'itemId': 'item-1', 'voiceId': 'Celine'},
+        ), None)
+        assert resp['statusCode'] == 200, resp['body']
+        polly.synthesize_speech.assert_called_once()
+        _, kwargs = polly.synthesize_speech.call_args
+        assert kwargs['TextType'] == 'ssml'
+        assert kwargs['Text'].startswith('<speak>')
+        assert '<break' in kwargs['Text']
+        assert 'faux' in kwargs['Text'] and 'fausse' in kwargs['Text']
+        # No spoken '/' — the only slashes are in the <break/> and </speak> tags.
+        import re as _re
+        spoken = _re.sub(r'<[^>]*>', '', kwargs['Text'])
+        assert '/' not in spoken
 
     def test_cache_hit_skips_polly_and_rate(self, polly_app):
         app, ddb, s3, polly = polly_app
