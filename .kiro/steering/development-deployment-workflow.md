@@ -293,6 +293,27 @@ scripts/
 
 ## Testing
 
+### Testing Principles (learned the hard way)
+
+- **Test the caught bug, not just the happy path.** Every bug fix MUST ship with
+  a test that fails without the fix and passes with it. The soll-state (happy
+  path) alone is not enough — the exact failure that was caught must be pinned so
+  it can never silently regress. Verify the test actually catches the bug by
+  running it against the un-fixed code once.
+- **Cover negative and authorization paths, not only the success case.** Most
+  shipped bugs here lived in branches that had no test: role/permission guards,
+  "already exists" / "not allowed" cases, and cross-layer state sync. When adding
+  a handler branch or a role check, write the rejection test too.
+- **State/integration logic needs tests, not just pure functions.** Pinia stores
+  and the auth store especially (token/role/leagueId hydration) are as critical
+  as any util — test them.
+
+  _Concrete precedent (2026-08):_ two league bugs reached prod despite 300+ green
+  tests — (1) `authStore.leagueId` was never hydrated from the server profile
+  (only localStorage), so a re-login hid the user's league; (2) `handle_join` had
+  no teacher guard, letting a teacher join their own league as a member. Both were
+  in untested branches. Fixed in `test_league_join_guard.py` + `stores/__tests__/auth.test.js`.
+
 ### Frontend Testing
 
 - **Unit tests (Vitest):** `cd frontend && npm run test`
