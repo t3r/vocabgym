@@ -90,13 +90,32 @@
             :key="set.vocabSetId"
             class="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700 rounded-lg"
           >
-            <div>
-              <p class="font-medium text-gray-900 dark:text-white text-sm">{{ set.title || 'Unbenanntes Set' }}</p>
-              <p class="text-xs text-gray-500 dark:text-gray-400">{{ set.itemCount || 0 }} Vokabeln</p>
+            <div class="flex items-center gap-3 min-w-0">
+              <!-- Set-recognition avatar: the identicon of the set's first page
+                   (icon_handler renders one per page; we use the first for the
+                   whole set, consistent with the dashboard and collection). -->
+              <img
+                v-if="set.identiconUrl"
+                :src="set.identiconUrl"
+                :alt="`Avatar: ${set.title || 'Set'}`"
+                class="w-10 h-10 rounded-md bg-white dark:bg-gray-600 flex-shrink-0"
+                loading="lazy"
+              />
+              <div
+                v-else
+                class="w-10 h-10 rounded-md bg-gray-100 dark:bg-gray-600 flex items-center justify-center text-lg flex-shrink-0"
+                aria-hidden="true"
+              >
+                🗂️
+              </div>
+              <div class="min-w-0">
+                <p class="font-medium text-gray-900 dark:text-white text-sm truncate">{{ set.title || 'Unbenanntes Set' }}</p>
+                <p class="text-xs text-gray-500 dark:text-gray-400">{{ set.itemCount || 0 }} Vokabeln</p>
+              </div>
             </div>
             <router-link
               :to="{ name: 'Practice', params: { vocabSetId: set.vocabSetId } }"
-              class="btn-primary text-xs px-3 py-1.5"
+              class="btn-primary text-xs px-3 py-1.5 flex-shrink-0"
             >
               Üben
             </router-link>
