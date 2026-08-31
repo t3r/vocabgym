@@ -62,7 +62,14 @@
           <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
           <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path>
         </svg>
-        <span class="text-sm text-gray-600 dark:text-gray-300">Vokabeln werden extrahiert...</span>
+        <span class="text-sm text-gray-600 dark:text-gray-300">
+          <template v-if="upload.pagesTotal.value > 0">
+            Vokabeln werden extrahiert... Seite {{ upload.pagesDone.value + upload.pagesFailed.value }} von {{ upload.pagesTotal.value }}
+          </template>
+          <template v-else>
+            Vokabeln werden extrahiert...
+          </template>
+        </span>
       </div>
     </div>
 
@@ -102,16 +109,20 @@ async function handleStartUpload({ files, vocabSetId }) {
 
   try {
     // Upload all files (first creates set, rest add to it)
-    const { vocabSetId: setId, imageKeys } = await upload.uploadMultipleImages(files, targetLanguage.value)
+    const { vocabSetId: setId } = await upload.uploadMultipleImages(files, targetLanguage.value)
 
-    // Now extract each image sequentially
+    // Enqueue extraction for the whole set (returns 202 immediately) and poll
+    // for live progress. The heavy work runs asynchronously in the backend.
     extractionPhase.value = true
-    for (const imageKey of imageKeys) {
-      await upload.triggerExtraction(setId, imageKey)
-      await upload.pollExtractionStatus(setId)
-    }
+    await upload.triggerExtraction(setId)
+    await upload.pollExtractionStatus(setId)
 
-    showSuccess(`${files.length} ${files.length === 1 ? 'Seite' : 'Seiten'} erfolgreich verarbeitet!`)
+    const failed = upload.pagesFailed.value
+    if (failed > 0) {
+      showSuccess(`${files.length} Seiten verarbeitet (${failed} mit Fehler — bitte prüfen).`)
+    } else {
+      showSuccess(`${files.length} ${files.length === 1 ? 'Seite' : 'Seiten'} erfolgreich verarbeitet!`)
+    }
     router.push({ name: 'Review', params: { vocabSetId: setId } })
   } catch (err) {
     error.value = err.message

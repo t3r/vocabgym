@@ -15,6 +15,12 @@
           {{ vocabSet.itemCount || 0 }} Vokabeln
           <span v-if="vocabSet.metadata?.chapter"> · Kap. {{ vocabSet.metadata.chapter }}</span>
         </p>
+        <!-- Async extraction status badge -->
+        <span
+          v-if="statusBadge"
+          class="inline-flex items-center gap-1 mt-1 px-2 py-0.5 rounded text-xs font-medium"
+          :class="statusBadge.class"
+        >{{ statusBadge.label }}</span>
       </div>
     </div>
 
@@ -74,5 +80,20 @@ const masteryColorClass = computed(() => {
   if (mastery >= 80) return 'bg-success'
   if (mastery >= 50) return 'bg-warning'
   return 'bg-error'
+})
+
+// Badge for async extraction state. 'approved' sets show nothing (normal).
+const statusBadge = computed(() => {
+  const s = props.vocabSet.extractionStatus
+  if (s === 'processing' || s === 'pending') {
+    return { label: '⏳ Wird verarbeitet', class: 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300' }
+  }
+  if (s === 'review') {
+    return { label: '✅ Bereit zum Prüfen', class: 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300' }
+  }
+  if (s === 'failed') {
+    return { label: '⚠️ Fehler', class: 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300' }
+  }
+  return null
 })
 </script>

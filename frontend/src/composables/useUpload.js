@@ -11,6 +11,10 @@ export function useUpload() {
   const error = ref(null)
   const extractionStatus = ref(null)
   const filesProgress = ref([]) // Per-file progress for multi-upload
+  // Async extraction progress (pages processed of total), for a live "X von Y".
+  const pagesDone = ref(0)
+  const pagesTotal = ref(0)
+  const pagesFailed = ref(0)
 
   /**
    * Upload a single image file to S3 via presigned URL.
@@ -119,12 +123,18 @@ export function useUpload() {
   }
 
   /**
-   * Trigger extraction on uploaded image
+   * Enqueue asynchronous extraction for a vocab set. The backend returns 202
+   * immediately (202 Accepted) and processes each page via SQS in the
+   * background; progress is tracked by polling. Passing no imageKey lets the
+   * backend process ALL pages of the set.
    */
-  async function triggerExtraction(vocabSetId, imageKey) {
+  async function triggerExtraction(vocabSetId) {
     extractionStatus.value = 'processing'
     try {
-      await api.post('/vocab/process', { vocabSetId, imageKey })
+      const resp = await api.post('/vocab/process', { vocabSetId })
+      pagesTotal.value = resp.data?.pagesTotal || 0
+      pagesDone.value = 0
+      pagesFailed.value = 0
       return vocabSetId
     } catch (err) {
       extractionStatus.value = 'failed'
@@ -134,27 +144,30 @@ export function useUpload() {
   }
 
   /**
-   * Upload multiple files and trigger extraction for each sequentially.
+   * Upload multiple files, then enqueue extraction ONCE for the whole set and
+   * poll for progress. The heavy Textract+Bedrock work runs asynchronously in
+   * the backend worker, so this no longer blocks on a synchronous request
+   * (previously caused API Gateway 29s timeouts on multi-image uploads).
    * @param {File[]} files
    * @returns {{ vocabSetId }}
    */
   async function uploadAndExtractMultiple(files) {
-    const { vocabSetId, imageKeys } = await uploadMultipleImages(files)
+    const { vocabSetId } = await uploadMultipleImages(files)
 
-    // Trigger extraction for each image
-    extractionStatus.value = 'processing'
-    for (const imageKey of imageKeys) {
-      await triggerExtraction(vocabSetId, imageKey)
-      await pollExtractionStatus(vocabSetId)
-    }
+    // Enqueue extraction for the whole set (returns 202 immediately).
+    await triggerExtraction(vocabSetId)
+    // Poll until the backend finalises the set (review/failed).
+    await pollExtractionStatus(vocabSetId)
 
     return { vocabSetId }
   }
 
   /**
-   * Poll extraction status until complete or failed
+   * Poll extraction status until the set is finalised (review/approved/failed).
+   * Reads the async page counters so the UI can show live "X von Y" progress.
+   * Uses a generous cap because async extraction of many pages can take a while.
    */
-  async function pollExtractionStatus(vocabSetId, interval = 2000, maxAttempts = 30) {
+  async function pollExtractionStatus(vocabSetId, interval = 3000, maxAttempts = 200) {
     let attempts = 0
 
     return new Promise((resolve, reject) => {
@@ -162,11 +175,16 @@ export function useUpload() {
         attempts++
         try {
           const response = await api.get(`/vocab/extraction/${vocabSetId}`)
-          extractionStatus.value = response.data.status
+          const data = response.data
+          extractionStatus.value = data.status
+          // Live progress counters (default 0 if backend omits them).
+          pagesTotal.value = data.pagesTotal || pagesTotal.value || 0
+          pagesDone.value = data.pagesDone || 0
+          pagesFailed.value = data.pagesFailed || 0
 
-          if (response.data.status === 'review' || response.data.status === 'approved') {
-            resolve(response.data)
-          } else if (response.data.status === 'failed') {
+          if (data.status === 'review' || data.status === 'approved') {
+            resolve(data)
+          } else if (data.status === 'failed') {
             reject(new Error('Extraktion fehlgeschlagen'))
           } else if (attempts >= maxAttempts) {
             reject(new Error('Zeitüberschreitung bei der Extraktion'))
@@ -192,6 +210,9 @@ export function useUpload() {
     error.value = null
     extractionStatus.value = null
     filesProgress.value = []
+    pagesDone.value = 0
+    pagesTotal.value = 0
+    pagesFailed.value = 0
   }
 
   return {
@@ -200,6 +221,9 @@ export function useUpload() {
     error,
     extractionStatus,
     filesProgress,
+    pagesDone,
+    pagesTotal,
+    pagesFailed,
     uploadImage,
     uploadMultipleImages,
     uploadAndExtractMultiple,
