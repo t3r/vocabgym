@@ -37,26 +37,32 @@
 
       <!-- Image groups -->
       <div v-for="(group, groupIndex) in imageGroups" :key="group.imageKey" class="card">
-        <!-- Image -->
-        <div v-if="group.imageUrl" class="mb-4 rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700">
-          <img
-            :src="group.imageUrl"
-            :alt="`Seite ${groupIndex + 1}`"
-            class="max-h-96 w-full object-contain bg-gray-50 dark:bg-gray-800"
-            loading="lazy"
-          />
+        <!-- Scan + Avatar side by side -->
+        <div v-if="group.imageUrl" class="mb-4 flex flex-col sm:flex-row gap-4 items-start">
+          <div class="flex-1 rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700">
+            <img
+              :src="group.imageUrl"
+              :alt="`Seite ${groupIndex + 1}`"
+              class="max-h-96 w-full object-contain bg-gray-50 dark:bg-gray-800"
+              loading="lazy"
+            />
+          </div>
+          <!-- Avatar for this page + explanation -->
+          <div v-if="group.identiconUrl" class="flex-shrink-0 w-full sm:w-40 text-center">
+            <img
+              :src="group.identiconUrl"
+              alt="Seiten-Avatar"
+              class="w-24 h-24 mx-auto rounded-lg bg-gray-50 dark:bg-gray-700"
+              loading="lazy"
+            />
+            <p class="mt-2 text-xs text-gray-500 dark:text-gray-400 leading-snug">
+              Das ist der Avatar dieser Buchseite. Dein Foto wird gelöscht, sobald
+              du das Set freigibst – dieser Avatar bleibt als Wiedererkennung.
+            </p>
+          </div>
         </div>
 
-        <h3 class="font-semibold text-gray-900 dark:text-white mb-3 flex items-center gap-2">
-          <img
-            v-if="group.identiconUrl"
-            :src="group.identiconUrl"
-            alt="Seiten-Symbol"
-            class="w-8 h-8 rounded bg-gray-50 dark:bg-gray-700"
-            loading="lazy"
-          />
-          Seite {{ groupIndex + 1 }}
-        </h3>
+        <h3 class="font-semibold text-gray-900 dark:text-white mb-3">Seite {{ groupIndex + 1 }}</h3>
 
         <!-- Editable table for this image's items -->
         <div class="overflow-x-auto">
