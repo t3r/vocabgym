@@ -156,7 +156,10 @@ class TestGuardrail:
             **_BASE_ENV, 'GUARDRAIL_ID': 'gr-123', 'GUARDRAIL_VERSION': '1',
         })
         cfg = app._guardrail_config()
-        assert cfg == {'guardrailIdentifier': 'gr-123', 'guardrailVersion': '1'}
+        assert cfg == {
+            'guardrailIdentifier': 'gr-123', 'guardrailVersion': '1',
+            'trace': 'enabled',
+        }
 
     def test_converse_injects_guardrail_when_configured(self):
         app = _load_extraction_app({
@@ -167,7 +170,8 @@ class TestGuardrail:
         app.bedrock_client = fake
         app._converse(modelId='m', messages=[], inferenceConfig={})
         assert fake.last_kwargs.get('guardrailConfig') == {
-            'guardrailIdentifier': 'gr-123', 'guardrailVersion': '1'
+            'guardrailIdentifier': 'gr-123', 'guardrailVersion': '1',
+            'trace': 'enabled',
         }
 
     def test_extract_returns_empty_on_guardrail_block(self):
@@ -194,6 +198,33 @@ class TestGuardrail:
         app.bedrock_client = _FakeBedrock({'stopReason': 'guardrail_intervened'})
         result = app.detect_target_language('a' * 60)  # long enough to attempt detection
         assert result is None
+
+    def test_converse_guarded_tags_only_user_data(self):
+        """The instruction goes in a plain text block; the untrusted user data
+        goes in a guardContent block using the exact AWS Converse schema
+        (guardContent -> text -> {text, qualifiers:['guard_content']}). Only the
+        user data is thereby assessed by the prompt-attack filter."""
+        app = _load_extraction_app({
+            **_BASE_ENV, 'GUARDRAIL_ID': 'gr-123', 'GUARDRAIL_VERSION': '1',
+        })
+        fake = _FakeBedrock({'stopReason': 'end_turn',
+                             'output': {'message': {'content': [{'text': '[]'}]}}})
+        app.bedrock_client = fake
+        app._converse_guarded('m', 'INSTRUCTIONS HERE', 'USER DATA HERE', 100)
+
+        content = fake.last_kwargs['messages'][0]['content']
+        assert len(content) == 2
+        # Block 1: plain instruction (NOT assessed for prompt attacks)
+        assert content[0] == {'text': 'INSTRUCTIONS HERE'}
+        assert 'guardContent' not in content[0]
+        # Block 2: user data in the correct guardContent structure
+        assert content[1] == {
+            'guardContent': {
+                'text': {'text': 'USER DATA HERE', 'qualifiers': ['guard_content']}
+            }
+        }
+        # Guardrail config (with trace) still injected
+        assert fake.last_kwargs['guardrailConfig']['guardrailIdentifier'] == 'gr-123'
 
 
 # ---------------------------------------------------------------------------

@@ -51,8 +51,25 @@ def _guardrail_config():
         return {
             'guardrailIdentifier': GUARDRAIL_ID,
             'guardrailVersion': GUARDRAIL_VERSION,
+            # Enable the assessment trace so a guardrail_intervened response tells
+            # us WHICH policy blocked (prompt-attack vs a content filter) and on
+            # which text span — logged below for diagnosis.
+            'trace': 'enabled',
         }
     return None
+
+
+def _log_guardrail_trace(stage, response):
+    """Log the guardrail assessment trace (which policy blocked, coverage)."""
+    try:
+        trace = (response or {}).get('trace', {}).get('guardrail', {})
+        logger.warning(json.dumps({
+            'event': 'guardrail_blocked',
+            'stage': stage,
+            'trace': trace,
+        }, default=str))
+    except Exception:
+        logger.warning(json.dumps({'event': 'guardrail_blocked', 'stage': stage}))
 
 
 def _converse(**kwargs):
@@ -80,7 +97,10 @@ def _converse_guarded(model_id, instruction_text, guarded_text, max_tokens):
     """
     content = [
         {'text': instruction_text},
-        {'text': guarded_text, 'qualifiers': ['guard_content']},
+        # The user data goes in a guardContent block so ONLY it is evaluated by
+        # the guardrail. Correct Converse schema: guardContent -> text ->
+        # {text, qualifiers}. 'guard_content' marks it as content to assess.
+        {'guardContent': {'text': {'text': guarded_text, 'qualifiers': ['guard_content']}}},
     ]
     return _converse(
         modelId=model_id,
@@ -261,7 +281,7 @@ Antworte mit GENAU EINEM Sprachcode, nichts anderes.
     try:
         response = _converse_guarded('eu.amazon.nova-pro-v1:0', instruction, sample, 10)
         if response.get('stopReason') == 'guardrail_intervened':
-            logger.warning(json.dumps({'event': 'guardrail_blocked', 'stage': 'detect_language'}))
+            _log_guardrail_trace('detect_language', response)
             return None
         result = response['output']['message']['content'][0]['text'].strip().lower()
 
@@ -329,7 +349,7 @@ Antworte NUR mit einem JSON-Array: [{{"source": "deutsch", "target": "{lang_name
         # Guardrail blocked (inappropriate uploaded image or prompt-injection):
         # treat as no vocab found rather than crashing.
         if response.get('stopReason') == 'guardrail_intervened':
-            logger.warning(json.dumps({'event': 'guardrail_blocked', 'stage': 'extract'}))
+            _log_guardrail_trace('extract', response)
             return []
 
         result_text = response['output']['message']['content'][0]['text'].strip()
@@ -410,7 +430,7 @@ Antworte NUR mit JSON-Array: [{{"source": "deutsch", "target": "übersetzung"}}]
 
         # Guardrail blocked: return no pairs rather than crashing.
         if response.get('stopReason') == 'guardrail_intervened':
-            logger.warning(json.dumps({'event': 'guardrail_blocked', 'stage': 'verify'}))
+            _log_guardrail_trace('verify', response)
             return []
 
         result_text = response['output']['message']['content'][0]['text'].strip()
