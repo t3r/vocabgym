@@ -107,6 +107,23 @@ def _delete_original_scans(vocab_set):
             logger.warning(f"Failed to delete original scan {key}: {e}")
 
 
+def _delete_identicons(vocab_set):
+    """Delete all identicons (both styles for every page) of a set from S3."""
+    source_key = vocab_set.get('sourceImageKey')
+    keys = list(vocab_set.get('imageKeys') or [])
+    if source_key and source_key not in keys:
+        keys.append(source_key)
+    for key in keys:
+        for roboset in VALID_ICON_SETS:
+            icon_key = _icon_key_for(key, roboset)
+            if not icon_key:
+                continue
+            try:
+                s3_client.delete_object(Bucket=IMAGES_BUCKET, Key=icon_key)
+            except Exception as e:
+                logger.warning(f"Failed to delete identicon {icon_key}: {e}")
+
+
 def lambda_handler(event, context):
     """Route requests to appropriate handler based on HTTP method and path.
 
@@ -520,12 +537,10 @@ def handle_delete(event, user_id):
             )
 
     # Delete source image from S3
-    image_key = vocab_set.get('sourceImageKey')
-    if image_key:
-        try:
-            s3_client.delete_object(Bucket=IMAGES_BUCKET, Key=image_key)
-        except Exception as e:
-            logger.warning(f"Failed to delete image {image_key}: {e}")
+    # Delete all original scans (multi-page) and all identicons (both styles per
+    # page) from S3. On set deletion nothing should linger in the bucket.
+    _delete_original_scans(vocab_set)
+    _delete_identicons(vocab_set)
 
     # Delete the vocab set record
     vocabsets_table.delete_item(

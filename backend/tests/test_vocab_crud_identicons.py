@@ -139,3 +139,83 @@ def test_approve_deletes_original_scans():
     # Identicon preserved
     icons = s3.list_objects_v2(Bucket='vc-images', Prefix='identicons/').get('Contents', [])
     assert len(icons) == 1 and icons[0]['Key'] == icon1
+
+
+@mock_aws
+def test_delete_removes_all_originals_and_identicons():
+    """Deleting a set must remove every original scan AND every identicon."""
+    import uuid
+    region = 'eu-central-1'
+    set_id = str(uuid.uuid4())
+    s3 = boto3.client('s3', region_name=region)
+    s3.create_bucket(
+        Bucket='vc-images',
+        CreateBucketConfiguration={'LocationConstraint': region},
+    )
+    dynamodb = boto3.resource('dynamodb', region_name=region)
+    vocabsets = dynamodb.create_table(
+        TableName='vc-vocabsets',
+        KeySchema=[
+            {'AttributeName': 'vocabSetId', 'KeyType': 'HASH'},
+            {'AttributeName': 'userId', 'KeyType': 'RANGE'},
+        ],
+        AttributeDefinitions=[
+            {'AttributeName': 'vocabSetId', 'AttributeType': 'S'},
+            {'AttributeName': 'userId', 'AttributeType': 'S'},
+        ],
+        BillingMode='PAY_PER_REQUEST',
+    )
+    dynamodb.create_table(
+        TableName='vc-vocabitems',
+        KeySchema=[
+            {'AttributeName': 'vocabSetId', 'KeyType': 'HASH'},
+            {'AttributeName': 'itemId', 'KeyType': 'RANGE'},
+        ],
+        AttributeDefinitions=[
+            {'AttributeName': 'vocabSetId', 'AttributeType': 'S'},
+            {'AttributeName': 'itemId', 'AttributeType': 'S'},
+        ],
+        BillingMode='PAY_PER_REQUEST',
+    )
+    dynamodb.create_table(
+        TableName='vc-users',
+        KeySchema=[{'AttributeName': 'userId', 'KeyType': 'HASH'}],
+        AttributeDefinitions=[{'AttributeName': 'userId', 'AttributeType': 'S'}],
+        BillingMode='PAY_PER_REQUEST',
+    )
+
+    # Two pages, each with two identicon styles
+    k1 = f'images/u1/{set_id}/100-original.jpg'
+    k2 = f'images/u1/{set_id}/200-original.jpg'
+    originals = [k1, k2]
+    icons = [
+        f'identicons/u1/{set_id}/100-set1.png',
+        f'identicons/u1/{set_id}/100-set4.png',
+        f'identicons/u1/{set_id}/200-set1.png',
+        f'identicons/u1/{set_id}/200-set4.png',
+    ]
+    for k in originals:
+        s3.put_object(Bucket='vc-images', Key=k, Body=b'JPEG')
+    for k in icons:
+        s3.put_object(Bucket='vc-images', Key=k, Body=b'PNG')
+
+    vocabsets.put_item(Item={
+        'vocabSetId': set_id, 'userId': 'u1', 'title': 'X',
+        'sourceImageKey': k1, 'imageKeys': [k1, k2],
+        'extractionStatus': 'approved', 'itemCount': 0, 'metadata': {},
+    })
+
+    vc = _load(_VC_PATH, 'vc_app_delete', _ENV)
+    event = {
+        'httpMethod': 'DELETE',
+        'pathParameters': {'vocabSetId': set_id},
+        'requestContext': {'authorizer': {'claims': {'sub': 'u1'}}},
+    }
+    resp = vc.lambda_handler(event, None)
+    assert resp['statusCode'] == 200
+
+    # Nothing left under images/ or identicons/
+    assert s3.list_objects_v2(Bucket='vc-images', Prefix='images/').get('Contents', []) == []
+    assert s3.list_objects_v2(Bucket='vc-images', Prefix='identicons/').get('Contents', []) == []
+    # Set record gone
+    assert 'Item' not in vocabsets.get_item(Key={'vocabSetId': set_id, 'userId': 'u1'})
