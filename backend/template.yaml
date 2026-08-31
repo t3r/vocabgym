@@ -814,23 +814,27 @@ Resources:
       Description: Content + prompt-attack filter for vocabulary extraction from user images.
       BlockedInputMessaging: "Der Inhalt konnte nicht verarbeitet werden."
       BlockedOutputsMessaging: "Der Inhalt konnte nicht verarbeitet werden."
+      # The model output is structured vocabulary JSON, not free-form generated
+      # text, so OUTPUT content filtering only produces false positives (observed:
+      # MISCONDUCT MEDIUM blocking harmless French/German vocab). We guard the
+      # INPUT (user-uploaded OCR) but set every OutputStrength to NONE.
       ContentPolicyConfig:
         FiltersConfig:
           - Type: SEXUAL
             InputStrength: HIGH
-            OutputStrength: HIGH
+            OutputStrength: NONE
           - Type: VIOLENCE
             InputStrength: HIGH
-            OutputStrength: HIGH
+            OutputStrength: NONE
           - Type: HATE
             InputStrength: MEDIUM
-            OutputStrength: MEDIUM
+            OutputStrength: NONE
           - Type: INSULTS
             InputStrength: MEDIUM
-            OutputStrength: MEDIUM
+            OutputStrength: NONE
           - Type: MISCONDUCT
             InputStrength: MEDIUM
-            OutputStrength: MEDIUM
+            OutputStrength: NONE
           # Prompt-attack filtering only applies to the input; output strength must be NONE.
           - Type: PROMPT_ATTACK
             InputStrength: HIGH
