@@ -576,6 +576,11 @@ Resources:
             TableName: !Ref LeagueMembersTable
         - DynamoDBReadPolicy:
             TableName: !Ref UsersTable
+        # Ownership/league resolution in handle_start reads VocabSets + Leagues.
+        - DynamoDBReadPolicy:
+            TableName: !Ref VocabSetsTable
+        - DynamoDBReadPolicy:
+            TableName: !Ref LeaguesTable
       Events:
         StartPractice:
           Type: Api
@@ -611,6 +616,11 @@ Resources:
             TableName: !Ref VocabSetsTable
         - DynamoDBReadPolicy:
             TableName: !Ref VocabItemsTable
+        # League access resolution in handle_vocab_set_progress reads Users + Leagues.
+        - DynamoDBReadPolicy:
+            TableName: !Ref UsersTable
+        - DynamoDBReadPolicy:
+            TableName: !Ref LeaguesTable
       Events:
         GetOverview:
           Type: Api
