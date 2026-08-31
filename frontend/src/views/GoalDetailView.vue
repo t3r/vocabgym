@@ -189,11 +189,15 @@ const deadlineText = computed(() => {
   if (!goal.value) return ''
   const days = goal.value.daysRemaining
   if (days === undefined || days === null) {
-    // Fallback: calculate from deadline string
+    // Fallback: calculate from deadline string. The deadline is due at 00:00 of
+    // the set day, so compare whole calendar days (local) to avoid timezone
+    // off-by-one from parsing 'YYYY-MM-DD' as UTC midnight.
     if (goal.value.deadline) {
-      const dl = new Date(goal.value.deadline)
+      const [y, m, d] = goal.value.deadline.split('-').map(Number)
+      const dl = new Date(y, m - 1, d)                    // local midnight of deadline day
       const now = new Date()
-      const diff = Math.ceil((dl - now) / 86400000)
+      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+      const diff = Math.round((dl - today) / 86400000)
       return formatDaysText(diff)
     }
     return ''
@@ -202,8 +206,10 @@ const deadlineText = computed(() => {
 })
 
 function formatDaysText(days) {
+  // days <= 0: the deadline (00:00 of the set day) has been reached → the goal
+  // period is over. days === 0 is the deadline day itself, already too late.
   if (days < 0) return `📅 ${Math.abs(days)} ${Math.abs(days) === 1 ? 'Tag' : 'Tage'} überfällig`
-  if (days === 0) return '📅 Heute fällig'
+  if (days === 0) return '📅 Frist abgelaufen'
   return `📅 Noch ${days} ${days === 1 ? 'Tag' : 'Tage'}`
 }
 

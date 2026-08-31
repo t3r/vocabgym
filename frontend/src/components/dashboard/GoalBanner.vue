@@ -118,8 +118,9 @@ const deadlineText = computed(() => {
   if (!goal.value) return ''
   const days = goal.value.daysRemaining
   if (days === undefined || days === null) return ''
-  if (days < 0) return '📅 Überfällig!'
-  if (days === 0) return '📅 Heute fällig!'
+  // The deadline is due at 00:00 of the set day. So on the deadline day itself
+  // (days === 0) the time is already up — treat it as overdue, not "today".
+  if (days <= 0) return '📅 Frist abgelaufen'
   return `📅 Noch ${days} ${days === 1 ? 'Tag' : 'Tage'}`
 })
 
