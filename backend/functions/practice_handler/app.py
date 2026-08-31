@@ -202,6 +202,7 @@ def handle_start(event, user_id):
             'correctAnswer': correct_answer,
             'questionNumber': i + 1,
             'isNew': int(correct_by_item.get(item['itemId'], 0)) == 0,
+            'notes': item.get('notes', ''),
         })
 
     # Store session in DynamoDB

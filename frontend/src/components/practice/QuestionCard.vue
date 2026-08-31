@@ -103,6 +103,17 @@
         >
           🔊 Vorsagen
         </button>
+        <!-- Eselsbrücke (mnemonic note): shown next to Vorsagen when the item
+             has a saved note. Hidden in exam mode. -->
+        <button
+          v-if="!examMode && question.notes"
+          @click="showingNote = !showingNote"
+          type="button"
+          aria-label="Eselsbrücke anzeigen"
+          class="inline-flex items-center gap-1.5 text-sm text-primary-600 hover:text-primary-700 font-medium"
+        >
+          💭 Eselsbrücke
+        </button>
         <!-- Text reveal: still gated behind a 2-streak (or a new word).
              Hidden entirely in exam mode. -->
         <button
@@ -150,11 +161,24 @@
         </div>
       </div>
     </transition>
+
+    <!-- Eselsbrücke note display -->
+    <transition name="hint-fade">
+      <div
+        v-if="showingNote && question.notes && !examMode"
+        class="mt-4 p-3 bg-purple-50 dark:bg-purple-900/40 border border-purple-200 dark:border-purple-700 rounded-lg text-center"
+      >
+        <p class="text-xs text-purple-700 dark:text-purple-300 mb-1">💭 Eselsbrücke</p>
+        <p class="text-lg font-medium text-purple-900 dark:text-purple-100 break-words">
+          {{ question.notes }}
+        </p>
+      </div>
+    </transition>
   </div>
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import AnswerInput from './AnswerInput.vue'
 import FeedbackDisplay from './FeedbackDisplay.vue'
 import PronounceButton from './PronounceButton.vue'
@@ -192,6 +216,7 @@ onMounted(() => window.addEventListener('keydown', onKeydown))
 onUnmounted(() => window.removeEventListener('keydown', onKeydown))
 
 const showingHint = ref(false)
+const showingNote = ref(false)
 const pronouncing = ref(false)
 let hintTimeout = null
 
@@ -272,6 +297,12 @@ function showHint() {
   // Also play the pronunciation when the solution is the target-language word.
   playPronunciation()
 }
+
+// Reset toggles when the question changes so stale hints/notes don't linger.
+watch(() => props.question?.questionId, () => {
+  showingHint.value = false
+  showingNote.value = false
+})
 </script>
 
 <style scoped>
