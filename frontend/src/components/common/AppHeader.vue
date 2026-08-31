@@ -151,17 +151,20 @@
 import { ref, onMounted, nextTick, watch } from 'vue'
 import { useAuth } from '@/composables/useAuth'
 import { useAuthStore } from '@/stores/auth'
+import { useVocabStore } from '@/stores/vocab'
 import api from '@/services/api'
 import LoginButton from '@/components/auth/LoginButton.vue'
 import LogoutButton from '@/components/auth/LogoutButton.vue'
 
 const { isAuthenticated, userName } = useAuth()
 const authStore = useAuthStore()
+const vocabStore = useVocabStore()
 const mobileMenuOpen = ref(false)
 const isDark = ref(false)
 const editingName = ref(false)
 const newDisplayName = ref('')
 const iconSet = ref('set1')
+const iconSetInitial = ref('set1')
 const nameInput = ref(null)
 
 watch(editingName, (val) => {
@@ -169,8 +172,11 @@ watch(editingName, (val) => {
     newDisplayName.value = userName.value || ''
     // Load current icon-set preference so the toggle reflects the saved value.
     api.get('/users/profile')
-      .then((resp) => { iconSet.value = resp.data?.identiconSet || 'set1' })
-      .catch(() => { iconSet.value = 'set1' })
+      .then((resp) => {
+        iconSet.value = resp.data?.identiconSet || 'set1'
+        iconSetInitial.value = iconSet.value
+      })
+      .catch(() => { iconSet.value = 'set1'; iconSetInitial.value = 'set1' })
     nextTick(() => nameInput.value?.focus())
   }
 })
@@ -179,6 +185,7 @@ async function saveProfile() {
   const name = newDisplayName.value.trim()
   if (!name) return
   try {
+    const prevIconSet = iconSetInitial.value
     await api.put('/users/profile', { displayName: name, identiconSet: iconSet.value })
     // Update reactive store state (also persists to localStorage) so the
     // header re-renders immediately with the new name.
@@ -187,6 +194,18 @@ async function saveProfile() {
       authStore.user.name = name
     }
     editingName.value = false
+
+    // If the avatar style changed, the backend now serves identicon URLs in the
+    // new style. Re-fetch vocab data so avatars swap immediately (no page
+    // refresh needed). Views are reactive to the store, so this covers the
+    // dashboard list and any currently loaded single set (detail/review).
+    if (iconSet.value !== prevIconSet) {
+      vocabStore.fetchVocabSets().catch(() => {})
+      const current = vocabStore.currentVocabSet
+      if (current?.vocabSetId) {
+        vocabStore.fetchVocabSet(current.vocabSetId).catch(() => {})
+      }
+    }
   } catch {
     // Silent fail - will update on next login
     editingName.value = false
