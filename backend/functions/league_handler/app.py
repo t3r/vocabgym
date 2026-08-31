@@ -178,11 +178,16 @@ def handle_get_profile(event, user_id):
     # German / Europe/Berlin behaviour for users who never set them.
     ui_language = prefs.get('uiLanguage') or 'de'
     timezone = prefs.get('timezone') or 'Europe/Berlin'
+    # leagueId is the server-side source of truth for league membership. The
+    # frontend hydrates its store from this (localStorage alone is lost on a new
+    # device / re-login, which otherwise hides the user's league).
+    league_id = (user or {}).get('leagueId') or None
     return build_response(200, {
         'displayName': display_name,
         'identiconSet': identicon_set,
         'uiLanguage': ui_language,
         'timezone': timezone,
+        'leagueId': league_id,
     })
 
 
@@ -560,6 +565,14 @@ def handle_join(event, user_id):
     if user.get('leagueId'):
         return build_response(400, {'error': 'You are already in a league. Leave your current league first.'})
 
+    # Teachers manage leagues; they must never join one as a student member
+    # (that would create an orphaned LeagueMembers row and put the teacher on
+    # their own leaderboard). Block it up front.
+    if _is_teacher(event):
+        return build_response(400, {
+            'error': 'Als Lehrkraft können Sie keiner Liga beitreten. Erstellen Sie stattdessen eine eigene Liga.'
+        })
+
     # Find league by join code
     leagues_table = dynamodb.Table(LEAGUES_TABLE)
     response = leagues_table.query(
@@ -573,6 +586,13 @@ def handle_join(event, user_id):
 
     league = items[0]
     league_id = league['leagueId']
+
+    # Defense in depth: even if the group claim is missing, never let the
+    # league's own teacher join it as a member.
+    if league.get('teacherUserId') == user_id:
+        return build_response(400, {
+            'error': 'Sie sind die Lehrkraft dieser Liga und können ihr nicht beitreten.'
+        })
 
     # Check user is not already a member
     if _is_member(league_id, user_id):

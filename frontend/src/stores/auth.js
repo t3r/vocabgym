@@ -200,6 +200,13 @@ export const useAuthStore = defineStore('auth', () => {
       if (name) {
         setDisplayName(name)
       }
+      // Hydrate league membership from the server record (source of truth).
+      // localStorage alone is lost on a new device / re-login, which otherwise
+      // hides the user's league and makes the join form reappear. The profile
+      // returns leagueId (or null); mirror it exactly, clearing a stale value.
+      if ('leagueId' in (resp?.data || {})) {
+        setLeagueId(resp.data.leagueId || null)
+      }
     } catch {
       // Non-fatal: fall back to any locally stored name / Cognito name.
     }
