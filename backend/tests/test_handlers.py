@@ -474,6 +474,63 @@ class TestLanguageValidation:
         assert get_all_articles('xx') is None
 
 
+class TestLanguageRegistry:
+    """Tests for the generic LANGUAGES registry + SUPPORTED_PAIRS matrix."""
+
+    def test_de_is_registry_entry(self):
+        from lib.languages import LANGUAGES, get_registry_language
+        assert 'de' in LANGUAGES
+        de = get_registry_language('de')
+        assert de['code'] == 'de'
+        assert de['name'] == 'Deutsch'
+        assert de['latinScript'] is True
+
+    def test_registry_contains_all_langs(self):
+        from lib.languages import LANGUAGES
+        assert set(LANGUAGES.keys()) == {'de', 'fr', 'en', 'es', 'it'}
+
+    def test_pairs_reference_existing_langs_and_promptkey(self):
+        from lib.languages import LANGUAGES, SUPPORTED_PAIRS
+        assert len(SUPPORTED_PAIRS) == 4
+        for pair in SUPPORTED_PAIRS:
+            assert pair['source'] in LANGUAGES
+            assert pair['target'] in LANGUAGES
+            assert pair['promptKey']  # non-empty
+
+    def test_current_pairs_are_german_source(self):
+        from lib.languages import SUPPORTED_PAIRS
+        for pair in SUPPORTED_PAIRS:
+            assert pair['source'] == 'de'
+        targets = sorted(p['target'] for p in SUPPORTED_PAIRS)
+        assert targets == ['en', 'es', 'fr', 'it']
+
+    def test_get_pair_and_is_pair_supported(self):
+        from lib.languages import get_pair, is_pair_supported
+        assert is_pair_supported('de', 'fr') is True
+        assert get_pair('de', 'fr')['promptKey'] == 'de-fr'
+        assert is_pair_supported('fr', 'de') is False   # not curated yet
+        assert is_pair_supported('de', 'xx') is False
+        assert get_pair('de', 'xx') is None
+
+    def test_get_articles(self):
+        from lib.languages import get_articles
+        de_articles = get_articles('de')
+        assert 'der' in de_articles and 'ein' in de_articles
+        assert get_articles('xx') is None
+
+    def test_backward_compat_symbols_unchanged(self):
+        from lib.languages import (
+            SOURCE_LANGUAGE, SUPPORTED_LANGUAGES, DEFAULT_TARGET_LANGUAGE,
+        )
+        # Source is still German
+        assert SOURCE_LANGUAGE['code'] == 'de'
+        assert SOURCE_LANGUAGE['name'] == 'Deutsch'
+        # Target map still exactly the 4 target languages (no source lang)
+        assert set(SUPPORTED_LANGUAGES.keys()) == {'fr', 'en', 'es', 'it'}
+        assert 'de' not in SUPPORTED_LANGUAGES
+        assert DEFAULT_TARGET_LANGUAGE == 'fr'
+
+
 # ======================================================================
 # 7. File validation
 # ======================================================================

@@ -130,3 +130,42 @@ describe('getAllArticleGenders', () => {
     expect(Object.keys(genders)).toHaveLength(Object.keys(SOURCE_LANGUAGE.articleGenders).length)
   })
 })
+
+describe('LANGUAGES registry + SUPPORTED_PAIRS', () => {
+  it('registry contains all languages incl. German', async () => {
+    const { LANGUAGES } = await import('@/utils/languages')
+    expect(Object.keys(LANGUAGES).sort()).toEqual(['de', 'en', 'es', 'fr', 'it'])
+    expect(LANGUAGES.de.name).toBe('Deutsch')
+    expect(LANGUAGES.de.latinScript).toBe(true)
+  })
+
+  it('SUPPORTED_PAIRS are curated German-source pairs with promptKeys', async () => {
+    const { SUPPORTED_PAIRS, LANGUAGES } = await import('@/utils/languages')
+    expect(SUPPORTED_PAIRS).toHaveLength(4)
+    for (const p of SUPPORTED_PAIRS) {
+      expect(p.source).toBe('de')
+      expect(LANGUAGES[p.target]).toBeDefined()
+      expect(p.promptKey).toBeTruthy()
+    }
+  })
+
+  it('getPair / isPairSupported work', async () => {
+    const { getPair, isPairSupported } = await import('@/utils/languages')
+    expect(isPairSupported('de', 'fr')).toBe(true)
+    expect(getPair('de', 'fr').promptKey).toBe('de-fr')
+    expect(isPairSupported('fr', 'de')).toBe(false)
+    expect(isPairSupported('de', 'xx')).toBe(false)
+    expect(getPair('de', 'xx')).toBeUndefined()
+  })
+
+  it('getLanguageName resolves German (source) too', async () => {
+    const { getLanguageName, getLanguageFlag } = await import('@/utils/languages')
+    expect(getLanguageName('de')).toBe('Deutsch')
+    expect(getLanguageFlag('de')).toBe('🇩🇪')
+  })
+
+  it('SUPPORTED_LANGUAGES still excludes the source language', () => {
+    expect(Object.keys(SUPPORTED_LANGUAGES).sort()).toEqual(['en', 'es', 'fr', 'it'])
+    expect(SUPPORTED_LANGUAGES.de).toBeUndefined()
+  })
+})
