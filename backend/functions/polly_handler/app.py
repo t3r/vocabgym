@@ -53,6 +53,8 @@ IMAGES_BUCKET = os.environ['IMAGES_BUCKET']
 VOCABSETS_TABLE = os.environ['VOCABSETS_TABLE']
 VOCABITEMS_TABLE = os.environ['VOCABITEMS_TABLE']
 TTS_USAGE_TABLE = os.environ.get('TTS_USAGE_TABLE', '')
+USERS_TABLE = os.environ.get('USERS_TABLE', '')
+LEAGUES_TABLE = os.environ.get('LEAGUES_TABLE', '')
 
 # Supported target languages -> Polly LanguageCode prefix
 LANG_PREFIX = {
@@ -268,14 +270,46 @@ def handle_synthesize(event, user_id):
     if not voice_id:
         return build_response(400, {'error': 'voiceId is required'})
 
-    # Ownership check: the vocab set must exist AND belong to this user
+    # Ownership check: the vocab set must exist AND belong to this user, OR be a
+    # set assigned to the caller's league (league members practise the teacher's
+    # sets). Same owned-or-league resolution as practice_handler — without it,
+    # pronouncing a word in a league set returned a 404 for students.
     vocabsets_table = dynamodb.Table(VOCABSETS_TABLE)
     vs_resp = vocabsets_table.get_item(
         Key={'vocabSetId': vocab_set_id, 'userId': user_id}
     )
     vocab_set = vs_resp.get('Item')
+
     if not vocab_set:
-        return build_response(404, {'error': 'Vocabulary set not found'})
+        # Not owned by caller → resolve via the caller's league deterministically
+        # (fetch league, verify the set is assigned, then load by teacher owner).
+        # Every failure — including any lookup error — returns a uniform 404
+        # (never 403 / cross-owner scan, never a 500 that leaks internals).
+        vocab_set = None
+        try:
+            league_id = None
+            if USERS_TABLE:
+                users_table = dynamodb.Table(USERS_TABLE)
+                user = users_table.get_item(Key={'userId': user_id}).get('Item', {})
+                league_id = user.get('leagueId')
+
+            if league_id and LEAGUES_TABLE:
+                leagues_table = dynamodb.Table(LEAGUES_TABLE)
+                league = leagues_table.get_item(Key={'leagueId': league_id}).get('Item', {})
+                assigned_ids = league.get('vocabSetIds', [])
+                teacher_user_id = league.get('teacherUserId')
+
+                if vocab_set_id in assigned_ids and teacher_user_id:
+                    vs_resp = vocabsets_table.get_item(
+                        Key={'vocabSetId': vocab_set_id, 'userId': teacher_user_id}
+                    )
+                    vocab_set = vs_resp.get('Item')
+        except Exception as e:
+            logger.warning(f'League resolution failed for TTS: {e}')
+            vocab_set = None
+
+        if not vocab_set:
+            return build_response(404, {'error': 'Vocabulary set not found'})
 
     lang = (vocab_set.get('targetLanguage') or '').lower()
     if lang not in LANG_PREFIX:

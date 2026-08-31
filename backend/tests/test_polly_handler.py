@@ -318,3 +318,84 @@ class TestSynthesize:
             'POST', '/tts/synthesize', body={'vocabSetId': 'vs-1'},
         ), None)
         assert resp['statusCode'] == 400
+
+
+# ======================================================================
+# League-set access: a student may synthesize a word from a set assigned
+# to their league (owned by the teacher), not just their own sets.
+# Uses standalone @mock_aws functions (no fixture nesting) to stay stable.
+# ======================================================================
+
+def _load_polly_with_league_tables():
+    """Create all tables (incl. Users + Leagues) and import the handler fresh
+    inside the active mock. Caller must be under @mock_aws."""
+    import importlib
+    os.environ['USERS_TABLE'] = 'test-users'
+    os.environ['LEAGUES_TABLE'] = 'test-leagues'
+    ddb = boto3.resource('dynamodb', region_name='eu-central-1')
+    s3 = boto3.client('s3', region_name='eu-central-1')
+    s3.create_bucket(Bucket=os.environ['IMAGES_BUCKET'],
+                     CreateBucketConfiguration={'LocationConstraint': 'eu-central-1'})
+    for name, keys in (
+        (os.environ['VOCABSETS_TABLE'], [('vocabSetId', 'HASH'), ('userId', 'RANGE')]),
+        (os.environ['VOCABITEMS_TABLE'], [('vocabSetId', 'HASH'), ('itemId', 'RANGE')]),
+        (os.environ['TTS_USAGE_TABLE'], [('userId', 'HASH'), ('windowStart', 'RANGE')]),
+        ('test-users', [('userId', 'HASH')]),
+        ('test-leagues', [('leagueId', 'HASH')]),
+    ):
+        ddb.create_table(
+            TableName=name,
+            KeySchema=[{'AttributeName': k, 'KeyType': t} for k, t in keys],
+            AttributeDefinitions=[{'AttributeName': k, 'AttributeType': 'S'} for k, _ in keys],
+            BillingMode='PAY_PER_REQUEST',
+        )
+    module_path = os.path.join(_backend_dir, 'functions', 'polly_handler', 'app.py')
+    spec = importlib.util.spec_from_file_location('polly_handler_league', module_path)
+    app = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(app)
+    app.dynamodb = ddb
+    app.s3_client = s3
+    polly = MagicMock()
+    polly.describe_voices.return_value = DESCRIBE_VOICES_RESPONSE
+    polly.synthesize_speech.return_value = {'AudioStream': MagicMock(read=lambda: b'MP3DATA')}
+    app.polly_client = polly
+    app._voice_cache.clear()
+    return app, ddb, polly
+
+
+@mock_aws
+def test_league_member_can_synthesize_teacher_set():
+    app, ddb, polly = _load_polly_with_league_tables()
+    # Teacher owns the set; student is in a league that has it assigned.
+    ddb.Table(os.environ['VOCABSETS_TABLE']).put_item(Item={
+        'vocabSetId': 'vs-league', 'userId': 'teacher-1', 'targetLanguage': 'fr'})
+    ddb.Table(os.environ['VOCABITEMS_TABLE']).put_item(Item={
+        'vocabSetId': 'vs-league', 'itemId': 'it-1',
+        'source': 'das Haus', 'target': 'la maison', 'isActive': True})
+    ddb.Table('test-users').put_item(Item={'userId': 'student-1', 'leagueId': 'lg-1'})
+    ddb.Table('test-leagues').put_item(Item={
+        'leagueId': 'lg-1', 'teacherUserId': 'teacher-1', 'vocabSetIds': ['vs-league']})
+
+    resp = app.lambda_handler(_make_event(
+        'POST', '/tts/synthesize', user_id='student-1',
+        body={'vocabSetId': 'vs-league', 'itemId': 'it-1', 'voiceId': 'Celine'},
+    ), None)
+    assert resp['statusCode'] == 200, resp['body']
+    polly.synthesize_speech.assert_called_once()
+
+
+@mock_aws
+def test_non_member_still_gets_404():
+    app, ddb, polly = _load_polly_with_league_tables()
+    ddb.Table(os.environ['VOCABSETS_TABLE']).put_item(Item={
+        'vocabSetId': 'vs-league', 'userId': 'teacher-1', 'targetLanguage': 'fr'})
+    ddb.Table(os.environ['VOCABITEMS_TABLE']).put_item(Item={
+        'vocabSetId': 'vs-league', 'itemId': 'it-1',
+        'source': 'das Haus', 'target': 'la maison', 'isActive': True})
+    ddb.Table('test-users').put_item(Item={'userId': 'outsider'})  # no league
+    resp = app.lambda_handler(_make_event(
+        'POST', '/tts/synthesize', user_id='outsider',
+        body={'vocabSetId': 'vs-league', 'itemId': 'it-1', 'voiceId': 'Celine'},
+    ), None)
+    assert resp['statusCode'] == 404
+    polly.synthesize_speech.assert_not_called()

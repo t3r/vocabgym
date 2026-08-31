@@ -1121,11 +1121,17 @@ Resources:
       Environment:
         Variables:
           TTS_USAGE_TABLE: !Ref TtsUsageTable
+          USERS_TABLE: !Ref UsersTable
+          LEAGUES_TABLE: !Ref LeaguesTable
       Policies:
         - DynamoDBReadPolicy:
             TableName: !Ref VocabSetsTable
         - DynamoDBReadPolicy:
             TableName: !Ref VocabItemsTable
+        - DynamoDBReadPolicy:
+            TableName: !Ref UsersTable
+        - DynamoDBReadPolicy:
+            TableName: !Ref LeaguesTable
         - DynamoDBCrudPolicy:
             TableName: !Ref TtsUsageTable
         - Version: '2012-10-17'
