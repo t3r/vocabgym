@@ -46,6 +46,12 @@ The entire infrastructure runs on AWS using serverless architecture.
              └──────────► Lambda: goal_handler
 
   S3 (images/ upload) ──► EventBridge ──► Lambda: icon_handler (robohash identicons)
+
+  POST /vocab/process ──► extraction_handler (enqueuer, 202) ──► SQS ExtractionQueue
+                                                                      │ (DLQ after 3 tries)
+                                                                      ▼
+                                                        Lambda: extraction_worker
+                                                        (Textract + Bedrock per image)
                           │
                           ├──────► DynamoDB (9 tables)
                           ├──────► S3 Bucket (Images)
@@ -187,9 +193,15 @@ Attributes:
   - title: String
   - sourceImageKey: String (S3 key, first image)
   - imageKeys: List<String> (all image S3 keys for multi-page sets)
+  - sourceLanguage: String (default "de"; prep for non-German source languages)
   - targetLanguage: String (e.g. "fr", "es", "en")
   - extractionStatus: String ("pending" | "processing" | "review" | "approved" | "failed")
   - extractionMethod: String ("textract" | "bedrock_from_text")
+  - pagesTotal / pagesDone / pagesFailed: Number (async extraction progress
+      counters; the worker atomically ADDs done/failed and finalises the set to
+      review/failed when done+failed == total)
+  - processedPages: StringSet (image keys already processed — idempotency guard
+      against SQS at-least-once redelivery)
   - metadata: Map
     └─ chapter: String
     └─ pageNumber: Number
@@ -497,9 +509,30 @@ REGION={AWS::Region}
 **Timeout:** 300 seconds (5 minutes)
 **Trigger:** POST /vocab/process, GET /vocab/extraction/{vocabSetId}
 
-**Purpose:** Two-stage vocabulary extraction pipeline: Textract OCR → Bedrock LLM extraction.
+**Purpose:** Asynchronous two-stage vocabulary extraction: Textract OCR → Bedrock
+LLM extraction. **The heavy work is decoupled from the API request via SQS** so
+multi-image uploads never hit the API Gateway 29s limit.
 
-**Extraction Pipeline:**
+**Async architecture:**
+- `POST /vocab/process` is an **enqueuer**: verifies ownership, applies the
+  per-image daily rate limit, initialises the set's page counters
+  (`pagesTotal`/`pagesDone`/`pagesFailed`), sets status `processing`, sends
+  **one SQS message per image** to `ExtractionQueue`, and returns **202** with
+  `{vocabSetId, status:'processing', pagesTotal}` immediately.
+- `ExtractionWorkerFunction` (handler `worker.lambda_handler`, SQS-triggered,
+  BatchSize 1, MaximumConcurrency 5 to avoid Bedrock throttling) consumes the
+  queue. Per message it runs `process_single_image` (the Textract+Bedrock
+  pipeline below) and then `record_page_result`, which atomically ADDs
+  `pagesDone`/`pagesFailed` and finalises the set to `review` (≥1 page produced)
+  or `failed` (all pages failed). Idempotent against SQS at-least-once redelivery
+  via a `processedPages` string-set claim.
+- `ExtractionQueue` VisibilityTimeout = 1800s (6× worker timeout); failures
+  redrive to `ExtractionDLQ` after `maxReceiveCount: 3`.
+- `GET /vocab/extraction/{vocabSetId}` returns the page counters so the frontend
+  shows live "Seite X von Y" progress and the dashboard shows a status badge.
+- Partial failures keep the set reviewable (successful pages preserved).
+
+**Extraction Pipeline (per image, in the worker):**
 
 1. **Stage 1 — Textract OCR:**
    - Call `textract.analyze_document` with `FeatureTypes=['TABLES']`
@@ -513,22 +546,35 @@ REGION={AWS::Region}
    - If Bedrock returns >= as many pairs as Textract table parsing, use Bedrock results (extraction_method = "bedrock_from_text")
    - If extraction came from Textract table parsing, additionally verify/clean with `verify_with_bedrock()`
 
-3. **Store results:** Batch write VocabItems to DynamoDB. Update VocabSet status and itemCount (ADD for multi-page support).
+3. **Store results:** Batch write VocabItems to DynamoDB. Update VocabSet itemCount (ADD for multi-page support).
 
-**Bedrock Configuration:**
+**Guardrail + Converse call structure:** The developer instructions and the
+untrusted OCR data are sent as **separate content blocks**; only the OCR data is
+tagged with the `guard_content` qualifier so the PROMPT_ATTACK filter evaluates
+just the user data (developer prompt exempt). The guardrail's **content filters
+are INPUT-only** (`OutputStrength: NONE`) because the model output is structured
+vocabulary JSON — output moderation only produced false positives (e.g.
+MISCONDUCT blocking harmless vocab). Guardrail trace is enabled and logged on
+`guardrail_intervened`.
+
 ```python
 bedrock_client.converse(
     modelId='eu.amazon.nova-pro-v1:0',
-    messages=[{'role': 'user', 'content': [{'text': prompt}]}],
-    inferenceConfig={'maxTokens': 4096}
+    messages=[{'role': 'user', 'content': [
+        {'text': instruction},
+        {'guardContent': {'text': {'text': ocr_data, 'qualifiers': ['guard_content']}}},
+    ]}],
+    inferenceConfig={'maxTokens': 4096},
+    guardrailConfig={'guardrailIdentifier': ..., 'guardrailVersion': ..., 'trace': 'enabled'},
 )
 ```
 
-**IAM Permissions:**
+**IAM Permissions (handler + worker):**
 - S3: GetObject on images bucket
 - DynamoDB: CRUD on VocabSets, VocabItems
 - Textract: AnalyzeDocument, DetectDocumentText
-- Bedrock: InvokeModel on foundation-model/* and inference-profile/*
+- Bedrock: InvokeModel on foundation-model/* and inference-profile/*, ApplyGuardrail
+- Handler additionally: `sqs:SendMessage` to ExtractionQueue; Worker: SQS consume via event mapping
 
 **Note:** Extraction prompts are stored in SSM Parameter Store and can be updated without redeployment.
 
@@ -1012,22 +1058,24 @@ DynamoDB returns numbers as `Decimal` type in Python. Always use `json.dumps(dat
 // POST /vocab/process - Request
 {
   "vocabSetId": "uuid",
-  "imageKey": "s3-key"  // optional, fetched from DB if missing
+  "imageKey": "s3-key"  // optional; if omitted, ALL pages of the set are processed
 }
 
-// Response
+// Response — 202 Accepted (async; work continues in the worker)
+{
+  "vocabSetId": "uuid",
+  "status": "processing",
+  "pagesTotal": 3
+}
+
+// GET /vocab/extraction/{vocabSetId} - Response (polling source)
 {
   "vocabSetId": "uuid",
   "status": "review",
   "itemCount": 24,
-  "extractionMethod": "bedrock_from_text"
-}
-
-// GET /vocab/extraction/{vocabSetId} - Response
-{
-  "vocabSetId": "uuid",
-  "status": "review",
-  "itemCount": 24,
+  "pagesTotal": 3,
+  "pagesDone": 3,
+  "pagesFailed": 0,
   "items": [
     {
       "itemId": "uuid",

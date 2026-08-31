@@ -213,6 +213,13 @@ Workflows use OIDC (no long-lived AWS credentials). Each environment (`dev`, `pr
 - `CERTIFICATE_ARN` — ACM certificate ARN
 - `HOSTED_ZONE_ID` — Route 53 hosted zone ID
 
+> **Deploy-role note:** The async extraction stack adds SQS resources
+> (`ExtractionQueue`, `ExtractionDLQ`) and an SQS→Lambda event source mapping.
+> The OIDC deploy role must allow `sqs:CreateQueue`, `sqs:DeleteQueue`,
+> `sqs:GetQueueAttributes`, `sqs:SetQueueAttributes`, `sqs:TagQueue` and
+> `lambda:CreateEventSourceMapping`/`Update`/`Delete` (usually covered by the
+> broad CloudFormation deploy policy; verify on first deploy of this change).
+
 **Prod release:**
 ```bash
 git tag v1.0.0

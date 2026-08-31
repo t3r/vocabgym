@@ -79,7 +79,7 @@ vocabgym/
 │   ├── template.yaml         # CloudFormation (alle Ressourcen)
 │   ├── functions/
 │   │   ├── upload_handler/       # S3 Presigned URLs
-│   │   ├── extraction_handler/   # Textract + Bedrock Pipeline
+│   │   ├── extraction_handler/   # Textract + Bedrock Pipeline (async: Enqueuer app.py + Worker worker.py via SQS)
 │   │   ├── vocab_crud_handler/   # CRUD für Vokabelsets
 │   │   ├── practice_handler/     # Übungen + Smart Repetition
 │   │   ├── progress_handler/     # Fortschrittsstatistiken
