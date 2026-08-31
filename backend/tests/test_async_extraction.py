@@ -147,6 +147,47 @@ def test_enqueue_sends_one_message_per_page_and_returns_202():
 
 
 @mock_aws
+def test_enqueue_dedupes_duplicate_image_keys():
+    """Legacy sets may hold duplicate imageKeys. The enqueuer must dedupe them
+    so pagesTotal equals the number of UNIQUE keys and one message is sent per
+    unique key (otherwise the worker's idempotency guard skips duplicates and
+    the set stalls with pagesDone < pagesTotal)."""
+    import uuid
+    ddb = boto3.resource('dynamodb', region_name='eu-central-1')
+    _make_tables(ddb)
+    sqs = boto3.client('sqs', region_name='eu-central-1')
+    qurl = sqs.create_queue(QueueName='ax-queue')['QueueUrl']
+
+    set_id = str(uuid.uuid4())
+    dup = f'images/u1/{set_id}/111-original.jpg'
+    other = f'images/u1/{set_id}/222-original.jpg'
+    # Three entries, only two unique (the exact prod failure shape).
+    ddb.Table('ax-vocabsets').put_item(Item={
+        'vocabSetId': set_id, 'userId': 'u1',
+        'imageKeys': [dup, dup, other], 'sourceImageKey': dup,
+        'extractionStatus': 'pending', 'targetLanguage': 'fr',
+    })
+
+    app = _load(_APP_PATH, 'app', {**_ENV, 'EXTRACTION_QUEUE_URL': qurl})
+    resp = app.handle_process(_api_event({'vocabSetId': set_id}), 'u1')
+    assert resp['statusCode'] == 202
+    assert json.loads(resp['body'])['pagesTotal'] == 2  # unique count, not 3
+
+    # Drain the queue (SQS may return fewer than requested per call).
+    bodies = []
+    for _ in range(5):
+        got = sqs.receive_message(QueueUrl=qurl, MaxNumberOfMessages=10, WaitTimeSeconds=0).get('Messages', [])
+        if not got:
+            break
+        bodies.extend(m['Body'] for m in got)
+    keys = sorted(json.loads(b)['imageKey'] for b in bodies)
+    assert keys == sorted([dup, other])  # exactly the two unique keys
+
+    item = ddb.Table('ax-vocabsets').get_item(Key={'vocabSetId': set_id, 'userId': 'u1'})['Item']
+    assert int(item['pagesTotal']) == 2
+
+
+@mock_aws
 def test_enqueue_foreign_set_returns_404():
     import uuid
     ddb = boto3.resource('dynamodb', region_name='eu-central-1')

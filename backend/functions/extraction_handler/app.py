@@ -574,6 +574,13 @@ def handle_process(event, user_id):
         image_keys = item.get('imageKeys') or (
             [item['sourceImageKey']] if item.get('sourceImageKey') else []
         )
+
+    # Deduplicate while preserving order. Distinct keys are guaranteed by the
+    # upload handler now, but older sets may hold duplicate keys; enqueuing the
+    # same key twice would be skipped by the worker's idempotency guard and leave
+    # pagesDone < pagesTotal forever. So pagesTotal must equal the number of
+    # UNIQUE keys we actually enqueue.
+    image_keys = list(dict.fromkeys(image_keys))
     if not image_keys:
         return build_response(400, {'error': 'No image associated with this vocabulary set'})
 

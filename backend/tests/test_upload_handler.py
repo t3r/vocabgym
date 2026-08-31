@@ -327,3 +327,28 @@ def test_upload_rejects_unsupported_pair(aws_resources):
     response = app.lambda_handler(event, None)
     assert response['statusCode'] == 400
     assert 'nicht unterstützt' in json.loads(response['body'])['error']
+
+
+def test_upload_keys_are_unique_within_same_second(aws_resources):
+    """Two images added to the SAME set must get DISTINCT S3 keys even when the
+    second-precision timestamp is identical (fast multi-image batch). A shared
+    key previously caused images to overwrite each other and stalled async
+    extraction (imageKeys held duplicates)."""
+    app = _load_upload_app()
+
+    # First image creates the set.
+    r1 = app.lambda_handler(create_api_gateway_event(
+        body={'fileName': 'a.jpg', 'contentType': 'image/jpeg'}), None)
+    assert r1['statusCode'] == 200
+    b1 = json.loads(r1['body'])
+    set_id = b1['vocabSetId']
+
+    # Second image added to the same set (same user, likely same second).
+    r2 = app.lambda_handler(create_api_gateway_event(
+        body={'fileName': 'b.jpg', 'contentType': 'image/jpeg', 'vocabSetId': set_id}), None)
+    assert r2['statusCode'] == 200
+    b2 = json.loads(r2['body'])
+
+    assert b1['imageKey'] != b2['imageKey'], 'image keys must be distinct'
+    # Both keys stay well under the S3 1024-byte limit.
+    assert len(b1['imageKey']) < 200 and len(b2['imageKey']) < 200

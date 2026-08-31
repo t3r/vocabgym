@@ -127,7 +127,14 @@ def lambda_handler(event, context):
         # like "evil.jpg.exe" cannot place an unexpected extension in the key.
         raw_ext = file_name.rsplit('.', 1)[-1].lower() if '.' in file_name else ''
         extension = raw_ext if raw_ext in ('jpg', 'jpeg', 'png') else 'jpg'
-        image_key = f"images/{user_id}/{vocab_set_id}/{timestamp}-original.{extension}"
+        # Add a short random segment so several images uploaded within the SAME
+        # second (fast multi-image batch) get DISTINCT keys. A second-precision
+        # timestamp alone collided -> images overwrote each other in S3 and the
+        # set's imageKeys held duplicates, which stalled async extraction.
+        # 8 hex chars is plenty of entropy per (user, set, second) and keeps the
+        # key well under S3's 1024-byte limit (total key ~100 chars).
+        unique = generate_uuid().replace('-', '')[:8]
+        image_key = f"images/{user_id}/{vocab_set_id}/{timestamp}-{unique}-original.{extension}"
 
         # Generate presigned URL for direct upload
         presigned_url = s3_client.generate_presigned_url(
