@@ -272,3 +272,58 @@ def test_upload_no_auth(aws_resources):
 
     response = app.lambda_handler(event, None)
     assert response['statusCode'] == 400
+
+
+def test_upload_defaults_source_language_to_de(aws_resources):
+    """A new set without sourceLanguage stores 'de' (German default)."""
+    app = _load_upload_app()
+
+    event = create_api_gateway_event(
+        body={'fileName': 'p.jpg', 'contentType': 'image/jpeg'}
+    )
+    response = app.lambda_handler(event, None)
+    assert response['statusCode'] == 200
+    vocab_set_id = json.loads(response['body'])['vocabSetId']
+
+    table = aws_resources['dynamodb'].Table('test-vocabsets-table')
+    item = table.get_item(
+        Key={'vocabSetId': vocab_set_id, 'userId': 'test-user-123'}
+    )['Item']
+    assert item['sourceLanguage'] == 'de'
+
+
+def test_upload_stores_explicit_source_language(aws_resources):
+    """An explicit supported pair (de->fr) is stored."""
+    app = _load_upload_app()
+
+    event = create_api_gateway_event(
+        body={
+            'fileName': 'p.jpg', 'contentType': 'image/jpeg',
+            'sourceLanguage': 'de', 'targetLanguage': 'fr',
+        }
+    )
+    response = app.lambda_handler(event, None)
+    assert response['statusCode'] == 200
+    vocab_set_id = json.loads(response['body'])['vocabSetId']
+
+    table = aws_resources['dynamodb'].Table('test-vocabsets-table')
+    item = table.get_item(
+        Key={'vocabSetId': vocab_set_id, 'userId': 'test-user-123'}
+    )['Item']
+    assert item['sourceLanguage'] == 'de'
+    assert item['targetLanguage'] == 'fr'
+
+
+def test_upload_rejects_unsupported_pair(aws_resources):
+    """An unsupported source->target pair (e.g. fr->de, not curated) → 400."""
+    app = _load_upload_app()
+
+    event = create_api_gateway_event(
+        body={
+            'fileName': 'p.jpg', 'contentType': 'image/jpeg',
+            'sourceLanguage': 'fr', 'targetLanguage': 'de',
+        }
+    )
+    response = app.lambda_handler(event, None)
+    assert response['statusCode'] == 400
+    assert 'nicht unterstützt' in json.loads(response['body'])['error']

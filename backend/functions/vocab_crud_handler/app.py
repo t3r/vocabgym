@@ -217,6 +217,7 @@ def handle_list(event, user_id):
             'lastPracticedAt': last_practiced,
             'identiconSet': icon_set,
             'identiconUrl': _list_identicon_url(vs, icon_set),
+            'sourceLanguage': vs.get('sourceLanguage', 'de'),
         })
 
     logger.info(json.dumps({
@@ -368,6 +369,9 @@ def handle_get(event, user_id):
     # Include targetLanguage if it exists on the vocab set
     if vocab_set.get('targetLanguage'):
         response_body['targetLanguage'] = vocab_set['targetLanguage']
+
+    # Source language: existing sets have no field → default to German.
+    response_body['sourceLanguage'] = vocab_set.get('sourceLanguage', 'de')
 
     return build_response(200, response_body)
 

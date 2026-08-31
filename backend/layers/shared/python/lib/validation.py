@@ -180,3 +180,27 @@ def validate_uuid(value, field_name="ID"):
     if not value or not uuid_pattern.match(value):
         return False, f"Invalid {field_name} format"
     return True, None
+
+
+def validate_language_pair(source_language, target_language):
+    """Validate a source->target language combination.
+
+    A missing/empty target language is allowed (language may be chosen later).
+    When both are given, the combination must be a curated, supported pair.
+    Source defaults to German ('de') when empty.
+
+    Args:
+        source_language: Source language code (may be empty → 'de')
+        target_language: Target language code (may be empty → no check)
+
+    Returns:
+        tuple: (is_valid, error_message)
+    """
+    from lib.languages import is_pair_supported
+
+    src = source_language or 'de'
+    if not target_language:
+        return True, None
+    if not is_pair_supported(src, target_language):
+        return False, f"Sprachkombination {src}->{target_language} wird nicht unterstützt"
+    return True, None

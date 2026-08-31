@@ -219,3 +219,63 @@ def test_delete_removes_all_originals_and_identicons():
     assert s3.list_objects_v2(Bucket='vc-images', Prefix='identicons/').get('Contents', []) == []
     # Set record gone
     assert 'Item' not in vocabsets.get_item(Key={'vocabSetId': set_id, 'userId': 'u1'})
+
+
+@mock_aws
+def test_get_defaults_source_language_to_de_for_legacy_set():
+    """A pre-existing set with no sourceLanguage field must read back as 'de'
+    (migration-free backward compatibility)."""
+    import uuid
+    region = 'eu-central-1'
+    set_id = str(uuid.uuid4())
+    s3 = boto3.client('s3', region_name=region)
+    s3.create_bucket(
+        Bucket='vc-images',
+        CreateBucketConfiguration={'LocationConstraint': region},
+    )
+    dynamodb = boto3.resource('dynamodb', region_name=region)
+    vocabsets = dynamodb.create_table(
+        TableName='vc-vocabsets',
+        KeySchema=[
+            {'AttributeName': 'vocabSetId', 'KeyType': 'HASH'},
+            {'AttributeName': 'userId', 'KeyType': 'RANGE'},
+        ],
+        AttributeDefinitions=[
+            {'AttributeName': 'vocabSetId', 'AttributeType': 'S'},
+            {'AttributeName': 'userId', 'AttributeType': 'S'},
+        ],
+        BillingMode='PAY_PER_REQUEST',
+    )
+    dynamodb.create_table(
+        TableName='vc-vocabitems',
+        KeySchema=[
+            {'AttributeName': 'vocabSetId', 'KeyType': 'HASH'},
+            {'AttributeName': 'itemId', 'KeyType': 'RANGE'},
+        ],
+        AttributeDefinitions=[
+            {'AttributeName': 'vocabSetId', 'AttributeType': 'S'},
+            {'AttributeName': 'itemId', 'AttributeType': 'S'},
+        ],
+        BillingMode='PAY_PER_REQUEST',
+    )
+
+    # Legacy set: NO sourceLanguage field, has a targetLanguage
+    vocabsets.put_item(Item={
+        'vocabSetId': set_id, 'userId': 'u1', 'title': 'Alt',
+        'sourceImageKey': 'x', 'imageKeys': ['x'],
+        'extractionStatus': 'approved', 'itemCount': 0, 'metadata': {},
+        'targetLanguage': 'fr',
+    })
+
+    vc = _load(_VC_PATH, 'vc_app_srclang', _ENV)
+    event = {
+        'httpMethod': 'GET',
+        'pathParameters': {'vocabSetId': set_id},
+        'requestContext': {'authorizer': {'claims': {'sub': 'u1'}}},
+    }
+    resp = vc.lambda_handler(event, None)
+    assert resp['statusCode'] == 200
+    import json as _json
+    body = _json.loads(resp['body'])
+    assert body['sourceLanguage'] == 'de'
+    assert body['targetLanguage'] == 'fr'

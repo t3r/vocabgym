@@ -14,7 +14,7 @@ from lib.utils import (
     get_timestamp,
     parse_body,
 )
-from lib.validation import validate_file_upload
+from lib.validation import validate_file_upload, validate_language_pair
 from lib.plans import get_plan_set_limit, try_reserve_set_slot, release_set_slot, DEFAULT_PLAN
 
 logger = logging.getLogger()
@@ -76,10 +76,19 @@ def lambda_handler(event, context):
         content_type = body.get('contentType', '')
         existing_vocab_set_id = body.get('vocabSetId')
         target_language = body.get('targetLanguage', '')
+        # Source language is German by default; explicit value allows other
+        # (curated) source languages later without breaking existing sets.
+        source_language = body.get('sourceLanguage', '') or 'de'
 
         is_valid, error_msg = validate_file_upload(file_name, content_type)
         if not is_valid:
             return build_response(400, {'error': error_msg})
+
+        # If a target language is specified, the source->target combination must
+        # be a curated, supported pair. (No target yet = language chosen later.)
+        pair_ok, pair_err = validate_language_pair(source_language, target_language)
+        if not pair_ok:
+            return build_response(400, {'error': pair_err})
 
         # Use existing vocabSetId or generate new one
         if existing_vocab_set_id:
@@ -146,6 +155,9 @@ def lambda_handler(event, context):
                 'updatedAt': timestamp,
                 'itemCount': 0,
             }
+            # Persist source language (default 'de'). Existing sets without this
+            # field read back as 'de' — no migration needed.
+            item_data['sourceLanguage'] = source_language
             if target_language:
                 item_data['targetLanguage'] = target_language
             try:
