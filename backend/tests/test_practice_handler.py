@@ -381,3 +381,142 @@ class TestSessionLengthCap:
         resp = app.handle_start(_start_event('set-small', 'u1'), 'u1')
         assert resp['statusCode'] == 200
         assert json.loads(resp['body'])['totalQuestions'] == 6
+
+
+
+# ======================================================================
+# handle_complete: must not crash and must update league stats.
+# Regression for the prod NameError: _update_league_stats was called but its
+# definition had been removed (commit 68957eb) -> every /practice/complete
+# returned 500, league points/streak were never written. This end-to-end test
+# would have caught it (there was no handle_complete test at all before).
+# ======================================================================
+
+os.environ['LEAGUES_TABLE'] = 'test-leagues-table'
+os.environ['LEAGUE_MEMBERS_TABLE'] = 'test-league-members-table'
+os.environ['USERS_TABLE'] = 'test-users-table'
+
+
+def _load_practice_app_full():
+    for k, v in {
+        'LEAGUES_TABLE': 'test-leagues-table',
+        'LEAGUE_MEMBERS_TABLE': 'test-league-members-table',
+        'USERS_TABLE': 'test-users-table',
+    }.items():
+        os.environ[k] = v
+    spec = importlib.util.spec_from_file_location('practice_app_complete', _PRACTICE_APP_PATH)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _make_all_tables(ddb):
+    _make_tables(ddb)  # vocabsets, vocabitems, sessions, progress
+    ddb.create_table(
+        TableName='test-users-table',
+        KeySchema=[{'AttributeName': 'userId', 'KeyType': 'HASH'}],
+        AttributeDefinitions=[{'AttributeName': 'userId', 'AttributeType': 'S'}],
+        BillingMode='PAY_PER_REQUEST',
+    )
+    ddb.create_table(
+        TableName='test-leagues-table',
+        KeySchema=[{'AttributeName': 'leagueId', 'KeyType': 'HASH'}],
+        AttributeDefinitions=[{'AttributeName': 'leagueId', 'AttributeType': 'S'}],
+        BillingMode='PAY_PER_REQUEST',
+    )
+    ddb.create_table(
+        TableName='test-league-members-table',
+        KeySchema=[
+            {'AttributeName': 'leagueId', 'KeyType': 'HASH'},
+            {'AttributeName': 'userId', 'KeyType': 'RANGE'},
+        ],
+        AttributeDefinitions=[
+            {'AttributeName': 'leagueId', 'AttributeType': 'S'},
+            {'AttributeName': 'userId', 'AttributeType': 'S'},
+        ],
+        BillingMode='PAY_PER_REQUEST',
+    )
+
+
+def _complete_event(user_id, session_id):
+    return {
+        'httpMethod': 'POST',
+        'path': '/practice/complete',
+        'requestContext': {'authorizer': {'claims': {'sub': user_id}}},
+        'body': json.dumps({'sessionId': session_id}),
+    }
+
+
+class TestCompleteSession:
+    @mock_aws
+    def test_complete_updates_league_stats_and_returns_200(self):
+        _reset_moto_creds()
+        ddb = boto3.resource('dynamodb', region_name='eu-central-1')
+        _make_all_tables(ddb)
+        app = _load_practice_app_full()
+        app.dynamodb = ddb
+
+        uid, set_id, sid, lid = 'u-alexa', 'set-1', 'sess-1', 'lg-1'
+        # League member (starts at zero) — the leaderboard row that must update.
+        ddb.Table('test-users-table').put_item(Item={'userId': uid, 'leagueId': lid})
+        ddb.Table('test-leagues-table').put_item(Item={
+            'leagueId': lid, 'teacherUserId': 'teacher', 'vocabSetIds': [set_id]})
+        ddb.Table('test-league-members-table').put_item(Item={
+            'leagueId': lid, 'userId': uid, 'displayName': 'Alexa',
+            'totalCorrect': 0, 'totalAttempts': 0, 'weeklyCorrect': 0,
+            'currentStreak': 0, 'weekStartDate': '', 'lastPracticeDate': ''})
+        ddb.Table('test-vocabitems-table').put_item(Item={
+            'vocabSetId': set_id, 'itemId': 'i1', 'source': 'Haus', 'target': 'maison',
+            'isActive': True})
+        # An active session with detailed results to finalise.
+        ddb.Table('test-sessions-table').put_item(Item={
+            'userId': uid, 'sessionId': sid, 'vocabSetId': set_id, 'status': 'active',
+            'startedAt': 1000, 'mode': 'practice',
+            'detailedResults': [
+                {'itemId': 'i1', 'question': 'Haus', 'correctAnswer': 'maison',
+                 'userAnswer': 'maison', 'correct': True},
+            ],
+        })
+
+        resp = app.handle_complete(_complete_event(uid, sid), uid)
+
+        # Must NOT be a 500 (the NameError regression).
+        assert resp['statusCode'] == 200, resp
+        body = json.loads(resp['body'])
+        assert 'leagueUpdate' in body and body['leagueUpdate'] is not None
+        assert body['leagueUpdate']['totalCorrect'] == 1
+
+        # League member row was actually written.
+        member = ddb.Table('test-league-members-table').get_item(
+            Key={'leagueId': lid, 'userId': uid}).get('Item')
+        assert int(member['totalCorrect']) == 1
+        assert int(member['totalAttempts']) == 1
+        assert int(member['currentStreak']) == 1
+        assert member['lastPracticeDate'] != ''
+
+    @mock_aws
+    def test_complete_without_league_still_succeeds(self):
+        _reset_moto_creds()
+        ddb = boto3.resource('dynamodb', region_name='eu-central-1')
+        _make_all_tables(ddb)
+        app = _load_practice_app_full()
+        app.dynamodb = ddb
+
+        uid, set_id, sid = 'u-solo', 'set-2', 'sess-2'
+        ddb.Table('test-users-table').put_item(Item={'userId': uid})  # no leagueId
+        ddb.Table('test-vocabitems-table').put_item(Item={
+            'vocabSetId': set_id, 'itemId': 'i1', 'source': 'Haus', 'target': 'maison',
+            'isActive': True})
+        ddb.Table('test-sessions-table').put_item(Item={
+            'userId': uid, 'sessionId': sid, 'vocabSetId': set_id, 'status': 'active',
+            'startedAt': 1000, 'mode': 'practice',
+            'detailedResults': [
+                {'itemId': 'i1', 'question': 'Haus', 'correctAnswer': 'maison',
+                 'userAnswer': 'x', 'correct': False},
+            ],
+        })
+
+        resp = app.handle_complete(_complete_event(uid, sid), uid)
+        assert resp['statusCode'] == 200, resp
+        # No league → no leagueUpdate, but the call still succeeds.
+        assert json.loads(resp['body']).get('leagueUpdate') is None
