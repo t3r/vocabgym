@@ -15,6 +15,18 @@
       <p class="text-3xl font-bold text-gray-900 dark:text-white">
         {{ question.question || ((direction === 'de-fr' || direction === 'source-target') ? (question.source || question.german) : (question.target || question.french)) }}
       </p>
+
+      <!-- AI comic thumbnail illustrating the word's meaning. A learning aid,
+           so it is hidden in exam mode (like Vorsagen / the solution). Shown
+           only once a URL resolves; nothing is rendered while pending/failed. -->
+      <div v-if="!examMode && thumbnailUrl" class="mt-4 flex justify-center">
+        <img
+          :src="thumbnailUrl"
+          alt="Bild zum Wort"
+          class="w-32 h-32 rounded-lg object-cover shadow-sm bg-gray-50 dark:bg-gray-700"
+          loading="lazy"
+        />
+      </div>
     </div>
 
     <!-- Answer Input -->
@@ -184,6 +196,7 @@ import FeedbackDisplay from './FeedbackDisplay.vue'
 import PronounceButton from './PronounceButton.vue'
 import { getLanguageName, getAllArticleGenders } from '@/utils/languages'
 import { pronounceWithStoredVoice } from '@/services/tts'
+import { fetchThumbnail } from '@/services/thumbnail'
 import { useToast } from '@/composables/useToast'
 
 const props = defineProps({
@@ -214,6 +227,26 @@ function onKeydown(e) {
 
 onMounted(() => window.addEventListener('keydown', onKeydown))
 onUnmounted(() => window.removeEventListener('keydown', onKeydown))
+
+// AI comic thumbnail illustrating the current word's meaning. Loaded lazily per
+// question; only in practice mode (a picture of the meaning is a hint, so it is
+// suppressed in exam mode). Failures/pending resolve to null → no image shown.
+const thumbnailUrl = ref(null)
+
+async function loadThumbnail() {
+  thumbnailUrl.value = null
+  if (props.examMode) return
+  const { itemId, vocabSetId } = props.question || {}
+  if (!itemId || !vocabSetId) return
+  const requestedId = itemId
+  const url = await fetchThumbnail({ vocabSetId, itemId })
+  // Guard against a late response arriving after the question already changed.
+  if (url && props.question?.itemId === requestedId) {
+    thumbnailUrl.value = url
+  }
+}
+
+onMounted(loadThumbnail)
 
 const showingHint = ref(false)
 const showingNote = ref(false)
@@ -302,6 +335,7 @@ function showHint() {
 watch(() => props.question?.questionId, () => {
   showingHint.value = false
   showingNote.value = false
+  loadThumbnail()
 })
 </script>
 
