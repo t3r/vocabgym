@@ -116,10 +116,15 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   async function checkTokenExpiry() {
-    if (!accessToken.value) return
+    // The app authenticates with the ID token (it carries cognito:groups and is
+    // what the API client sends), so expiry must be checked against the ID
+    // token — not the access token — otherwise a valid-looking access token
+    // masks an expired ID token and the first request 401s.
+    const token = idToken.value || accessToken.value
+    if (!token) return
 
     try {
-      const payload = JSON.parse(atob(accessToken.value.split('.')[1]))
+      const payload = JSON.parse(atob(token.split('.')[1]))
       const expiresAt = payload.exp * 1000
       const now = Date.now()
       const fiveMinutes = 5 * 60 * 1000
