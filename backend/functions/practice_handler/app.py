@@ -41,7 +41,11 @@ USERS_TABLE = os.environ.get('USERS_TABLE', '')
 SESSION_TTL_DAYS = 90
 
 # Smart Repetition defaults
-DEFAULT_SESSION_LENGTH = 20   # questions per session when client doesn't specify
+# A training unit is capped at 10 word pairs: long sets (several dozen words)
+# take too long in one go. The weighted selection still fills these 10 slots
+# from the whole set, so weak words are prioritised across the entire set.
+MAX_SESSION_LENGTH = 10       # hard cap on questions per session
+DEFAULT_SESSION_LENGTH = 10   # questions per session when client doesn't specify
 MAX_REPEATS_PER_ITEM = 3      # max times one word can appear in a single session
 
 
@@ -173,7 +177,13 @@ def handle_start(event, user_id):
     # ordering). Weak words are far more likely and may appear multiple times in
     # one session; mastered words are strongly under-weighted but never fully
     # excluded, so they still get occasional refreshes (avoid forgetting).
-    session_length = question_count or min(DEFAULT_SESSION_LENGTH, len(active_items))
+    #
+    # A training unit holds at most MAX_SESSION_LENGTH (10) word pairs. The cap
+    # is enforced server-side even if the client asks for more, so long sets are
+    # split into short units while the weighted draw still picks the 10 from the
+    # whole set (weak words first).
+    requested = question_count or DEFAULT_SESSION_LENGTH
+    session_length = min(requested, MAX_SESSION_LENGTH, len(active_items))
     selected_items = _select_items_weighted(active_items, user_id, vocab_set_id, session_length)
 
     # Load progress to flag words that were never answered correctly ("new"),

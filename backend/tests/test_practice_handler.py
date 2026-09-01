@@ -222,3 +222,162 @@ class TestPracticeHandlerIntegration:
             'questionCount': 0,
         })
         assert valid is False
+
+
+
+# ======================================================================
+# Session length cap: a training unit holds at most 10 word pairs.
+# ======================================================================
+
+import importlib.util
+
+import boto3
+from moto import mock_aws
+
+_PRACTICE_APP_PATH = os.path.join(
+    os.path.dirname(__file__), '..', 'functions', 'practice_handler', 'app.py'
+)
+
+
+def _reset_moto_creds():
+    for _k in (
+        'AWS_SESSION_TOKEN', 'AWS_SECURITY_TOKEN', 'AWS_CREDENTIAL_EXPIRATION',
+        'AWS_SESSION_EXPIRATION', 'AWS_PROFILE',
+    ):
+        os.environ.pop(_k, None)
+    os.environ['AWS_ACCESS_KEY_ID'] = 'testing'
+    os.environ['AWS_SECRET_ACCESS_KEY'] = 'testing'
+    os.environ['AWS_DEFAULT_REGION'] = 'eu-central-1'
+
+
+def _load_practice_app():
+    spec = importlib.util.spec_from_file_location('practice_app_cap', _PRACTICE_APP_PATH)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _make_tables(ddb):
+    ddb.create_table(
+        TableName='test-vocabsets-table',
+        KeySchema=[
+            {'AttributeName': 'vocabSetId', 'KeyType': 'HASH'},
+            {'AttributeName': 'userId', 'KeyType': 'RANGE'},
+        ],
+        AttributeDefinitions=[
+            {'AttributeName': 'vocabSetId', 'AttributeType': 'S'},
+            {'AttributeName': 'userId', 'AttributeType': 'S'},
+        ],
+        BillingMode='PAY_PER_REQUEST',
+    )
+    ddb.create_table(
+        TableName='test-vocabitems-table',
+        KeySchema=[
+            {'AttributeName': 'vocabSetId', 'KeyType': 'HASH'},
+            {'AttributeName': 'itemId', 'KeyType': 'RANGE'},
+        ],
+        AttributeDefinitions=[
+            {'AttributeName': 'vocabSetId', 'AttributeType': 'S'},
+            {'AttributeName': 'itemId', 'AttributeType': 'S'},
+        ],
+        BillingMode='PAY_PER_REQUEST',
+    )
+    ddb.create_table(
+        TableName='test-sessions-table',
+        KeySchema=[
+            {'AttributeName': 'userId', 'KeyType': 'HASH'},
+            {'AttributeName': 'sessionId', 'KeyType': 'RANGE'},
+        ],
+        AttributeDefinitions=[
+            {'AttributeName': 'userId', 'AttributeType': 'S'},
+            {'AttributeName': 'sessionId', 'AttributeType': 'S'},
+        ],
+        BillingMode='PAY_PER_REQUEST',
+    )
+    ddb.create_table(
+        TableName='test-progress-table',
+        KeySchema=[
+            {'AttributeName': 'progressKey', 'KeyType': 'HASH'},
+            {'AttributeName': 'itemId', 'KeyType': 'RANGE'},
+        ],
+        AttributeDefinitions=[
+            {'AttributeName': 'progressKey', 'AttributeType': 'S'},
+            {'AttributeName': 'itemId', 'AttributeType': 'S'},
+        ],
+        BillingMode='PAY_PER_REQUEST',
+    )
+
+
+def _seed_set(ddb, set_id, user_id, n_items):
+    ddb.Table('test-vocabsets-table').put_item(Item={
+        'vocabSetId': set_id, 'userId': user_id, 'title': 'Big set',
+        'extractionStatus': 'approved', 'itemCount': n_items,
+    })
+    items_table = ddb.Table('test-vocabitems-table')
+    for i in range(n_items):
+        items_table.put_item(Item={
+            'vocabSetId': set_id, 'itemId': f'i{i}',
+            'source': f'wort{i}', 'target': f'word{i}',
+            'order': i, 'isActive': True,
+        })
+
+
+def _start_event(set_id, user_id, question_count=None):
+    body = {'vocabSetId': set_id, 'direction': 'de-fr'}
+    if question_count is not None:
+        body['questionCount'] = question_count
+    return {
+        'httpMethod': 'POST',
+        'path': '/practice/start',
+        'requestContext': {'authorizer': {'claims': {'sub': user_id}}},
+        'body': json.dumps(body),
+    }
+
+
+class TestSessionLengthCap:
+    """A training unit must never exceed 10 word pairs, even for big sets or a
+    client asking for more — while the weighted 'weak words' selection still
+    fills those 10 slots from the whole set."""
+
+    @mock_aws
+    def test_large_set_capped_to_10(self):
+        _reset_moto_creds()
+        ddb = boto3.resource('dynamodb', region_name='eu-central-1')
+        _make_tables(ddb)
+        app = _load_practice_app()
+        app.dynamodb = ddb
+        _seed_set(ddb, 'set-big', 'u1', n_items=40)
+
+        resp = app.handle_start(_start_event('set-big', 'u1'), 'u1')
+        assert resp['statusCode'] == 200
+        body = json.loads(resp['body'])
+        assert body['totalQuestions'] == 10
+        assert len(body['questions']) == 10
+
+    @mock_aws
+    def test_client_requesting_more_is_capped_to_10(self):
+        _reset_moto_creds()
+        ddb = boto3.resource('dynamodb', region_name='eu-central-1')
+        _make_tables(ddb)
+        app = _load_practice_app()
+        app.dynamodb = ddb
+        _seed_set(ddb, 'set-big', 'u1', n_items=40)
+
+        # Client asks for 20 → server clamps to 10.
+        resp = app.handle_start(_start_event('set-big', 'u1', question_count=20), 'u1')
+        assert resp['statusCode'] == 200
+        assert json.loads(resp['body'])['totalQuestions'] == 10
+
+    @mock_aws
+    def test_small_set_not_padded_beyond_its_size(self):
+        _reset_moto_creds()
+        ddb = boto3.resource('dynamodb', region_name='eu-central-1')
+        _make_tables(ddb)
+        app = _load_practice_app()
+        app.dynamodb = ddb
+        _seed_set(ddb, 'set-small', 'u1', n_items=6)
+
+        # 6-word set → 6 questions (cap does not inflate a small set).
+        resp = app.handle_start(_start_event('set-small', 'u1'), 'u1')
+        assert resp['statusCode'] == 200
+        assert json.loads(resp['body'])['totalQuestions'] == 6

@@ -45,7 +45,7 @@ export const usePracticeStore = defineStore('practice', () => {
       const response = await api.post('/practice/start', {
         vocabSetId,
         direction: options.direction || 'de-fr',
-        questionCount: options.questionCount || 20,
+        questionCount: options.questionCount || 10,
         mode: options.mode || 'practice'
       })
 
