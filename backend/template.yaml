@@ -345,6 +345,33 @@ Resources:
         AttributeName: expiresAt
         Enabled: true
 
+  ThumbnailUsageTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub vocabtrainer-thumbnail-usage-${Environment}
+      BillingMode: PAY_PER_REQUEST
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      DeletionProtectionEnabled: !If [IsProd, true, false]
+      Tags:
+        - Key: Project
+          Value: VocabTrainer
+        - Key: Environment
+          Value: !Ref Environment
+      AttributeDefinitions:
+        - AttributeName: userId
+          AttributeType: S
+        - AttributeName: windowStart
+          AttributeType: S
+      KeySchema:
+        - AttributeName: userId
+          KeyType: HASH
+        - AttributeName: windowStart
+          KeyType: RANGE
+      TimeToLiveSpecification:
+        AttributeName: expiresAt
+        Enabled: true
+
   ExtractionUsageTable:
     Type: AWS::DynamoDB::Table
     Properties:
@@ -596,6 +623,89 @@ Resources:
     Type: AWS::Logs::LogGroup
     Properties:
       LogGroupName: !Sub /aws/lambda/vocabtrainer-extraction-worker-${Environment}
+      RetentionInDays: !If [IsProd, 90, 7]
+
+  # ============================================================
+  # Async thumbnail generation (SQS + worker)
+  # Decouples the two-stage Bedrock pipeline (Nova Pro prompt -> Stable Image
+  # Core image) from the API request. The image model runs in us-west-2 (no EU
+  # image model exists); only a generic English motif prompt leaves the EU.
+  # ============================================================
+  ThumbnailDLQ:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub vocabtrainer-thumbnail-dlq-${Environment}
+      MessageRetentionPeriod: 1209600  # 14 days
+      Tags:
+        - Key: Project
+          Value: VocabTrainer
+        - Key: Environment
+          Value: !Ref Environment
+
+  ThumbnailQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub vocabtrainer-thumbnail-queue-${Environment}
+      # Must be >= 6x the worker function timeout (120s).
+      VisibilityTimeout: 720
+      MessageRetentionPeriod: 345600  # 4 days
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt ThumbnailDLQ.Arn
+        maxReceiveCount: 3
+      Tags:
+        - Key: Project
+          Value: VocabTrainer
+        - Key: Environment
+          Value: !Ref Environment
+
+  ThumbnailWorkerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub vocabtrainer-thumbnail-worker-${Environment}
+      CodeUri: functions/image_handler/
+      Handler: worker.lambda_handler
+      MemorySize: 512
+      Timeout: 120
+      Environment:
+        Variables:
+          # Stage 1 (prompt) uses Nova Pro in this stack's region (eu-central-1).
+          PROMPT_MODEL_ID: eu.amazon.nova-pro-v1:0
+          # Stage 2 (image) — no EU image model; runs in us-west-2. Both are
+          # env-configurable so a future EU image model is a one-line change.
+          IMAGE_MODEL_ID: stability.stable-image-core-v1:1
+          IMAGE_MODEL_REGION: us-west-2
+      Policies:
+        - Version: '2012-10-17'
+          Statement:
+            # Write the generated PNG; head_object for idempotency. Scoped to
+            # the thumbnails/ prefix.
+            - Effect: Allow
+              Action:
+                - s3:GetObject
+                - s3:PutObject
+              Resource: !Sub 'arn:aws:s3:::${ImagesBucket}/thumbnails/*'
+            # Bedrock invoke: Nova Pro (eu-central-1) + Stable Image Core
+            # (us-west-2). The wildcard region ARN covers the cross-region call.
+            - Effect: Allow
+              Action:
+                - bedrock:InvokeModel
+              Resource:
+                - 'arn:aws:bedrock:*::foundation-model/*'
+                - !Sub 'arn:aws:bedrock:*:${AWS::AccountId}:inference-profile/*'
+      Events:
+        ThumbnailJob:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt ThumbnailQueue.Arn
+            BatchSize: 1
+            # Cap concurrency so bursts don't hammer Bedrock (throttling).
+            ScalingConfig:
+              MaximumConcurrency: 5
+
+  ThumbnailWorkerLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/vocabtrainer-thumbnail-worker-${Environment}
       RetentionInDays: !If [IsProd, 90, 7]
 
   VocabCrudHandlerFunction:
@@ -1165,6 +1275,63 @@ Resources:
             RestApiId: !Ref VocabTrainerApi
             Path: /tts/synthesize
             Method: POST
+
+  # Image Handler — AI comic thumbnails for vocabulary items.
+  # The API function stays fast: on a cache miss it only enqueues a job (202)
+  # and never calls Bedrock in the request path. The two-stage generation
+  # (Nova Pro prompt -> Stable Image Core image) runs in the ThumbnailWorker.
+  ImageHandlerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub vocabtrainer-image-handler-${Environment}
+      CodeUri: functions/image_handler/
+      Handler: app.lambda_handler
+      Environment:
+        Variables:
+          USERS_TABLE: !Ref UsersTable
+          LEAGUES_TABLE: !Ref LeaguesTable
+          THUMBNAIL_USAGE_TABLE: !Ref ThumbnailUsageTable
+          THUMBNAIL_QUEUE_URL: !Ref ThumbnailQueue
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref VocabSetsTable
+        - DynamoDBReadPolicy:
+            TableName: !Ref VocabItemsTable
+        - DynamoDBReadPolicy:
+            TableName: !Ref UsersTable
+        - DynamoDBReadPolicy:
+            TableName: !Ref LeaguesTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref ThumbnailUsageTable
+        - SQSSendMessagePolicy:
+            QueueName: !GetAtt ThumbnailQueue.QueueName
+        - Version: '2012-10-17'
+          Statement:
+            # Read to check the cache (head_object), presign GETs. Scoped to the
+            # thumbnails/ prefix.
+            - Effect: Allow
+              Action:
+                - s3:GetObject
+              Resource: !Sub 'arn:aws:s3:::${ImagesBucket}/thumbnails/*'
+      Events:
+        RequestThumbnail:
+          Type: Api
+          Properties:
+            RestApiId: !Ref VocabTrainerApi
+            Path: /images/thumbnail
+            Method: POST
+        GetThumbnail:
+          Type: Api
+          Properties:
+            RestApiId: !Ref VocabTrainerApi
+            Path: /images/thumbnail/{vocabSetId}/{itemId}
+            Method: GET
+
+  ImageHandlerLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/vocabtrainer-image-handler-${Environment}
+      RetentionInDays: !If [IsProd, 90, 7]
 
   # Icon Handler — event-driven robohash identicon generator.
   # Triggered via EventBridge when an original scan is uploaded under images/.
