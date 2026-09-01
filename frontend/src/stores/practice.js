@@ -2,6 +2,15 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import api from '@/services/api'
 import { checkAnswer } from '@/utils/fuzzyMatch'
+import {
+  saveLiveSession,
+  loadLiveSession,
+  clearLiveSession,
+  enqueuePending,
+  removePending,
+  sendComplete,
+  isNetworkError,
+} from '@/services/practiceSync'
 
 export const usePracticeStore = defineStore('practice', () => {
   const currentSession = ref(null)
@@ -11,6 +20,26 @@ export const usePracticeStore = defineStore('practice', () => {
   const sessionResults = ref(null)
   const isSessionActive = ref(false)
   const currentStreak = ref(0)
+  // True while a completed session could not be sent (network) and is queued
+  // for later recovery — the UI shows a "will be saved later" state instead of
+  // pretending the result was stored.
+  const savePending = ref(false)
+
+  /**
+   * Persist the in-progress session to localStorage so a reload/crash/offline
+   * doesn't lose the learner's answers. Called after every state mutation.
+   */
+  function persistLive() {
+    if (isSessionActive.value && currentSession.value) {
+      saveLiveSession({
+        currentSession: currentSession.value,
+        questions: questions.value,
+        currentQuestionIndex: currentQuestionIndex.value,
+        answers: answers.value,
+        currentStreak: currentStreak.value,
+      })
+    }
+  }
 
   const currentQuestion = computed(() => {
     if (!questions.value.length || currentQuestionIndex.value >= questions.value.length) {
@@ -66,6 +95,8 @@ export const usePracticeStore = defineStore('practice', () => {
       answers.value = []
       sessionResults.value = null
       isSessionActive.value = true
+      savePending.value = false
+      persistLive()
 
       return response.data
     } catch (err) {
@@ -103,6 +134,7 @@ export const usePracticeStore = defineStore('practice', () => {
     }
     // 'close' doesn't change streak until user decides
 
+    persistLive()
     return answerRecord
   }
 
@@ -112,6 +144,7 @@ export const usePracticeStore = defineStore('practice', () => {
       lastAnswer.correct = true
       currentStreak.value++
     }
+    persistLive()
   }
 
   function rejectCloseAnswer() {
@@ -120,11 +153,13 @@ export const usePracticeStore = defineStore('practice', () => {
       lastAnswer.correct = false
       currentStreak.value = 0
     }
+    persistLive()
   }
 
   function nextQuestion() {
     if (currentQuestionIndex.value < questions.value.length - 1) {
       currentQuestionIndex.value++
+      persistLive()
       return true
     }
     return false
@@ -138,6 +173,7 @@ export const usePracticeStore = defineStore('practice', () => {
     questions.value.splice(currentQuestionIndex.value, 1)
     questions.value.push(question)
     // Don't increment index since the array shifted — next question is now at the same index
+    persistLive()
   }
 
   async function endSession() {
@@ -151,43 +187,88 @@ export const usePracticeStore = defineStore('practice', () => {
     // score/progress with 0. Just end the session locally.
     if (!answers.value.length) {
       isSessionActive.value = false
+      clearLiveSession()
       return null
     }
 
-    try {
-      const response = await api.post('/practice/complete', {
-        sessionId: currentSession.value.sessionId,
-        results: answers.value.map((a) => ({
-          itemId: a.itemId,
-          correct: a.correct,
-          userAnswer: a.userAnswer
-        }))
-      })
+    const payload = {
+      sessionId: currentSession.value.sessionId,
+      results: answers.value.map((a) => ({
+        itemId: a.itemId,
+        correct: a.correct,
+        userAnswer: a.userAnswer,
+      })),
+    }
+    const localResultBase = {
+      score: score.value,
+      duration,
+      mode: currentSession.value.mode || 'practice',
+      vocabSetId: currentSession.value.vocabSetId,
+      detailedResults: answers.value,
+    }
 
+    try {
+      const data = await sendComplete(payload)
       sessionResults.value = {
-        ...response.data,
-        score: score.value,
-        duration,
-        mode: currentSession.value.mode || 'practice',
-        vocabSetId: currentSession.value.vocabSetId,
-        detailedResults: answers.value,
-        leagueUpdate: response.data.leagueUpdate || null,
-        errorPatterns: response.data.errorPatterns || null,
+        ...data,
+        ...localResultBase,
+        leagueUpdate: data.leagueUpdate || null,
+        errorPatterns: data.errorPatterns || null,
       }
-    } catch {
-      // Even if API fails, show local results
-      sessionResults.value = {
-        score: score.value,
-        duration,
-        mode: currentSession.value.mode || 'practice',
-        vocabSetId: currentSession.value.vocabSetId,
-        detailedResults: answers.value,
-        leagueUpdate: null
+      savePending.value = false
+      // Sent successfully → drop any buffered copies.
+      removePending(payload.sessionId)
+      clearLiveSession()
+    } catch (err) {
+      if (isNetworkError(err)) {
+        // Connection died and stayed down through all retries. Do NOT pretend
+        // it was saved: queue it for recovery on the next load and flag the UI.
+        enqueuePending(payload)
+        savePending.value = true
+        sessionResults.value = { ...localResultBase, leagueUpdate: null, savePending: true }
+        // Keep the live snapshot too, as a belt-and-braces backup.
+      } else {
+        // A genuine HTTP error (e.g. 5xx) — the server was reached. Show local
+        // results; the session record/progress may still be partially stored.
+        // Not queued (retrying a server error blindly is not helpful here).
+        savePending.value = false
+        sessionResults.value = { ...localResultBase, leagueUpdate: null }
+        clearLiveSession()
       }
     }
 
     isSessionActive.value = false
     return sessionResults.value
+  }
+
+  /**
+   * Restore an in-progress session persisted before a reload/crash/offline.
+   * Returns true if a live session was restored.
+   */
+  function restoreLiveSession() {
+    const snap = loadLiveSession()
+    if (!snap || !snap.currentSession || !Array.isArray(snap.questions)) {
+      return false
+    }
+    currentSession.value = snap.currentSession
+    questions.value = snap.questions
+    currentQuestionIndex.value = snap.currentQuestionIndex || 0
+    answers.value = snap.answers || []
+    currentStreak.value = snap.currentStreak || 0
+    sessionResults.value = null
+    isSessionActive.value = true
+    savePending.value = false
+    return true
+  }
+
+  /**
+   * Re-send any completed sessions that couldn't be saved earlier (network).
+   * Call on app start / when the practice area loads. Uses the pending queue in
+   * practiceSync; the token layer supplies a fresh token by then.
+   */
+  async function recoverPendingSessions() {
+    const { flushPending } = await import('@/services/practiceSync')
+    return flushPending()
   }
 
   function resetSession() {
@@ -198,6 +279,8 @@ export const usePracticeStore = defineStore('practice', () => {
     sessionResults.value = null
     isSessionActive.value = false
     currentStreak.value = 0
+    savePending.value = false
+    clearLiveSession()
   }
 
   return {
@@ -208,6 +291,7 @@ export const usePracticeStore = defineStore('practice', () => {
     sessionResults,
     isSessionActive,
     currentStreak,
+    savePending,
     currentQuestion,
     progress,
     score,
@@ -220,6 +304,8 @@ export const usePracticeStore = defineStore('practice', () => {
     nextQuestion,
     skipQuestion,
     endSession,
-    resetSession
+    resetSession,
+    restoreLiveSession,
+    recoverPendingSessions
   }
 })

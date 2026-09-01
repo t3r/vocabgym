@@ -18,4 +18,13 @@ const authStore = useAuthStore()
 authStore.loadUserFromStorage().finally(() => {
   app.use(router)
   app.mount('#app')
+
+  // After auth is ready (so a fresh token is available), re-send any practice
+  // sessions that couldn't be saved earlier due to a network drop. Fire-and-
+  // forget: failures stay queued for the next load.
+  if (authStore.isAuthenticated) {
+    import('@/stores/practice')
+      .then(({ usePracticeStore }) => usePracticeStore().recoverPendingSessions())
+      .catch(() => {})
+  }
 })

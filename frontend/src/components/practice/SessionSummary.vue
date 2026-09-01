@@ -3,6 +3,16 @@
     <!-- Milestone celebration overlay (confetti/fireworks) -->
     <Celebration ref="celebration" />
 
+    <!-- Offline: the result could not be saved yet (network). It is buffered
+         locally and will be sent automatically the next time the app opens. -->
+    <div v-if="results.savePending" class="mb-6 px-4 py-3 bg-amber-50 dark:bg-amber-900/30 rounded-lg border border-amber-300 dark:border-amber-700">
+      <p class="text-sm font-semibold text-amber-800 dark:text-amber-200">📶 Noch nicht gespeichert</p>
+      <p class="text-sm text-amber-700 dark:text-amber-300 mt-1">
+        Keine Verbindung. Dein Ergebnis ist sicher zwischengespeichert und wird
+        automatisch gespeichert, sobald du wieder online bist — es geht nichts verloren.
+      </p>
+    </div>
+
     <!-- Set-mastered milestone banner -->
     <div v-if="results.setJustMastered" class="mb-6 px-4 py-3 bg-gradient-to-r from-primary-100 to-purple-100 dark:from-primary-900/40 dark:to-purple-900/40 rounded-lg border border-primary-200 dark:border-primary-800">
       <p class="text-lg font-bold text-primary-700 dark:text-primary-200">🎆 Set gemeistert!</p>
