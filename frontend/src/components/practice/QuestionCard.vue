@@ -17,15 +17,30 @@
       </p>
 
       <!-- AI comic thumbnail illustrating the word's meaning. A learning aid,
-           so it is hidden in exam mode (like Vorsagen / the solution). Shown
-           only once a URL resolves; nothing is rendered while pending/failed. -->
-      <div v-if="!examMode && thumbnailUrl" class="mt-4 flex justify-center">
+           so it is hidden in exam mode (like Vorsagen / the solution). While the
+           worker generates (first time per word) a pulsing placeholder with a
+           spinner shows activity; once ready the image replaces it. Nothing is
+           shown on failure/rate-limit. -->
+      <div v-if="!examMode && (thumbnailUrl || thumbnailLoading)" class="mt-4 flex justify-center">
         <img
+          v-if="thumbnailUrl"
           :src="thumbnailUrl"
           alt="Bild zum Wort"
           class="w-32 h-32 rounded-lg object-cover shadow-sm bg-gray-50 dark:bg-gray-700"
           loading="lazy"
         />
+        <div
+          v-else
+          class="w-32 h-32 rounded-lg bg-gray-100 dark:bg-gray-700 flex flex-col items-center justify-center gap-2 animate-pulse"
+          role="status"
+          aria-label="Bild wird erstellt"
+        >
+          <svg class="w-6 h-6 animate-spin text-primary-500" fill="none" viewBox="0 0 24 24" aria-hidden="true">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" />
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+          </svg>
+          <span class="text-xs text-gray-500 dark:text-gray-400">🎨 Bild wird erstellt…</span>
+        </div>
       </div>
     </div>
 
@@ -232,17 +247,28 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
 // question; only in practice mode (a picture of the meaning is a hint, so it is
 // suppressed in exam mode). Failures/pending resolve to null → no image shown.
 const thumbnailUrl = ref(null)
+const thumbnailLoading = ref(false)
 
 async function loadThumbnail() {
   thumbnailUrl.value = null
+  thumbnailLoading.value = false
   if (props.examMode) return
   const { itemId, vocabSetId } = props.question || {}
   if (!itemId || !vocabSetId) return
   const requestedId = itemId
-  const url = await fetchThumbnail({ vocabSetId, itemId })
+  const url = await fetchThumbnail({
+    vocabSetId,
+    itemId,
+    // Show the activity indicator while the worker generates (cache miss).
+    // Guard against a stale question having moved on.
+    onPending: () => {
+      if (props.question?.itemId === requestedId) thumbnailLoading.value = true
+    },
+  })
   // Guard against a late response arriving after the question already changed.
-  if (url && props.question?.itemId === requestedId) {
+  if (props.question?.itemId === requestedId) {
     thumbnailUrl.value = url
+    thumbnailLoading.value = false
   }
 }
 

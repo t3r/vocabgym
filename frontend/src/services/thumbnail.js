@@ -40,9 +40,12 @@ export async function pollThumbnail({ vocabSetId, itemId }) {
  * Resolves to a presigned URL string, or null if unavailable (rate-limited,
  * error, or still pending after the poll budget — the UI then shows no image).
  *
- * @param {{vocabSetId, itemId, attempts?, intervalMs?}} opts
+ * @param {{vocabSetId, itemId, attempts?, intervalMs?, onPending?}} opts
+ *   onPending: optional callback invoked with `true` when generation is in
+ *   progress (cache miss, worker running) so the UI can show an activity
+ *   indicator. It is the caller's job to clear its own state once this resolves.
  */
-export async function fetchThumbnail({ vocabSetId, itemId, attempts = 6, intervalMs = 2500 }) {
+export async function fetchThumbnail({ vocabSetId, itemId, attempts = 8, intervalMs = 2000, onPending }) {
   const key = _key(vocabSetId, itemId)
   if (_urlCache.has(key)) {
     return _urlCache.get(key)
@@ -55,7 +58,9 @@ export async function fetchThumbnail({ vocabSetId, itemId, attempts = 6, interva
       return first.url
     }
 
-    // Pending: poll a bounded number of times while the worker generates.
+    // Pending: generation is running in the worker. Signal the caller so it can
+    // show an activity indicator, then poll a bounded number of times.
+    if (typeof onPending === 'function') onPending(true)
     for (let i = 0; i < attempts; i++) {
       await new Promise((r) => setTimeout(r, intervalMs))
       const res = await pollThumbnail({ vocabSetId, itemId })

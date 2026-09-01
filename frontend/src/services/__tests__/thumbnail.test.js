@@ -45,6 +45,22 @@ describe('thumbnail service — fetchThumbnail', () => {
     expect(url).toBeNull()
   })
 
+  it('signals onPending(true) when generation is in progress', async () => {
+    api.post.mockResolvedValueOnce({ data: { status: 'pending' } })
+    api.get.mockResolvedValueOnce({ data: { status: 'ready', url: 'https://s3/p.png' } })
+    const onPending = vi.fn()
+    const url = await fetchThumbnail({ vocabSetId: 's1', itemId: 'i1', attempts: 2, intervalMs: 0, onPending })
+    expect(onPending).toHaveBeenCalledWith(true)
+    expect(url).toBe('https://s3/p.png')
+  })
+
+  it('does not signal onPending on an immediate cache hit', async () => {
+    api.post.mockResolvedValueOnce({ data: { status: 'ready', url: 'https://s3/h.png' } })
+    const onPending = vi.fn()
+    await fetchThumbnail({ vocabSetId: 's1', itemId: 'i1', onPending })
+    expect(onPending).not.toHaveBeenCalled()
+  })
+
   it('caches the URL for the session (second call hits no API)', async () => {
     api.post.mockResolvedValueOnce({ data: { status: 'ready', url: 'https://s3/z.png' } })
     const first = await fetchThumbnail({ vocabSetId: 's1', itemId: 'i1' })
