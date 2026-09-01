@@ -12,6 +12,7 @@ Bedrock is mocked — tests never make real model calls.
 """
 
 import importlib.util
+import io
 import json
 import os
 import sys
@@ -25,7 +26,9 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'layers', 'shar
 
 _IMAGE_DIR = os.path.join(os.path.dirname(__file__), '..', 'functions', 'image_handler')
 _APP_PATH = os.path.join(_IMAGE_DIR, 'app.py')
-_WORKER_PATH = os.path.join(_IMAGE_DIR, 'worker.py')
+_WORKER_PATH = os.path.join(
+    os.path.dirname(__file__), '..', 'functions', 'thumbnail_worker', 'worker.py'
+)
 
 _ENV = {
     'IMAGES_BUCKET': 'img-bucket',
@@ -288,29 +291,73 @@ def test_rate_limit_returns_429():
     assert r['statusCode'] == 429
 
 
-# --- Worker: two-stage pipeline + idempotency ---------------------------
+# --- API: language-agnostic cache key -----------------------------------
+
+@mock_aws
+def test_cache_key_is_language_agnostic():
+    """The same German meaning maps to ONE key regardless of target language /
+    article / casing — so the image is shared across languages and sets."""
+    _make_infra(_ENV)
+    app = _load(_APP_PATH, 'img_app_key', _ENV)
+
+    k_it = app.thumbnail_s3_key('das Bad', 'il bagno', 'it')
+    k_fr = app.thumbnail_s3_key('das Bad', 'la salle de bain', 'fr')
+    k_noart = app.thumbnail_s3_key('Bad', None, None)
+    k_case = app.thumbnail_s3_key('  BAD  ', 'x', 'es')
+    assert k_it == k_fr == k_noart == k_case
+    assert k_it.startswith('thumbnails/') and k_it.endswith('.png')
+    assert '/it/' not in k_it and '/fr/' not in k_fr  # no language segment
+
+    # A different meaning maps to a different key.
+    assert app.thumbnail_s3_key('das Haus', None, None) != k_it
+
+
+# --- Worker: real downscale to small WebP -------------------------------
+
+@mock_aws
+def test_worker_downscales_to_small_webp():
+    from PIL import Image as _Image
+    _make_infra(_ENV)
+    worker = _load(_WORKER_PATH, 'img_worker_scale', _ENV)
+
+    # A real 1024x1024 PNG (like the model returns) — bytes are large.
+    buf = io.BytesIO()
+    _Image.new('RGB', (1024, 1024), (120, 60, 200)).save(buf, format='PNG')
+    big_png = buf.getvalue()
+
+    webp = worker._to_thumbnail_webp(big_png)
+    assert webp is not None
+    # Decodes as WebP and is at most THUMBNAIL_SIZE on the long side.
+    out = _Image.open(io.BytesIO(webp))
+    assert out.format == 'WEBP'
+    assert max(out.size) <= worker.THUMBNAIL_SIZE
+    # And is far smaller than the source PNG.
+    assert len(webp) < len(big_png)
 
 @mock_aws
 def test_worker_generates_and_caches_png():
     _make_infra(_ENV)
     worker = _load(_WORKER_PATH, 'img_worker_gen', _ENV)
 
-    s3_key = 'thumbnails/it/abc123.png'
-    msg = {'source': 'das Bad', 'target': 'il bagno', 'lang': 'it', 's3Key': s3_key}
+    s3_key = 'thumbnails/abc123.png'
+    msg = {'source': 'das Bad', 's3Key': s3_key}
     record = {'Records': [{'body': json.dumps(msg)}]}
 
     fake_png = b'\x89PNG\r\n\x1a\nFAKE'
+    fake_webp = b'RIFFxxxxWEBP'
     with mock.patch.object(worker, '_build_image_prompt', return_value='comic style bathroom') as m_prompt, \
-         mock.patch.object(worker, '_generate_image_png', return_value=fake_png) as m_img:
+         mock.patch.object(worker, '_generate_image_png', return_value=fake_png) as m_img, \
+         mock.patch.object(worker, '_to_thumbnail_webp', return_value=fake_webp) as m_webp:
         worker.lambda_handler(record, None)
 
-    m_prompt.assert_called_once()
+    m_prompt.assert_called_once_with('das Bad')
     m_img.assert_called_once_with('comic style bathroom')
+    m_webp.assert_called_once_with(fake_png)
     obj = boto3.client('s3', region_name='eu-central-1').get_object(
         Bucket=_ENV['IMAGES_BUCKET'], Key=s3_key
     )
-    assert obj['Body'].read() == fake_png
-    assert obj['ContentType'] == 'image/png'
+    assert obj['Body'].read() == fake_webp
+    assert obj['ContentType'] == 'image/webp'
 
 
 @mock_aws
@@ -318,11 +365,11 @@ def test_worker_idempotent_skips_when_cached():
     _make_infra(_ENV)
     worker = _load(_WORKER_PATH, 'img_worker_idem', _ENV)
 
-    s3_key = 'thumbnails/it/already.png'
+    s3_key = 'thumbnails/already.png'
     boto3.client('s3', region_name='eu-central-1').put_object(
-        Bucket=_ENV['IMAGES_BUCKET'], Key=s3_key, Body=b'EXISTING', ContentType='image/png'
+        Bucket=_ENV['IMAGES_BUCKET'], Key=s3_key, Body=b'EXISTING', ContentType='image/webp'
     )
-    msg = {'source': 'das Bad', 'target': 'il bagno', 'lang': 'it', 's3Key': s3_key}
+    msg = {'source': 'das Bad', 's3Key': s3_key}
     record = {'Records': [{'body': json.dumps(msg)}]}
 
     with mock.patch.object(worker, '_generate_image_png') as m_img:
@@ -341,7 +388,7 @@ def test_worker_raises_on_generation_failure_for_retry():
     _make_infra(_ENV)
     worker = _load(_WORKER_PATH, 'img_worker_fail', _ENV)
 
-    msg = {'source': 'x', 'target': 'y', 'lang': 'it', 's3Key': 'thumbnails/it/fail.png'}
+    msg = {'source': 'x', 's3Key': 'thumbnails/fail.png'}
     record = {'Records': [{'body': json.dumps(msg)}]}
 
     with mock.patch.object(worker, '_build_image_prompt', return_value='comic style x'), \

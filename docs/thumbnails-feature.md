@@ -13,23 +13,34 @@ POST /images/thumbnail  ──►  cache hit?  ──► 200 { status: ready, ur
                         rate-limit + enqueue ──► 202 { status: pending }
                                │
                                ▼  ThumbnailQueue (DLQ after 3 tries)
-                        ThumbnailWorker:
+                        ThumbnailWorker (functions/thumbnail_worker/):
                           Stage 1  Nova Pro (eu-central-1, Converse)
-                                   → short English comic prompt (≤77 chars)
+                                   → short English comic prompt (≤77 chars),
+                                     symbolic / object-focused, no text, no people
                           Stage 2  Stable Image Core (us-west-2, InvokeModel)
-                                   → PNG
-                          → S3  thumbnails/{lang}/{sha256(source|target|lang)}.png
+                                   → image (negative_prompt drops text + people)
+                          → downscale to 256px WebP (Pillow)
+                          → S3  thumbnails/{sha256(normalized German source)}.png
 
 GET /images/thumbnail/{vocabSetId}/{itemId}  ──►  poll: ready → url, else pending
 ```
 
-- **Cache = cost control.** A word is generated exactly once (keyed by
-  source|target|lang) and reused for every user. The GET/POST cache path only
-  does `s3:head_object` — no LLM call. Per-user daily rate limit
-  (`ThumbnailUsageTable`, default 60) applies to real generations (cache misses)
-  only.
+- **One image per MEANING, shared across all languages.** The cache key is
+  `sha256(normalized German source)` — no language segment. "das Bad" (→ il
+  bagno / la salle de bain / …) generates ONE image reused by every target
+  language, set and user. The prompt (Stage 1) is built from the German meaning
+  only. This minimises generations further than a per-word/per-language key.
+- **Cache = cost control.** A meaning is generated exactly once. The GET/POST
+  cache path only does `s3:head_object` — no LLM call. Per-user daily rate limit
+  (`ThumbnailUsageTable`, default 60) applies to real generations (misses) only.
+- **Small files.** The model returns ~1 MP; the worker downscales to a 256px
+  WebP (~10-40 KB) before caching. This does NOT change Bedrock cost (flat per
+  image) but cuts S3 transfer + mobile load time by ~100x. The S3 key keeps a
+  `.png` suffix for URL stability; the body is WebP (ContentType image/webp).
 - **No long-running API Lambda.** The API function only enqueues; the two model
-  calls run in the async worker (Timeout 120s, VisibilityTimeout 720s = 6×).
+  calls + downscale run in the async worker (Timeout 120s, VisibilityTimeout
+  720s = 6×). Pillow lives ONLY in `functions/thumbnail_worker/` so the
+  latency-sensitive API handler stays lean.
 
 ## Data residency (why us-west-2 is acceptable)
 

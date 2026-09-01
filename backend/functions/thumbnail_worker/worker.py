@@ -1,35 +1,36 @@
 """Async thumbnail worker.
 
 Consumes SQS messages enqueued by image_handler's POST /images/thumbnail and
-generates the comic thumbnail in TWO stages, then caches the PNG in S3:
+generates a symbolic comic thumbnail in TWO stages, downscales it, then caches
+it in S3:
 
   Stage 1 (Amazon Nova Pro, eu-central-1 — Converse API):
-    Turn the vocabulary meaning into a short ENGLISH comic image prompt. Nova Pro
-    is EU-resident and handles the (ambiguous) source-language word well; only a
-    generic English motif prompt leaves the EU afterwards — never the German /
-    target vocabulary itself.
+    Turn the German MEANING into a short ENGLISH comic image prompt. Nova Pro is
+    EU-resident; only a generic English motif prompt leaves the EU afterwards —
+    never the German/target vocabulary itself. The prompt asks for a symbolic,
+    object-focused illustration with no text and no people.
 
   Stage 2 (Stability Stable Image Core, us-west-2 — InvokeModel):
-    Generate the PNG from that English prompt. No current image model is
-    available in the EU, so this single call runs in us-west-2. The prompt is a
-    generic motif description with no personal data.
+    Generate the image from that English prompt. No current image model is
+    available in the EU, so this single call runs in us-west-2.
 
-The generated PNG is stored under thumbnails/{lang}/{hash}.png in the eu-central-1
-images bucket and served from there — so a word is generated exactly once and
-reused for every user.
+The image is downscaled to a small WebP and stored under thumbnails/{hash}.png
+(hash of the normalized German meaning) — one image per MEANING, shared across
+all target languages, sets and users.
 
 Idempotency: SQS is at-least-once. Before generating we re-check the S3 cache
-(head_object); if the object already exists (a concurrent/duplicate job created
-it) we skip the expensive calls.
+(head_object); if the object already exists we skip the expensive calls.
 """
 
 import base64
+import io
 import json
 import logging
 import os
 
 import boto3
 from botocore.exceptions import ClientError
+from PIL import Image
 
 logger = logging.getLogger()
 logger.setLevel(os.environ.get('LOG_LEVEL', 'INFO'))
@@ -58,28 +59,37 @@ IMAGES_BUCKET = os.environ['IMAGES_BUCKET']
 # Stable Image Core prompt limit is ~77 chars; keep Nova Pro's output short.
 MAX_IMAGE_PROMPT_LEN = 77
 
-_LANG_NAMES = {'en': 'English', 'fr': 'French', 'es': 'Spanish', 'it': 'Italian'}
+# Thumbnails are displayed small; downscale to keep files tiny (~10-40 KB WebP)
+# instead of the ~1MP / multi-MB PNG the model returns. This does NOT affect
+# Bedrock cost (flat per image) — it saves S3 transfer + load time on mobile.
+THUMBNAIL_SIZE = int(os.environ.get('THUMBNAIL_SIZE', '256'))
+WEBP_QUALITY = int(os.environ.get('THUMBNAIL_WEBP_QUALITY', '80'))
+
+# Elements to keep OUT of the image. Passed to the model's negative_prompt so it
+# applies regardless of the (LLM-written or fallback) positive prompt. Requested
+# style: symbolic / object-focused, no text, few or no people.
+NEGATIVE_PROMPT = (
+    'text, letters, words, writing, captions, labels, watermark, signature, '
+    'people, person, human, faces, hands, crowd'
+)
 
 
-def _build_image_prompt(source, target, lang):
+def _build_image_prompt(source):
     """Stage 1: ask Nova Pro for a short English comic image prompt.
 
-    We give it the German source AND the target word so it can disambiguate the
-    meaning, and constrain the output to a short, text-free comic motif. On any
-    failure we fall back to a deterministic prompt built from the source word so
-    the pipeline still produces something.
+    Built from the German MEANING only (language-agnostic — the image is shared
+    across target languages). Asks for a symbolic, object-focused motif with no
+    text and no people. On any failure, falls back to a deterministic prompt.
     """
-    lang_name = _LANG_NAMES.get(lang, lang)
     instruction = (
         "You write short prompts for a text-to-image model that makes simple "
         "comic-style vocabulary thumbnails.\n"
-        f"The {lang_name} word is: \"{target}\".\n"
-        f"Its German meaning is: \"{source}\".\n"
-        "Write ONE English image prompt that depicts the MEANING as a clear, "
-        "child-friendly comic illustration. Rules: describe only the concrete "
-        "motif, start with 'comic style', no text or letters in the image, "
-        f"at most {MAX_IMAGE_PROMPT_LEN} characters. Output ONLY the prompt, no "
-        "quotes, no explanation."
+        f"The concept (in German) is: \"{source}\".\n"
+        "Write ONE English image prompt that depicts this concept as a clear, "
+        "symbolic, object-focused comic illustration. Rules: start with "
+        "'comic style', show the object/scene itself, avoid people, no text or "
+        f"letters anywhere in the image, at most {MAX_IMAGE_PROMPT_LEN} "
+        "characters. Output ONLY the prompt, no quotes, no explanation."
     )
     try:
         resp = bedrock_prompt.converse(
@@ -88,21 +98,21 @@ def _build_image_prompt(source, target, lang):
             inferenceConfig={'maxTokens': 60, 'temperature': 0.7},
         )
         text = resp['output']['message']['content'][0]['text'].strip()
-        # Strip accidental wrapping quotes/newlines and hard-cap the length.
         text = text.strip().strip('"').strip().replace('\n', ' ')
         if text:
             return text[:MAX_IMAGE_PROMPT_LEN]
     except Exception as e:
         logger.warning(json.dumps({'event': 'prompt_stage_failed', 'error': str(e)}))
 
-    # Fallback: deterministic, text-free comic prompt from the German meaning.
-    return f"comic style illustration of {source}"[:MAX_IMAGE_PROMPT_LEN]
+    # Fallback: deterministic, symbolic, text-free comic prompt.
+    return f"comic style symbolic icon of {source}, no people"[:MAX_IMAGE_PROMPT_LEN]
 
 
 def _generate_image_png(prompt):
-    """Stage 2: Stable Image Core → PNG bytes. Returns bytes or None."""
+    """Stage 2: Stable Image Core → raw image bytes (PNG). Returns bytes or None."""
     native_request = {
         'prompt': prompt,
+        'negative_prompt': NEGATIVE_PROMPT,
         'aspect_ratio': '1:1',
         'output_format': 'png',
     }
@@ -122,6 +132,22 @@ def _generate_image_png(prompt):
         return None
 
 
+def _to_thumbnail_webp(png_bytes):
+    """Downscale the generated image to THUMBNAIL_SIZE and encode as WebP.
+
+    Returns WebP bytes, or None if the image can't be processed.
+    """
+    try:
+        img = Image.open(io.BytesIO(png_bytes)).convert('RGB')
+        img.thumbnail((THUMBNAIL_SIZE, THUMBNAIL_SIZE), Image.LANCZOS)
+        out = io.BytesIO()
+        img.save(out, format='WEBP', quality=WEBP_QUALITY, method=6)
+        return out.getvalue()
+    except Exception as e:
+        logger.warning(json.dumps({'event': 'downscale_failed', 'error': str(e)}))
+        return None
+
+
 def _already_cached(s3_key):
     try:
         s3_client.head_object(Bucket=IMAGES_BUCKET, Key=s3_key)
@@ -135,11 +161,9 @@ def _already_cached(s3_key):
 
 def _process_one(msg):
     source = msg.get('source', '')
-    target = msg.get('target', '')
-    lang = msg.get('lang', '')
     s3_key = msg.get('s3Key')
 
-    if not (target and lang and s3_key):
+    if not (source and s3_key):
         logger.error(json.dumps({'event': 'incomplete_thumbnail_message', 'body': msg}))
         return
 
@@ -148,23 +172,29 @@ def _process_one(msg):
         logger.info(json.dumps({'event': 'thumbnail_already_cached', 's3Key': s3_key}))
         return
 
-    prompt = _build_image_prompt(source, target, lang)
+    prompt = _build_image_prompt(source)
     png = _generate_image_png(prompt)
     if png is None:
         # Raise so SQS retries (transient Bedrock issues), eventually DLQ.
         raise RuntimeError(f'Image generation failed for {s3_key}')
 
+    webp = _to_thumbnail_webp(png)
+    if webp is None:
+        raise RuntimeError(f'Thumbnail encoding failed for {s3_key}')
+
+    # Key keeps the .png suffix for backward compatibility with existing URLs,
+    # but the body is WebP (browsers detect by content, and we set the type).
     s3_client.put_object(
         Bucket=IMAGES_BUCKET,
         Key=s3_key,
-        Body=png,
-        ContentType='image/png',
+        Body=webp,
+        ContentType='image/webp',
     )
     logger.info(json.dumps({
         'event': 'thumbnail_generated',
         's3Key': s3_key,
-        'lang': lang,
         'promptLen': len(prompt),
+        'bytes': len(webp),
     }))
 
 

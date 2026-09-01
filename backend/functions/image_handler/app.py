@@ -100,17 +100,32 @@ def lambda_handler(event, context):
         return build_error_response(e, 'image_handler')
 
 
-def thumbnail_s3_key(source, target, lang):
+def _normalize_source(source):
+    """Normalize the German meaning for a language-agnostic cache key.
+
+    The thumbnail illustrates the MEANING, not the language — so the same German
+    meaning maps to ONE image shared across all target languages and sets. We
+    lowercase, trim, drop a leading article and collapse whitespace so
+    "das Haus", "Haus" and "  HAUS " share the same image.
+    """
+    s = (source or '').strip().lower()
+    for article in ('der ', 'die ', 'das ', 'den ', 'dem ', 'ein ', 'eine ', 'einen '):
+        if s.startswith(article):
+            s = s[len(article):]
+            break
+    return ' '.join(s.split())
+
+
+def thumbnail_s3_key(source, target=None, lang=None):
     """Cache key for a word's thumbnail.
 
-    Keyed by (source|target|lang) so the SAME word maps to the SAME object for
-    ALL users — one generation, reused everywhere. Kept in a module-level helper
-    so the worker computes the identical key.
+    Keyed ONLY by the normalized German meaning (source), so the SAME meaning
+    maps to the SAME object for ALL target languages, all sets and all users —
+    one generation, reused everywhere. target/lang are accepted for call-site
+    compatibility but intentionally ignored.
     """
-    cache_hash = hashlib.sha256(
-        f'{(source or "").strip().lower()}|{(target or "").strip().lower()}|{lang}'.encode('utf-8')
-    ).hexdigest()
-    return f'thumbnails/{lang}/{cache_hash}.png'
+    cache_hash = hashlib.sha256(_normalize_source(source).encode('utf-8')).hexdigest()
+    return f'thumbnails/{cache_hash}.png'
 
 
 def _resolve_vocab_set(vocab_set_id, user_id):
@@ -256,8 +271,6 @@ def handle_request_thumbnail(event, user_id):
         QueueUrl=THUMBNAIL_QUEUE_URL,
         MessageBody=json.dumps({
             'source': source,
-            'target': target,
-            'lang': lang,
             's3Key': s3_key,
         }),
     )

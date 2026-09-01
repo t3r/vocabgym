@@ -662,9 +662,9 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       FunctionName: !Sub vocabtrainer-thumbnail-worker-${Environment}
-      CodeUri: functions/image_handler/
+      CodeUri: functions/thumbnail_worker/
       Handler: worker.lambda_handler
-      MemorySize: 512
+      MemorySize: 1024        # Pillow downscale headroom
       Timeout: 120
       Environment:
         Variables:
