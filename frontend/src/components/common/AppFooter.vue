@@ -2,7 +2,7 @@
   <footer class="mt-auto border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
     <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex flex-col sm:flex-row items-center justify-between gap-2">
       <p class="text-xs text-gray-500 dark:text-gray-400">
-        © {{ year }} VocabGym · Logo © Alexa Binnewies
+        © {{ year }} VocabGym - made by Torsten Dreyer and Kiro agentic coding · Logo © Alexa Binnewies
       </p>
       <nav class="flex items-center gap-4 text-xs">
         <router-link
