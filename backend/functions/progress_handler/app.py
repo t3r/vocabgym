@@ -80,17 +80,26 @@ def handle_overview(event, user_id):
     )
     vocab_sets = vs_response.get('Items', [])
 
-    # Get recent practice sessions
+    # Get the user's practice sessions. Note: this table's sort key is sessionId
+    # (a random UUID), so neither the query order nor a Limit here reflects
+    # recency. Fetch the user's sessions (90-day TTL keeps this bounded) and
+    # order by completedAt below so "recent" is truly the most recent.
     sessions_table = dynamodb.Table(SESSIONS_TABLE)
-    sessions_response = sessions_table.query(
-        KeyConditionExpression=Key('userId').eq(user_id),
-        ScanIndexForward=False,
-        Limit=20,
-    )
-    sessions = sessions_response.get('Items', [])
+    sessions = []
+    query_kwargs = {'KeyConditionExpression': Key('userId').eq(user_id)}
+    while True:
+        sessions_response = sessions_table.query(**query_kwargs)
+        sessions.extend(sessions_response.get('Items', []))
+        last_key = sessions_response.get('LastEvaluatedKey')
+        if not last_key:
+            break
+        query_kwargs['ExclusiveStartKey'] = last_key
 
-    # Filter completed sessions
+    # Filter completed sessions, most-recent first. The sessions query sorts by
+    # the table's sort key (sessionId, a random UUID) — NOT by time — so we must
+    # explicitly order by completedAt descending here before taking the latest.
     completed_sessions = [s for s in sessions if s.get('status') == 'completed']
+    completed_sessions.sort(key=lambda s: int(s.get('completedAt', 0)), reverse=True)
 
     # Aggregate progress data across all vocab sets
     progress_table = dynamodb.Table(PROGRESS_TABLE)
