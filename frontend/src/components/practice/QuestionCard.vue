@@ -120,17 +120,19 @@
         </button>
         <!-- Audio pronunciation: ALWAYS available in learning mode (no streak
              needed), but only when the solution is the target-language word.
-             Hidden entirely in exam mode. -->
-        <button
+             Uses the full PronounceButton so the voice/accent picker is reachable
+             here directly (not hidden behind "Lösung anzeigen"). Hidden in exam. -->
+        <span
           v-if="!feedback && !examMode && answerIsTarget && question.itemId && question.vocabSetId"
-          @click="playPronunciation"
-          :disabled="pronouncing"
-          type="button"
-          aria-label="Aussprache vorsagen"
-          class="inline-flex items-center gap-1.5 text-sm text-primary-600 hover:text-primary-700 font-medium disabled:opacity-50"
+          class="inline-flex items-center gap-1 text-sm text-primary-600 font-medium"
         >
           🔊 Vorsagen
-        </button>
+          <PronounceButton
+            :vocab-set-id="question.vocabSetId"
+            :item-id="question.itemId"
+            :lang="targetLanguage"
+          />
+        </span>
         <!-- Eselsbrücke (mnemonic note): shown next to Vorsagen when the item
              has a saved note. Hidden in exam mode. -->
         <button
@@ -211,9 +213,7 @@ import AnswerInput from './AnswerInput.vue'
 import FeedbackDisplay from './FeedbackDisplay.vue'
 import PronounceButton from './PronounceButton.vue'
 import { getLanguageName, getAllArticleGenders } from '@/utils/languages'
-import { pronounceWithStoredVoice } from '@/services/tts'
 import { fetchThumbnail } from '@/services/thumbnail'
-import { useToast } from '@/composables/useToast'
 
 const props = defineProps({
   question: { type: Object, required: true },
@@ -226,8 +226,6 @@ const props = defineProps({
 })
 
 const emit = defineEmits(['submit', 'skip', 'next', 'accept-close', 'reject-close'])
-
-const { showError } = useToast()
 
 // Allow advancing with the Enter key once feedback is shown (the answer input
 // is gone by then, so its own Enter-to-submit no longer applies). Only for the
@@ -277,32 +275,7 @@ onMounted(loadThumbnail)
 
 const showingHint = ref(false)
 const showingNote = ref(false)
-const pronouncing = ref(false)
 let hintTimeout = null
-
-// Play the target-language pronunciation only (no text reveal). Used by the
-// always-available "Vorsagen" button in learning mode.
-function playPronunciation() {
-  if (pronouncing.value) return
-  if (!(answerIsTarget.value && props.question.vocabSetId && props.question.itemId)) return
-  pronouncing.value = true
-  pronounceWithStoredVoice({
-    vocabSetId: props.question.vocabSetId,
-    itemId: props.question.itemId,
-    lang: props.targetLanguage,
-  })
-    .catch((e) => {
-      const status = e?.response?.status
-      if (status === 429) {
-        showError('Zu viele Aussprache-Anfragen, bitte kurz warten.')
-      } else {
-        showError('Aussprache konnte nicht abgespielt werden.')
-      }
-    })
-    .finally(() => {
-      pronouncing.value = false
-    })
-}
 
 // The correct answer is the target-language word only when translating
 // Deutsch -> Fremdsprache. In the reverse direction it is the German word,
