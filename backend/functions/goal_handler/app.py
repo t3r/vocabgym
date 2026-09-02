@@ -414,19 +414,18 @@ def handle_list(event, user_id):
     user_league_id = user.get('leagueId') if user else None
 
     if user_league_id:
-        # Scan goals table for goals with this leagueId
-        # (acceptable cost: goals table is small)
-        scan_response = goals_table.scan(
-            FilterExpression='leagueId = :lid AND #s = :active',
-            ExpressionAttributeValues={
-                ':lid': user_league_id,
-                ':active': 'active',
-            },
-            ExpressionAttributeNames={
-                '#s': 'status',
-            }
+        # Query league-assigned goals by the leagueId-index GSI instead of
+        # scanning the whole goals table. The GSI is sparse (only goals with a
+        # leagueId are indexed) and keyed on leagueId, so this reads only this
+        # league's goals — no cost proportional to the global goal count.
+        league_response = goals_table.query(
+            IndexName='leagueId-index',
+            KeyConditionExpression=Key('leagueId').eq(user_league_id),
+            FilterExpression='#s = :active',
+            ExpressionAttributeValues={':active': 'active'},
+            ExpressionAttributeNames={'#s': 'status'},
         )
-        for goal in scan_response.get('Items', []):
+        for goal in league_response.get('Items', []):
             if goal['goalId'] not in seen_goal_ids:
                 league_goals.append(goal)
                 seen_goal_ids.add(goal['goalId'])

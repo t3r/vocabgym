@@ -910,6 +910,8 @@ Resources:
           AttributeType: S
         - AttributeName: userId
           AttributeType: S
+        - AttributeName: leagueId
+          AttributeType: S
       KeySchema:
         - AttributeName: goalId
           KeyType: HASH
@@ -919,6 +921,15 @@ Resources:
         - IndexName: userId-index
           KeySchema:
             - AttributeName: userId
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+        # Query league-assigned goals by leagueId instead of scanning the whole
+        # goals table (which bills for every goal of every user). Sparse index:
+        # only goals that carry a leagueId are indexed.
+        - IndexName: leagueId-index
+          KeySchema:
+            - AttributeName: leagueId
               KeyType: HASH
           Projection:
             ProjectionType: ALL
