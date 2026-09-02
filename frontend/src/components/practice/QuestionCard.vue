@@ -101,64 +101,69 @@
 
     <!-- Actions -->
     <div class="mt-6 flex justify-between items-center">
-      <div class="flex gap-3">
+      <!-- Equal-weight button bar. Überspringen is secondary; the learning aids
+           (Lösung zeigen / Vorsagen) are primary. Hidden entirely in exam mode
+           except Überspringen. -->
+      <div class="flex flex-wrap gap-2 items-center">
         <button
           v-if="!feedback"
           @click="$emit('skip')"
           type="button"
           aria-label="Frage überspringen"
           title="Frage überspringen"
-          class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-gray-300 dark:border-gray-600 text-sm font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-700 hover:bg-gray-100 dark:hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-primary-500"
+          class="btn-secondary text-sm px-3 py-1.5"
         >
-          <!-- skip-forward icon (double chevron + bar) -->
-          <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true">
-            <path d="M4.5 4.2a1 1 0 0 0-1.5.87v9.86a1 1 0 0 0 1.5.87l6-4.93a1 1 0 0 0 0-1.74l-6-4.93z" />
-            <path d="M11 4.2a1 1 0 0 0-1.5.87v9.86a1 1 0 0 0 1.5.87l6-4.93a1 1 0 0 0 0-1.74l-6-4.93z" />
-            <rect x="16.5" y="4" width="1.8" height="12" rx="0.9" />
-          </svg>
+          <span class="mr-1.5" aria-hidden="true">⏭️</span>
           Überspringen
         </button>
-        <!-- Audio pronunciation: ALWAYS available in learning mode (no streak
-             needed), but only when the solution is the target-language word.
-             Uses the full PronounceButton so the voice/accent picker is reachable
-             here directly (not hidden behind "Lösung anzeigen"). Hidden in exam. -->
-        <span
-          v-if="!feedback && !examMode && answerIsTarget && question.itemId && question.vocabSetId"
-          class="inline-flex items-center gap-1 text-sm text-primary-600 font-medium"
+
+        <!-- Text reveal. Gated behind a 2-streak (or a new word): when locked,
+             it is shown as a disabled button with an explanatory tooltip rather
+             than hidden, so the option stays discoverable. -->
+        <button
+          v-if="!feedback && !examMode"
+          @click="showHint"
+          type="button"
+          :disabled="!(hintEnabled || question.isNew)"
+          :title="(hintEnabled || question.isNew) ? 'Lösung anzeigen' : 'Verfügbar ab 2 richtigen in Folge'"
+          class="btn-primary text-sm px-3 py-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          🔊 Vorsagen
-          <PronounceButton
-            :vocab-set-id="question.vocabSetId"
-            :item-id="question.itemId"
-            :lang="targetLanguage"
-          />
-        </span>
-        <!-- Eselsbrücke (mnemonic note): shown next to Vorsagen when the item
-             has a saved note. Hidden in exam mode. -->
+          <span class="mr-1.5" aria-hidden="true">💡</span>
+          {{ question.isNew ? 'Neues Wort — Lösung zeigen' : 'Lösung zeigen' }}
+        </button>
+
+        <!-- Pronounce (always available in learning mode when the solution is
+             the target-language word). -->
+        <button
+          v-if="!feedback && !examMode && answerIsTarget && question.itemId && question.vocabSetId"
+          @click="playPronunciation"
+          :disabled="pronouncing"
+          type="button"
+          aria-label="Aussprache vorsagen"
+          title="Aussprache vorsagen"
+          class="btn-primary text-sm px-3 py-1.5 disabled:opacity-50"
+        >
+          <span class="mr-1.5" aria-hidden="true">🔊</span>
+          Vorsagen
+        </button>
+
+        <!-- Voice / accent picker as its own clearly-labelled button. -->
+        <VoicePicker
+          v-if="!feedback && !examMode && answerIsTarget && question.itemId && question.vocabSetId"
+          :lang="targetLanguage"
+        />
+
+        <!-- Eselsbrücke (mnemonic note): only when the item has a saved note. -->
         <button
           v-if="!examMode && question.notes"
           @click="showingNote = !showingNote"
           type="button"
           aria-label="Eselsbrücke anzeigen"
-          class="inline-flex items-center gap-1.5 text-sm text-primary-600 hover:text-primary-700 font-medium"
+          class="btn-secondary text-sm px-3 py-1.5"
         >
-          💭 Eselsbrücke
+          <span class="mr-1.5" aria-hidden="true">💭</span>
+          Eselsbrücke
         </button>
-        <!-- Text reveal: still gated behind a 2-streak (or a new word).
-             Hidden entirely in exam mode. -->
-        <button
-          v-if="!feedback && !examMode && (hintEnabled || question.isNew)"
-          @click="showHint"
-          class="text-sm text-primary-600 hover:text-primary-700 font-medium"
-        >
-          {{ question.isNew ? '💡 Neues Wort — Lösung zeigen' : '💡 Lösung zeigen' }}
-        </button>
-        <span
-          v-if="!feedback && !examMode && !hintEnabled && !question.isNew"
-          class="text-xs text-gray-400 italic"
-        >
-          💡 Lösung anzeigen ab 2 richtigen
-        </span>
       </div>
       <div v-if="!feedback"></div>
 
@@ -212,8 +217,11 @@ import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import AnswerInput from './AnswerInput.vue'
 import FeedbackDisplay from './FeedbackDisplay.vue'
 import PronounceButton from './PronounceButton.vue'
+import VoicePicker from './VoicePicker.vue'
 import { getLanguageName, getAllArticleGenders } from '@/utils/languages'
+import { pronounceWithStoredVoice } from '@/services/tts'
 import { fetchThumbnail } from '@/services/thumbnail'
+import { useToast } from '@/composables/useToast'
 
 const props = defineProps({
   question: { type: Object, required: true },
@@ -226,6 +234,8 @@ const props = defineProps({
 })
 
 const emit = defineEmits(['submit', 'skip', 'next', 'accept-close', 'reject-close'])
+
+const { showError } = useToast()
 
 // Allow advancing with the Enter key once feedback is shown (the answer input
 // is gone by then, so its own Enter-to-submit no longer applies). Only for the
@@ -275,7 +285,32 @@ onMounted(loadThumbnail)
 
 const showingHint = ref(false)
 const showingNote = ref(false)
+const pronouncing = ref(false)
 let hintTimeout = null
+
+// Play the target-language pronunciation with the stored/default voice. Used by
+// the "Vorsagen" button in the action bar (voice is chosen via VoicePicker).
+function playPronunciation() {
+  if (pronouncing.value) return
+  if (!(answerIsTarget.value && props.question.vocabSetId && props.question.itemId)) return
+  pronouncing.value = true
+  pronounceWithStoredVoice({
+    vocabSetId: props.question.vocabSetId,
+    itemId: props.question.itemId,
+    lang: props.targetLanguage,
+  })
+    .catch((e) => {
+      const status = e?.response?.status
+      if (status === 429) {
+        showError('Zu viele Aussprache-Anfragen, bitte kurz warten.')
+      } else {
+        showError('Aussprache konnte nicht abgespielt werden.')
+      }
+    })
+    .finally(() => {
+      pronouncing.value = false
+    })
+}
 
 // The correct answer is the target-language word only when translating
 // Deutsch -> Fremdsprache. In the reverse direction it is the German word,
