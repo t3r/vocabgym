@@ -41,78 +41,15 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import api from '@/services/api'
+import { goalStatusClass } from '@/utils/goalStatus'
 
 const goal = ref(null)
 
-const bannerClasses = computed(() => {
-  switch (goal.value?.status) {
-    case 'on_track':
-    case 'completed':
-      return 'bg-green-50 border-green-300 dark:bg-green-900/20 dark:border-green-700'
-    case 'at_risk':
-      return 'bg-yellow-50 border-yellow-300 dark:bg-yellow-900/20 dark:border-yellow-700'
-    case 'behind':
-      return 'bg-red-50 border-red-300 dark:bg-red-900/20 dark:border-red-700'
-    default:
-      return 'bg-gray-50 border-gray-300 dark:bg-gray-800 dark:border-gray-700'
-  }
-})
-
-const titleClass = computed(() => {
-  switch (goal.value?.status) {
-    case 'on_track':
-    case 'completed':
-      return 'text-green-800 dark:text-green-200'
-    case 'at_risk':
-      return 'text-yellow-800 dark:text-yellow-200'
-    case 'behind':
-      return 'text-red-800 dark:text-red-200'
-    default:
-      return 'text-gray-800 dark:text-gray-200'
-  }
-})
-
-const metaClass = computed(() => {
-  switch (goal.value?.status) {
-    case 'on_track':
-    case 'completed':
-      return 'text-green-700 dark:text-green-300'
-    case 'at_risk':
-      return 'text-yellow-700 dark:text-yellow-300'
-    case 'behind':
-      return 'text-red-700 dark:text-red-300'
-    default:
-      return 'text-gray-600 dark:text-gray-400'
-  }
-})
-
-const linkClass = computed(() => {
-  switch (goal.value?.status) {
-    case 'on_track':
-    case 'completed':
-      return 'text-green-700 dark:text-green-300'
-    case 'at_risk':
-      return 'text-yellow-700 dark:text-yellow-300'
-    case 'behind':
-      return 'text-red-700 dark:text-red-300'
-    default:
-      return 'text-primary-600 dark:text-primary-400'
-  }
-})
-
-const progressBarClass = computed(() => {
-  switch (goal.value?.status) {
-    case 'on_track':
-    case 'completed':
-      return 'bg-green-500 dark:bg-green-400'
-    case 'at_risk':
-      return 'bg-yellow-500 dark:bg-yellow-400'
-    case 'behind':
-      return 'bg-red-500 dark:bg-red-400'
-    default:
-      return 'bg-primary-500 dark:bg-primary-400'
-  }
-})
+const bannerClasses = computed(() => goalStatusClass('banner', goal.value?.status))
+const titleClass = computed(() => goalStatusClass('title', goal.value?.status))
+const metaClass = computed(() => goalStatusClass('meta', goal.value?.status))
+const linkClass = computed(() => goalStatusClass('link', goal.value?.status))
+const progressBarClass = computed(() => goalStatusClass('bar', goal.value?.status))
 
 const deadlineText = computed(() => {
   if (!goal.value) return ''

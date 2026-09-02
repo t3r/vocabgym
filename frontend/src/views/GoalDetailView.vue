@@ -165,6 +165,7 @@ import { useAuthStore } from '@/stores/auth'
 import { useToast } from '@/composables/useToast'
 import api from '@/services/api'
 import LoadingSpinner from '@/components/common/LoadingSpinner.vue'
+import { goalStatusClass, goalStatusLabel } from '@/utils/goalStatus'
 
 const props = defineProps({
   goalId: { type: String, required: true }
@@ -213,69 +214,15 @@ function formatDaysText(days) {
   return `📅 Noch ${days} ${days === 1 ? 'Tag' : 'Tage'}`
 }
 
-const statusLabel = computed(() => {
-  const labels = {
-    on_track: 'Im Zeitplan',
-    at_risk: 'Gefährdet',
-    behind: 'Im Rückstand',
-    completed: 'Abgeschlossen',
-    expired: 'Abgelaufen'
-  }
-  return labels[goal.value?.status] || goal.value?.status || ''
-})
+const statusLabel = computed(() => goalStatusLabel(goal.value?.status))
 
-const statusBadgeClass = computed(() => {
-  switch (goal.value?.status) {
-    case 'on_track': return 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300'
-    case 'at_risk': return 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300'
-    case 'behind': return 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300'
-    case 'completed': return 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300'
-    case 'expired': return 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300'
-    default: return 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300'
-  }
-})
+const statusBadgeClass = computed(() => goalStatusClass('badge', goal.value?.status))
 
-const progressTextClass = computed(() => {
-  switch (goal.value?.status) {
-    case 'on_track':
-    case 'completed':
-      return 'text-green-600 dark:text-green-400'
-    case 'at_risk':
-      return 'text-yellow-600 dark:text-yellow-400'
-    case 'behind':
-      return 'text-red-600 dark:text-red-400'
-    default:
-      return 'text-primary-600 dark:text-primary-400'
-  }
-})
+const progressTextClass = computed(() => goalStatusClass('text', goal.value?.status))
 
-const progressBarClass = computed(() => {
-  switch (goal.value?.status) {
-    case 'on_track':
-    case 'completed':
-      return 'bg-green-500 dark:bg-green-400'
-    case 'at_risk':
-      return 'bg-yellow-500 dark:bg-yellow-400'
-    case 'behind':
-      return 'bg-red-500 dark:bg-red-400'
-    default:
-      return 'bg-primary-500 dark:bg-primary-400'
-  }
-})
+const progressBarClass = computed(() => goalStatusClass('bar', goal.value?.status))
 
-const recommendationClasses = computed(() => {
-  switch (goal.value?.status) {
-    case 'on_track':
-    case 'completed':
-      return 'bg-green-50 border-green-300 text-green-800 dark:bg-green-900/20 dark:border-green-700 dark:text-green-200'
-    case 'at_risk':
-      return 'bg-yellow-50 border-yellow-300 text-yellow-800 dark:bg-yellow-900/20 dark:border-yellow-700 dark:text-yellow-200'
-    case 'behind':
-      return 'bg-red-50 border-red-300 text-red-800 dark:bg-red-900/20 dark:border-red-700 dark:text-red-200'
-    default:
-      return 'bg-gray-50 border-gray-300 text-gray-700 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-300'
-  }
-})
+const recommendationClasses = computed(() => goalStatusClass('recommendation', goal.value?.status))
 
 function setPercent(set) {
   if (!set.totalWords) return 0
@@ -290,39 +237,15 @@ function setProgressBarClass(set) {
 }
 
 function memberProgressBarClass(status) {
-  switch (status) {
-    case 'on_track':
-    case 'completed':
-      return 'bg-green-500 dark:bg-green-400'
-    case 'at_risk':
-      return 'bg-yellow-500 dark:bg-yellow-400'
-    case 'behind':
-      return 'bg-red-500 dark:bg-red-400'
-    default:
-      return 'bg-gray-400 dark:bg-gray-500'
-  }
+  return goalStatusClass('memberBar', status)
 }
 
 function memberStatusBadgeClass(status) {
-  switch (status) {
-    case 'on_track': return 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300'
-    case 'at_risk': return 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300'
-    case 'behind': return 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300'
-    case 'completed': return 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300'
-    case 'expired': return 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300'
-    default: return 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300'
-  }
+  return goalStatusClass('badge', status)
 }
 
 function memberStatusLabel(status) {
-  const labels = {
-    on_track: 'Im Zeitplan',
-    at_risk: 'Gefährdet',
-    behind: 'Im Rückstand',
-    completed: 'Abgeschlossen',
-    expired: 'Abgelaufen'
-  }
-  return labels[status] || status || ''
+  return goalStatusLabel(status)
 }
 
 async function confirmDelete() {
