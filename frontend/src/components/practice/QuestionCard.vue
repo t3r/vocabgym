@@ -353,9 +353,8 @@ function showHint() {
   hintTimeout = setTimeout(() => {
     showingHint.value = false
   }, 5000)
-
-  // Also play the pronunciation when the solution is the target-language word.
-  playPronunciation()
+  // Note: pronunciation is NOT auto-played here. The learner starts audio
+  // explicitly via the speaker button (PronounceButton) inside the hint toast.
 }
 
 // Reset toggles when the question changes so stale hints/notes don't linger.
