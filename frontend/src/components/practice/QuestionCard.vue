@@ -47,6 +47,7 @@
     <!-- Answer Input -->
     <AnswerInput
       v-if="!feedback"
+      :key="question.questionId ?? question.itemId"
       @submit="$emit('submit', $event)"
       :placeholder="(direction === 'de-fr' || direction === 'source-target') ? `${getLanguageName(targetLanguage)} eingeben...` : 'Deutsch eingeben...'"
     />

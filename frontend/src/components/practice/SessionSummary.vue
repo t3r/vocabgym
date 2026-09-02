@@ -114,7 +114,7 @@
     <!-- Actions -->
     <div class="flex gap-3 justify-center">
       <button @click="$emit('practice-again')" class="btn-primary">
-        Nochmal üben
+        weiter üben
       </button>
       <button @click="$emit('back')" class="btn-secondary">
         Zum Dashboard
