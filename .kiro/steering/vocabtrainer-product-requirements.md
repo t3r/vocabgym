@@ -135,6 +135,10 @@ A unified web application that scans workbook pages, extracts vocabulary automat
 - There is no public self-registration form; all accounts are created by teachers
 - New users receive a temporary password by email; they must change it on first login
 - Session persists across browser refreshes
+- **Session tokens are renewed automatically before or on expiry, so a long
+  session (e.g. an extended practice/exam) is never interrupted and no in-flight
+  work is lost; the user is only logged out when the refresh token itself is
+  invalid/expired, not on transient errors**
 - Logout clears all authentication tokens
 - Failed login attempts are rate-limited
 - Display name can be set and changed via the header UI
@@ -311,6 +315,53 @@ A unified web application that scans workbook pages, extracts vocabulary automat
 - Backend records detailed results for progress tracking
 - Session state stored in browser local storage to survive page refresh
 - Smart repetition algorithm weights questions by: mastery level (lower = higher weight), error count (more errors = higher weight), time since last practice (longer = higher weight)
+
+**Session Resilience & Data Durability (MUST):**
+
+Practice data is the most valuable thing a student produces in the app, and it is
+generated during long, uninterrupted sessions. Losing it silently is unacceptable.
+The following are hard requirements:
+
+- **Token expiry MUST NOT lose practice data.** A Cognito session token expiring
+  mid-session (the ID token has a ~60-minute lifetime, a long practice/exam
+  session can outlive it) MUST NOT interrupt the session or discard answers. The
+  token is renewed automatically and transparently, and the in-flight request is
+  retried with the fresh token. The student is never bounced to the login screen
+  while they still have a valid refresh token.
+- **Network loss MUST NOT lose practice data.** If connectivity drops when a
+  completed session is submitted, the result is NOT discarded and is NOT falsely
+  reported as saved. It is buffered locally and re-sent automatically later. The
+  UI honestly reflects the "not yet saved, will be retried" state.
+- **In-progress sessions survive reload/crash/offline.** The live session
+  (questions, answers so far, current position, streak) is persisted locally
+  after every answer so a refresh, tab crash, or going offline can resume it.
+- **Never overwrite good data with empty data.** A completion request that
+  carries no results (abandoned session, double-submit, reset client state) MUST
+  NOT clobber a previously stored score/progress with zeros.
+
+**User Stories:**
+- As a student, I want a long practice session to keep working even when my login
+  token would normally expire, so I never lose my answers to a re-login
+- As a student, I want my finished session to be saved even if my connection
+  drops, so my score and progress are not lost
+- As a student, I want to be told honestly when a result could not be saved yet,
+  rather than seeing a fake "saved" confirmation
+
+**Acceptance Criteria:**
+- The ID token is refreshed proactively before a request when it is expired or
+  about to expire, and reactively on a 401 with a single retry of the original
+  request; concurrent requests share one in-flight refresh (no stampede)
+- The user is only logged out when the refresh itself genuinely fails (no/expired
+  refresh token) — never on a 500 or other transient error
+- A completed session that fails to send due to a network error is queued locally
+  and re-sent automatically on the next app load; the session summary shows a
+  clear "noch nicht gespeichert / wird später gesendet" state
+- A genuine server error (5xx) shows local results without falsely buffering a
+  retry loop
+- The in-progress session is written to local storage after every answer and can
+  be restored after a reload/crash
+- An empty or partial completion request never overwrites existing stored results
+  with zeros
 
 ### 6. AI-Assisted Learning
 
@@ -581,6 +632,10 @@ Level 5: 100% accuracy over last 5 attempts
 - 99.5% uptime target
 - Graceful degradation if OCR/AI service unavailable
 - Automatic retries for failed API calls
+- **No data loss on transient failures: practice results MUST survive network
+  loss and token expiry. Completed sessions that cannot be sent are buffered
+  locally and re-sent automatically; expired tokens are refreshed and the
+  request retried. A failure is never silently reported as a success.**
 - Health check endpoints for monitoring
 - CloudWatch alarms for critical failures
 
@@ -791,13 +846,13 @@ Level 5: 100% accuracy over last 5 attempts
 6. ~~Gamification?~~ → **Partially implemented: Liga leaderboards and streak tracking.**
 7. ~~Audio pronunciation (text-to-speech)?~~ → **Implemented via Amazon Polly (polly_handler). Voice and accent selectable; new words auto-pronounced; MP3 cache in S3.**
 8. ~~Learning Goals with deadlines?~~ → **Implemented via goal_handler. Students and teachers set goals with deadline + target mastery level; GoalBanner on dashboard; teachers can set league-wide goals.**
+9. ~~Should practice sessions be resumable if interrupted?~~ → **Yes. The in-progress session is persisted to local storage after every answer and restored after a reload/crash/offline. Combined with automatic token renewal and local buffering + auto-resend of completed sessions, practice data is never lost to token expiry or network loss.**
 
 ## Open Questions
 
 1. Should there be a time limit per practice question, or allow unlimited time?
 2. How should compound words be handled (German: "der Tisch" vs "Tisch")?
 3. What level of parental controls or monitoring is needed?
-4. Should practice sessions be resumable if interrupted?
 5. How to handle vocabulary with multiple correct translations?
 6. Should teachers be able to create multiple Ligen (e.g., one per class)?
 7. Should there be inter-Liga competitions or school-wide leaderboards?
