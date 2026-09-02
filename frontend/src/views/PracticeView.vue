@@ -5,13 +5,10 @@
     <div v-if="!practiceStore.isSessionActive && !practiceStore.sessionResults" class="card">
       <h1 class="text-2xl font-bold text-gray-900 dark:text-white mb-6">Übung starten</h1>
 
-      <div class="space-y-4 mb-6">
+      <div class="space-y-5 mb-6">
         <div>
           <label class="label">Modus</label>
-          <select v-model="mode" class="input-field">
-            <option value="practice">📚 Übung (mit Vorsagen & Lösung)</option>
-            <option value="exam">⏱️ Prüfung auf Zeit</option>
-          </select>
+          <SegmentedControl v-model="mode" :options="modeOptions" aria-label="Modus" />
           <p v-if="mode === 'exam'" class="mt-2 text-xs text-gray-500 dark:text-gray-400">
             Im Prüfungsmodus läuft die Zeit. Keine Vorsagen, keine Lösungsanzeige,
             knappe Treffer zählen als falsch. So trainierst du unter Stress.
@@ -19,17 +16,11 @@
         </div>
         <div>
           <label class="label">Richtung</label>
-          <select v-model="direction" class="input-field">
-            <option value="source-target">Deutsch → {{ getLanguageName(targetLanguage) }}</option>
-            <option value="target-source">{{ getLanguageName(targetLanguage) }} → Deutsch</option>
-          </select>
+          <SegmentedControl v-model="direction" :options="directionOptions" aria-label="Richtung" />
         </div>
         <div>
           <label class="label">Auswahl</label>
-          <select v-model="focus" class="input-field">
-            <option value="all">🎲 Gemischt (ganzer Satz)</option>
-            <option value="weak">🎯 Nur Schwachstellen</option>
-          </select>
+          <SegmentedControl v-model="focus" :options="focusOptions" aria-label="Auswahl" />
           <p v-if="focus === 'weak'" class="mt-2 text-xs text-gray-500 dark:text-gray-400">
             Übt nur deine Problemwörter: die schwächsten, noch nie geübten und
             immer wieder übersprungenen Vokabeln. Sind keine vorhanden, wird der
@@ -100,6 +91,7 @@ import { getLanguageName } from '@/utils/languages'
 import ProgressBar from '@/components/practice/ProgressBar.vue'
 import QuestionCard from '@/components/practice/QuestionCard.vue'
 import SessionSummary from '@/components/practice/SessionSummary.vue'
+import SegmentedControl from '@/components/common/SegmentedControl.vue'
 
 const props = defineProps({
   vocabSetId: { type: String, required: true }
@@ -116,6 +108,24 @@ const focus = ref('all')
 const isStarting = ref(false)
 const feedback = ref(null)
 const targetLanguage = ref('fr')
+
+// Segmented-control options. Direction labels depend on the set's target
+// language, so they are computed. Icons match the previous dropdown emojis.
+const modeOptions = [
+  { value: 'practice', label: 'Übung', icon: '📚' },
+  { value: 'exam', label: 'Prüfung', icon: '⏱️' }
+]
+const focusOptions = [
+  { value: 'all', label: 'Gemischt', icon: '🎲' },
+  { value: 'weak', label: 'Schwachstellen', icon: '🎯' }
+]
+const directionOptions = computed(() => {
+  const lang = getLanguageName(targetLanguage.value)
+  return [
+    { value: 'source-target', label: `DE → ${lang}` },
+    { value: 'target-source', label: `${lang} → DE` }
+  ]
+})
 
 // Exam timer (counts up); stopped after the last word.
 const elapsed = ref(0)
