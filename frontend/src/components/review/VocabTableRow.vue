@@ -8,6 +8,9 @@
         class="input-field text-sm"
         :class="{ 'border-error': !(item.source || item.german)?.trim() }"
         placeholder="Deutsch"
+        autocomplete="off"
+        autocorrect="off"
+        spellcheck="false"
       />
     </td>
     <td class="py-2 pr-2">
@@ -17,6 +20,10 @@
         class="input-field text-sm"
         :class="{ 'border-error': !(item.target || item.french)?.trim() }"
         :placeholder="getLanguageName(targetLanguage)"
+        autocomplete="off"
+        autocorrect="off"
+        autocapitalize="off"
+        spellcheck="false"
       />
     </td>
     <td class="py-2 text-center">

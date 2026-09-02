@@ -7,8 +7,11 @@
       :placeholder="placeholder"
       class="input-field text-lg flex-1"
       autocomplete="off"
+      autocorrect="off"
       autocapitalize="off"
       spellcheck="false"
+      inputmode="text"
+      enterkeyhint="done"
     />
     <button
       type="submit"
