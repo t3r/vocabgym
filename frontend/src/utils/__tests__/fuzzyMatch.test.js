@@ -135,3 +135,38 @@ describe('checkAnswer', () => {
     expect(checkAnswer('le chat', 'la maison; le logement')).toBe('wrong')
   })
 })
+
+describe('checkAnswer strict (exam) mode', () => {
+  it('accepts an exact match with correct accents', () => {
+    expect(checkAnswer('café', 'café', { strict: true })).toBe('exact')
+  })
+
+  it('rejects a missing accent (café vs cafe)', () => {
+    expect(checkAnswer('cafe', 'café', { strict: true })).toBe('wrong')
+  })
+
+  it('rejects a wrong accent (éleve vs élève)', () => {
+    expect(checkAnswer('éleve', 'élève', { strict: true })).toBe('wrong')
+  })
+
+  it('still ignores case', () => {
+    expect(checkAnswer('Café', 'café', { strict: true })).toBe('exact')
+  })
+
+  it('still ignores surrounding punctuation', () => {
+    expect(checkAnswer('café!', 'café', { strict: true })).toBe('exact')
+    expect(checkAnswer('la maison.', 'la maison', { strict: true })).toBe('exact')
+  })
+
+  it('never returns close — a typo is simply wrong', () => {
+    expect(checkAnswer('la maisom', 'la maison', { strict: true })).toBe('wrong')
+  })
+
+  it('accepts one matching option of a slash-separated answer', () => {
+    expect(checkAnswer('l\'été', "l'été / la saison chaude", { strict: true })).toBe('exact')
+  })
+
+  it('rejects a slash option with a missing accent in strict mode', () => {
+    expect(checkAnswer('ete', "l'été / la saison chaude", { strict: true })).toBe('wrong')
+  })
+})

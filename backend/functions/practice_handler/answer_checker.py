@@ -7,18 +7,21 @@ from typing import Tuple
 from lib.languages import get_all_articles, SOURCE_LANGUAGE
 
 
-def normalize_answer(text: str) -> str:
+def normalize_answer(text: str, keep_accents: bool = False) -> str:
     """Normalize an answer for comparison.
 
     Applies the following transformations:
     1. Strip leading/trailing whitespace
     2. Convert to lowercase
-    3. Remove diacritical marks (accents)
+    3. Remove diacritical marks (accents) — unless keep_accents is True
     4. Remove common punctuation
     5. Collapse multiple spaces into one
 
     Args:
         text: The raw answer text
+        keep_accents: When True, diacritical marks are preserved (é stays é).
+            Case, whitespace, brackets and punctuation are still normalized.
+            Used by strict exam grading where accents must match exactly.
 
     Returns:
         Normalized string for comparison
@@ -35,12 +38,16 @@ def normalize_answer(text: str) -> str:
     # Remove anything in parentheses
     text = re.sub(r'\(.*?\)', '', text)
 
-    # Remove diacritical marks (é → e, ç → c, ü → u, etc.)
-    text = unicodedata.normalize('NFD', text)
-    text = ''.join(
-        char for char in text
-        if unicodedata.category(char) != 'Mn'
-    )
+    if keep_accents:
+        # Compose so visually-identical accents compare equal (e + ́ === é)
+        text = unicodedata.normalize('NFC', text)
+    else:
+        # Remove diacritical marks (é → e, ç → c, ü → u, etc.)
+        text = unicodedata.normalize('NFD', text)
+        text = ''.join(
+            char for char in text
+            if unicodedata.category(char) != 'Mn'
+        )
 
     # Remove common punctuation
     text = re.sub(r'[.,!?;:\'"()\[\]{}]', '', text)
@@ -84,10 +91,14 @@ def levenshtein_distance(s1: str, s2: str) -> int:
     return previous_row[-1]
 
 
-def check_answer(user_answer: str, correct_answer: str, target_language: str = 'fr') -> bool:
+def check_answer(user_answer: str, correct_answer: str, target_language: str = 'fr',
+                 strict: bool = False) -> bool:
     """Check if a user's answer is correct using fuzzy matching.
 
-    The matching rules are:
+    The correct answer may list several acceptable meanings separated by `/` or
+    `;` (e.g. "la maison / le logement"). Matching ANY one of them is correct.
+
+    The matching rules for a single option are:
     1. Exact match after normalization → correct
     2. For words longer than 5 characters: Levenshtein distance ≤ 2 → correct
     3. For words 3-5 characters: Levenshtein distance ≤ 1 → correct
@@ -97,12 +108,44 @@ def check_answer(user_answer: str, correct_answer: str, target_language: str = '
         user_answer: The user's submitted answer
         correct_answer: The expected correct answer
         target_language: Target language code for article stripping (default: 'fr')
+        strict: Exam grading. Accents must match exactly (café ≠ cafe) and no
+            fuzzy/Levenshtein tolerance is applied. Punctuation/casing are still
+            normalized away.
 
     Returns:
         True if the answer is considered correct
     """
     if not user_answer or not correct_answer:
         return False
+
+    # Split multi-meaning answers ("la maison / le logement"); any match is ok.
+    if '/' in correct_answer or ';' in correct_answer:
+        options = [o.strip() for o in re.split(r'[;/]', correct_answer) if o.strip()]
+        return any(
+            _check_single_answer(user_answer, opt, target_language, strict)
+            for opt in options
+        )
+
+    return _check_single_answer(user_answer, correct_answer, target_language, strict)
+
+
+def _check_single_answer(user_answer: str, correct_answer: str,
+                         target_language: str = 'fr', strict: bool = False) -> bool:
+    """Check a user's answer against a single correct option."""
+    if not user_answer or not correct_answer:
+        return False
+
+    # Strict (exam) grading: accents are significant. Compare with accents kept;
+    # punctuation/casing are still ignored. No fuzzy tolerance.
+    if strict:
+        strict_user = normalize_answer(user_answer, keep_accents=True)
+        strict_correct = normalize_answer(correct_answer, keep_accents=True)
+        if strict_user and strict_user == strict_correct:
+            return True
+        # Also accept an exact match ignoring the article ("la maison"/"maison").
+        strict_user_na = _strip_articles(strict_user, target_language)
+        strict_correct_na = _strip_articles(strict_correct, target_language)
+        return bool(strict_user_na) and strict_user_na == strict_correct_na
 
     # Normalize both answers
     norm_user = normalize_answer(user_answer)

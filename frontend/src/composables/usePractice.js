@@ -8,8 +8,8 @@ export function usePractice() {
    * Check if user's answer matches the correct answer
    * Uses fuzzy matching for minor typos and accent variations
    */
-  function validateAnswer(userAnswer, correctAnswer) {
-    return checkAnswer(userAnswer, correctAnswer)
+  function validateAnswer(userAnswer, correctAnswer, options = {}) {
+    return checkAnswer(userAnswer, correctAnswer, options)
   }
 
   /**

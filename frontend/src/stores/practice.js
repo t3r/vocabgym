@@ -17,6 +17,11 @@ export const usePracticeStore = defineStore('practice', () => {
   const questions = ref([])
   const currentQuestionIndex = ref(0)
   const answers = ref([])
+  // itemIds the learner skipped during this session (deduplicated). Used to
+  // record "repeatedly skipped" words server-side so the focused ("nur
+  // Schwachstellen") session can surface them. Only items that were skipped
+  // AND never actually answered are reported as skips at completion.
+  const skippedItemIds = ref([])
   const sessionResults = ref(null)
   const isSessionActive = ref(false)
   const currentStreak = ref(0)
@@ -37,6 +42,7 @@ export const usePracticeStore = defineStore('practice', () => {
         currentQuestionIndex: currentQuestionIndex.value,
         answers: answers.value,
         currentStreak: currentStreak.value,
+        skippedItemIds: skippedItemIds.value,
       })
     }
   }
@@ -75,7 +81,8 @@ export const usePracticeStore = defineStore('practice', () => {
         vocabSetId,
         direction: options.direction || 'de-fr',
         questionCount: options.questionCount || 10,
-        mode: options.mode || 'practice'
+        mode: options.mode || 'practice',
+        focus: options.focus || 'all'
       })
 
       currentSession.value = {
@@ -83,6 +90,7 @@ export const usePracticeStore = defineStore('practice', () => {
         vocabSetId,
         direction: options.direction || 'de-fr',
         mode: options.mode || 'practice',
+        focus: options.focus || 'all',
         startTime: Date.now()
       }
       // Ensure every question carries its vocabSetId (used e.g. by the
@@ -93,6 +101,7 @@ export const usePracticeStore = defineStore('practice', () => {
       }))
       currentQuestionIndex.value = 0
       answers.value = []
+      skippedItemIds.value = []
       sessionResults.value = null
       isSessionActive.value = true
       savePending.value = false
@@ -111,7 +120,9 @@ export const usePracticeStore = defineStore('practice', () => {
     const correctAnswer = question.correctAnswer
       || (currentSession.value.direction === 'de-fr' ? question.french : question.german)
 
-    const result = checkAnswer(userAnswer, correctAnswer)
+    // Exam mode grades strictly: accents must match exactly and there is no
+    // "almost correct" tolerance (a near miss is simply wrong).
+    const result = checkAnswer(userAnswer, correctAnswer, { strict: isExam.value })
 
     // 'exact' = correct, 'close' = let user decide, 'wrong' = incorrect
     const answerRecord = {
@@ -169,6 +180,14 @@ export const usePracticeStore = defineStore('practice', () => {
     const question = currentQuestion.value
     if (!question) return
 
+    // Track the skip so a repeatedly-dodged word can be surfaced in a focused
+    // session. Deduplicated: a word skipped several times is recorded once here
+    // (the server keeps its own running skipCount across sessions).
+    const iid = question.itemId
+    if (iid && !skippedItemIds.value.includes(iid)) {
+      skippedItemIds.value.push(iid)
+    }
+
     // Move skipped question to end of queue so it gets asked again
     questions.value.splice(currentQuestionIndex.value, 1)
     questions.value.push(question)
@@ -198,6 +217,17 @@ export const usePracticeStore = defineStore('practice', () => {
         correct: a.correct,
         userAnswer: a.userAnswer,
       })),
+    }
+
+    // Report words that were skipped and NEVER actually answered this session,
+    // so the server can raise their skipCount (they keep getting dodged). Items
+    // that were skipped but later answered are already covered by their answer
+    // record and must not be double-counted as skips.
+    const answeredItemIds = new Set(answers.value.map((a) => a.itemId))
+    for (const itemId of skippedItemIds.value) {
+      if (!answeredItemIds.has(itemId)) {
+        payload.results.push({ itemId, correct: false, skipped: true })
+      }
     }
     const localResultBase = {
       score: score.value,
@@ -254,6 +284,7 @@ export const usePracticeStore = defineStore('practice', () => {
     questions.value = snap.questions
     currentQuestionIndex.value = snap.currentQuestionIndex || 0
     answers.value = snap.answers || []
+    skippedItemIds.value = snap.skippedItemIds || []
     currentStreak.value = snap.currentStreak || 0
     sessionResults.value = null
     isSessionActive.value = true
@@ -276,6 +307,7 @@ export const usePracticeStore = defineStore('practice', () => {
     questions.value = []
     currentQuestionIndex.value = 0
     answers.value = []
+    skippedItemIds.value = []
     sessionResults.value = null
     isSessionActive.value = false
     currentStreak.value = 0
@@ -288,6 +320,7 @@ export const usePracticeStore = defineStore('practice', () => {
     questions,
     currentQuestionIndex,
     answers,
+    skippedItemIds,
     sessionResults,
     isSessionActive,
     currentStreak,

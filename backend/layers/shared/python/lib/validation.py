@@ -160,6 +160,13 @@ def validate_practice_options(data):
         except (ValueError, TypeError):
             return False, "questionCount must be a positive integer"
 
+    # Optional focus: restrict the session to the learner's weak spots
+    # (worst / never-trained / repeatedly-skipped words). 'all' (default) keeps
+    # the standard weighted selection across the whole set.
+    focus = data.get('focus')
+    if focus is not None and focus not in ('all', 'weak'):
+        return False, "focus must be 'all' or 'weak'"
+
     return True, None
 
 

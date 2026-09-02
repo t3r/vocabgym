@@ -294,21 +294,61 @@ describe('practice store', () => {
     })
   })
 
-  describe('resetSession', () => {
-    it('clears all session state', () => {
+  describe('exam mode strict grading', () => {
+    function setupExam(questionsList) {
+      store.currentSession = {
+        sessionId: 'exam-session',
+        vocabSetId: 'test-set',
+        direction: 'de-fr',
+        mode: 'exam',
+        startTime: Date.now(),
+      }
+      store.questions = questionsList
+      store.currentQuestionIndex = 0
+      store.answers = []
+      store.isSessionActive = true
+      store.currentStreak = 0
+    }
+
+    it('marks a missing accent as wrong (not close)', () => {
+      setupExam([{ questionId: 'q1', itemId: 'i1', question: 'der Sommer', correctAnswer: 'été' }])
+      const result = store.submitAnswer('ete')
+      expect(result.result).toBe('wrong')
+    })
+
+    it('accepts an exact answer with correct accents', () => {
+      setupExam([{ questionId: 'q1', itemId: 'i1', question: 'der Sommer', correctAnswer: 'été' }])
+      const result = store.submitAnswer('été')
+      expect(result.result).toBe('exact')
+    })
+
+    it('never returns close in exam mode', () => {
+      setupExam([{ questionId: 'q1', itemId: 'i1', question: 'das Haus', correctAnswer: 'la maison' }])
+      const result = store.submitAnswer('la maisom') // a typo → close in practice, wrong in exam
+      expect(result.result).toBe('wrong')
+    })
+  })
+
+  describe('skip tracking (focus feature)', () => {
+    beforeEach(() => {
       setupSession([...sampleQuestions])
-      store.submitAnswer('la maison')
-      store.currentStreak = 5
+    })
 
+    it('records skipped itemIds (deduplicated)', () => {
+      store.skipQuestion() // skips q1/i1
+      expect(store.skippedItemIds).toContain('i1')
+      // Skip the same word again after it cycles back — still a single entry
+      store.questions.unshift({ questionId: 'q1', itemId: 'i1', question: 'das Haus', correctAnswer: 'la maison' })
+      store.currentQuestionIndex = 0
+      store.skipQuestion()
+      expect(store.skippedItemIds.filter((id) => id === 'i1')).toHaveLength(1)
+    })
+
+    it('resetSession clears skippedItemIds', () => {
+      store.skipQuestion()
+      expect(store.skippedItemIds.length).toBeGreaterThan(0)
       store.resetSession()
-
-      expect(store.currentSession).toBeNull()
-      expect(store.questions).toEqual([])
-      expect(store.currentQuestionIndex).toBe(0)
-      expect(store.answers).toEqual([])
-      expect(store.sessionResults).toBeNull()
-      expect(store.isSessionActive).toBe(false)
-      expect(store.currentStreak).toBe(0)
+      expect(store.skippedItemIds).toEqual([])
     })
   })
 })

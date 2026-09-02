@@ -167,6 +167,53 @@ class TestCheckAnswer:
         assert check_answer('', 'test') is False
 
 
+class TestCheckAnswerMultiOption:
+    """Answers with several acceptable meanings separated by '/' or ';'."""
+
+    def test_slash_option_accepted(self):
+        assert check_answer('la maison', 'la maison / le logement') is True
+        assert check_answer('le logement', 'la maison / le logement') is True
+
+    def test_semicolon_option_accepted(self):
+        assert check_answer('la maison', 'la maison; le logement') is True
+        assert check_answer('le logement', 'la maison; le logement') is True
+
+    def test_no_option_matches(self):
+        assert check_answer('le chat', 'la maison / le logement') is False
+
+
+class TestCheckAnswerStrict:
+    """Exam grading: accents significant, no fuzzy tolerance."""
+
+    def test_exact_with_accents(self):
+        assert check_answer('été', 'été', strict=True) is True
+        assert check_answer('français', 'français', strict=True) is True
+
+    def test_missing_accent_rejected(self):
+        assert check_answer('cafe', 'café', strict=True) is False
+        assert check_answer('ete', 'été', strict=True) is False
+
+    def test_wrong_accent_rejected(self):
+        assert check_answer('éleve', 'élève', strict=True) is False
+
+    def test_case_still_ignored(self):
+        assert check_answer('Café', 'café', strict=True) is True
+
+    def test_punctuation_still_ignored(self):
+        assert check_answer('la maison.', 'la maison', strict=True) is True
+
+    def test_no_fuzzy_tolerance(self):
+        # A one-char typo is close in practice mode, but wrong in exam mode.
+        assert check_answer('maisom', 'maison', strict=True) is False
+
+    def test_article_still_optional(self):
+        assert check_answer('maison', 'la maison', strict=True) is True
+
+    def test_slash_option_with_accents(self):
+        assert check_answer('été', 'été / la saison chaude', strict=True) is True
+        assert check_answer('ete', 'été / la saison chaude', strict=True) is False
+
+
 class TestGetAnswerFeedback:
     """Tests for the get_answer_feedback function."""
 
@@ -222,6 +269,22 @@ class TestPracticeHandlerIntegration:
             'questionCount': 0,
         })
         assert valid is False
+
+        # Valid focus values
+        for f in ('all', 'weak'):
+            valid, err = validate_practice_options({
+                'vocabSetId': '123e4567-e89b-12d3-a456-426614174000',
+                'focus': f,
+            })
+            assert valid is True, f"focus={f} should be valid"
+
+        # Invalid focus value
+        valid, err = validate_practice_options({
+            'vocabSetId': '123e4567-e89b-12d3-a456-426614174000',
+            'focus': 'bogus',
+        })
+        assert valid is False
+        assert 'focus' in err
 
 
 

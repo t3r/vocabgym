@@ -24,6 +24,18 @@
             <option value="target-source">{{ getLanguageName(targetLanguage) }} → Deutsch</option>
           </select>
         </div>
+        <div>
+          <label class="label">Auswahl</label>
+          <select v-model="focus" class="input-field">
+            <option value="all">🎲 Gemischt (ganzer Satz)</option>
+            <option value="weak">🎯 Nur Schwachstellen</option>
+          </select>
+          <p v-if="focus === 'weak'" class="mt-2 text-xs text-gray-500 dark:text-gray-400">
+            Übt nur deine Problemwörter: die schwächsten, noch nie geübten und
+            immer wieder übersprungenen Vokabeln. Sind keine vorhanden, wird der
+            ganze Satz genutzt.
+          </p>
+        </div>
       </div>
 
       <button @click="startPractice" class="btn-primary w-full" :disabled="isStarting">
@@ -100,6 +112,7 @@ const { showError } = useToast()
 
 const direction = ref('source-target')
 const mode = ref('practice')
+const focus = ref('all')
 const isStarting = ref(false)
 const feedback = ref(null)
 const targetLanguage = ref('fr')
@@ -153,7 +166,8 @@ async function startPractice() {
 
     await practiceStore.startSession(props.vocabSetId, {
       direction: apiDirection,
-      mode: mode.value
+      mode: mode.value,
+      focus: focus.value
     })
     if (mode.value === 'exam') {
       startTimer()

@@ -9,17 +9,32 @@
  * - Trim whitespace
  * - Strip diacritical marks (é → e, ç → c, etc.)
  * - Remove common punctuation
+ *
+ * @param {string} text
+ * @param {object} [options]
+ * @param {boolean} [options.keepAccents=false] When true, diacritical marks are
+ *   preserved (é stays é). Case, whitespace, brackets and punctuation are still
+ *   normalized. Used by the strict exam comparison where accents must match.
  */
-export function normalizeAnswer(text) {
+export function normalizeAnswer(text, { keepAccents = false } = {}) {
   if (!text) return ''
 
-  return text
+  let result = text
     .toLowerCase()
     .trim()
     .replace(/\[[^\]]*\]/g, '') // Remove anything in square brackets (e.g., phonetic transcription)
     .replace(/\([^)]*\)/g, '') // Remove anything in parentheses
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '') // Remove diacritical marks
+
+  if (!keepAccents) {
+    result = result
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '') // Remove diacritical marks
+  } else {
+    // Compose so visually-identical accents compare equal (e.g. e + ́ === é)
+    result = result.normalize('NFC')
+  }
+
+  return result
     .replace(/[.,!?;:'"()\-]/g, '') // Remove punctuation
     .replace(/\s+/g, ' ') // Normalize whitespace
     .trim()
@@ -56,29 +71,41 @@ export function levenshteinDistance(a, b) {
  * - exact: perfect match (after normalization)
  * - close: minor differences (let user decide)
  * - wrong: clearly incorrect
+ *
+ * A correct answer may list several acceptable meanings separated by `/` or `;`
+ * (e.g. "la maison / le logement"). Matching ANY one of them counts as correct.
+ *
+ * @param {string} userAnswer
+ * @param {string} correctAnswer
+ * @param {object} [options]
+ * @param {boolean} [options.strict=false] Exam grading. Accents must match
+ *   exactly (café ≠ cafe) and no fuzzy/Levenshtein tolerance is applied — a
+ *   result is only ever 'exact' or 'wrong', never 'close'. Other punctuation
+ *   and casing are still normalized away.
  */
-export function checkAnswer(userAnswer, correctAnswer) {
+export function checkAnswer(userAnswer, correctAnswer, options = {}) {
   if (!userAnswer || !correctAnswer) return 'wrong'
 
-  // If correct answer contains multiple options (separated by ; or /), check each one
+  // If correct answer contains multiple options (separated by ; or /), check each one.
+  // In every mode a single matching meaning is enough to be counted correct.
   if (correctAnswer.includes(';') || correctAnswer.includes('/')) {
-    const options = correctAnswer.split(/[;/]/).map(o => o.trim()).filter(Boolean)
+    const optionList = correctAnswer.split(/[;/]/).map(o => o.trim()).filter(Boolean)
     let bestResult = 'wrong'
-    for (const option of options) {
-      const result = checkSingleAnswer(userAnswer, option)
+    for (const option of optionList) {
+      const result = checkSingleAnswer(userAnswer, option, options)
       if (result === 'exact') return 'exact'
       if (result === 'close') bestResult = 'close'
     }
     return bestResult
   }
 
-  return checkSingleAnswer(userAnswer, correctAnswer)
+  return checkSingleAnswer(userAnswer, correctAnswer, options)
 }
 
 /**
  * Check a single answer against a single correct answer.
  */
-function checkSingleAnswer(userAnswer, correctAnswer) {
+function checkSingleAnswer(userAnswer, correctAnswer, { strict = false } = {}) {
   if (!userAnswer || !correctAnswer) return 'wrong'
 
   const trimmedUser = userAnswer.trim().toLowerCase()
@@ -92,6 +119,18 @@ function checkSingleAnswer(userAnswer, correctAnswer) {
   // NFC normalization (compose characters) then compare
   if (trimmedUser.normalize('NFC') === trimmedCorrect.normalize('NFC')) {
     return 'exact'
+  }
+
+  // Strict (exam) grading: accents are significant, so normalize everything
+  // EXCEPT the diacritical marks. Punctuation/brackets/casing are still
+  // ignored. No fuzzy tolerance — either the accents match or it's wrong.
+  if (strict) {
+    const strictUser = normalizeAnswer(userAnswer, { keepAccents: true })
+    const strictCorrect = normalizeAnswer(correctAnswer, { keepAccents: true })
+    if (strictUser && strictUser === strictCorrect) {
+      return 'exact'
+    }
+    return 'wrong'
   }
 
   // Normalized comparison (strips accents, punctuation, brackets)

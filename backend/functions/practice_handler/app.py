@@ -112,6 +112,13 @@ def handle_start(event, user_id):
     if mode not in ('practice', 'exam'):
         mode = 'practice'
 
+    # Focus: 'all' (default) uses the standard weighted selection across the
+    # whole set; 'weak' restricts the session to the learner's problem words
+    # (worst mastery / never trained / repeatedly skipped).
+    focus = body.get('focus', 'all')
+    if focus not in ('all', 'weak'):
+        focus = 'all'
+
     # Map old direction values to new ones internally
     direction_map = {
         'de-fr': 'source-target',
@@ -184,7 +191,18 @@ def handle_start(event, user_id):
     # whole set (weak words first).
     requested = question_count or DEFAULT_SESSION_LENGTH
     session_length = min(requested, MAX_SESSION_LENGTH, len(active_items))
-    selected_items = _select_items_weighted(active_items, user_id, vocab_set_id, session_length)
+
+    if focus == 'weak':
+        # Restrict the pool to the learner's problem words: worst mastery,
+        # never trained, or repeatedly skipped. If nobody qualifies (e.g. a
+        # fresh set or everything mastered) fall back to the full set so the
+        # session is never empty.
+        weak_items = _select_weak_pool(active_items, user_id, vocab_set_id)
+        pool = weak_items or active_items
+        session_length = min(requested, MAX_SESSION_LENGTH, len(pool))
+        selected_items = _select_items_weighted(pool, user_id, vocab_set_id, session_length)
+    else:
+        selected_items = _select_items_weighted(active_items, user_id, vocab_set_id, session_length)
 
     # Load progress to flag words that were never answered correctly ("new"),
     # so the client can offer the solution/pronunciation immediately.
@@ -321,8 +339,12 @@ def handle_submit(event, user_id):
 
     correct_answer = question['correctAnswer']
 
+    # Exam sessions grade strictly server-side too (accents significant, no
+    # fuzzy tolerance), matching the client-side check.
+    strict = session.get('mode') == 'exam'
+
     # Check answer using fuzzy matching
-    is_correct = check_answer(user_answer, correct_answer)
+    is_correct = check_answer(user_answer, correct_answer, strict=strict)
 
     # Record result
     result = {
@@ -415,8 +437,12 @@ def handle_complete(event, user_id):
     timestamp = get_timestamp()
     started_at = session.get('startedAt', timestamp)
     duration = timestamp - started_at
-    correct_count = sum(1 for r in client_results if r.get('correct'))
-    total = len(client_results) if client_results else int(session.get('totalQuestions', 0))
+    # Skipped questions are neither right nor wrong — exclude them from the
+    # score and total so they don't drag the percentage down. They are still
+    # recorded (as skips) below to power the focused "weak spots" session.
+    graded_results = [r for r in client_results if not r.get('skipped')]
+    correct_count = sum(1 for r in graded_results if r.get('correct'))
+    total = len(graded_results) if graded_results else int(session.get('totalQuestions', 0))
     score = int((correct_count / total * 100) if total > 0 else 0)
 
     # Guard: never overwrite the session's existing results/score with an
@@ -482,7 +508,13 @@ def handle_complete(event, user_id):
 
     for result in client_results:
         item_id = result.get('itemId')
-        if item_id:
+        if not item_id:
+            continue
+        if result.get('skipped'):
+            # A skip is not an answer: record it (for the weak-spots focus) but
+            # don't touch correct/incorrect counts or mastery.
+            _record_skip(user_id, vocab_set_id, item_id)
+        else:
             _update_item_progress(
                 user_id, vocab_set_id, item_id,
                 result.get('correct', False),
@@ -522,7 +554,7 @@ def handle_complete(event, user_id):
         response_body['leagueUpdate'] = league_update
 
     # Analyze error patterns for this session
-    wrong_answers = [r for r in client_results if not r.get('correct', False)]
+    wrong_answers = [r for r in client_results if not r.get('correct', False) and not r.get('skipped')]
     if wrong_answers:
         patterns = _analyze_error_patterns(user_id, vocab_set_id, wrong_answers)
         if patterns:
@@ -758,6 +790,59 @@ def _get_correct_counts(user_id, vocab_set_id):
         return {}
 
 
+def _select_weak_pool(active_items, user_id, vocab_set_id):
+    """Return the subset of items that are 'weak spots' for this learner.
+
+    An item qualifies for a focused ("nur Schwachstellen") session when ANY of:
+      - never trained: no progress record, or 0 correct AND 0 incorrect answers
+      - never mastered: never answered correctly (correctCount == 0)
+      - low mastery: masteryLevel <= 2
+      - error-prone: incorrectCount > correctCount, or it has recent errors
+      - repeatedly skipped: skipCount >= 2 (learner keeps dodging it)
+
+    Returns a list of item dicts (a subset of active_items). May be empty if the
+    whole set is already solid — the caller then falls back to the full set.
+    """
+    progress_table = dynamodb.Table(PROGRESS_TABLE)
+    progress_key = f"{user_id}#{vocab_set_id}"
+
+    try:
+        resp = progress_table.query(
+            KeyConditionExpression=Key('progressKey').eq(progress_key)
+        )
+        progress_items = {p['itemId']: p for p in resp.get('Items', [])}
+    except Exception as e:
+        logger.warning(f"Failed to fetch progress for weak pool: {e}")
+        # Without progress we cannot tell weak from strong → treat all as new.
+        return list(active_items)
+
+    weak = []
+    for item in active_items:
+        progress = progress_items.get(item['itemId'])
+
+        if not progress:
+            # Never trained at all.
+            weak.append(item)
+            continue
+
+        correct = int(progress.get('correctCount', 0))
+        incorrect = int(progress.get('incorrectCount', 0))
+        mastery = int(progress.get('masteryLevel', 0))
+        recent_errors = progress.get('recentErrors', []) or []
+        skip_count = int(progress.get('skipCount', 0))
+
+        never_trained = correct == 0 and incorrect == 0
+        never_correct = correct == 0
+        low_mastery = mastery <= 2
+        error_prone = incorrect > correct or len(recent_errors) > 0
+        often_skipped = skip_count >= 2
+
+        if never_trained or never_correct or low_mastery or error_prone or often_skipped:
+            weak.append(item)
+
+    return weak
+
+
 def _select_items_weighted(active_items, user_id, vocab_set_id, count):
     """Select *count* questions via weighted random draw (with replacement).
 
@@ -888,6 +973,31 @@ def _spread_repeats(items):
                 if items[j]['itemId'] != items[i - 1]['itemId']:
                     items[i], items[j] = items[j], items[i]
                     break
+
+
+def _record_skip(user_id, vocab_set_id, item_id):
+    """Increment the skip counter for an item.
+
+    Used by the focused ("nur Schwachstellen") session to surface words the
+    learner keeps skipping. Best-effort: failures are logged, never raised.
+    """
+    progress_table = dynamodb.Table(PROGRESS_TABLE)
+    progress_key = f"{user_id}#{vocab_set_id}"
+    timestamp = get_timestamp()
+    try:
+        progress_table.update_item(
+            Key={'progressKey': progress_key, 'itemId': item_id},
+            UpdateExpression=(
+                'SET skipCount = if_not_exists(skipCount, :zero) + :one, '
+                'lastSkippedAt = :ts, userId = :uid, vocabSetId = :vsid'
+            ),
+            ExpressionAttributeValues={
+                ':one': 1, ':zero': 0, ':ts': timestamp,
+                ':uid': user_id, ':vsid': vocab_set_id,
+            },
+        )
+    except Exception as e:
+        logger.warning(f"Failed to record skip for item {item_id}: {e}")
 
 
 def _update_item_progress(user_id, vocab_set_id, item_id, is_correct, user_answer=None):
