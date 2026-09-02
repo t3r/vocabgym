@@ -497,6 +497,97 @@ class TestSmartRepetition:
         assert len(picked) == 8, f"expected 8 questions, got {len(picked)}"
 
 
+class TestRecoveredWordNotWeak:
+    """Regression (Alexa / 'digital'): a word that was wrong in the past but has
+    since been answered correctly several times in a row must NOT keep showing
+    up as a 'weak spot', and must not be over-weighted in the draw. recentErrors
+    is append-only history that is never cleared on a correct answer, so it must
+    only count while the word has not recovered (short current correct-streak).
+    """
+
+    def _seed_recovered(self, ddb):
+        """Exactly Alexa's 'digital' progress: 6 correct in a row, mastery 3,
+        4 historical recentErrors, more correct than incorrect overall."""
+        table = ddb.Table(os.environ['PROGRESS_TABLE'])
+        pk = 'user-1#vs-1'
+        table.put_item(Item={
+            'progressKey': pk, 'itemId': 'digital',
+            'masteryLevel': 3, 'correctCount': 6, 'incorrectCount': 4,
+            'consecutiveCorrect': 6,
+            'recentErrors': [
+                {'answer': 'digitale', 'timestamp': 1000},
+                {'answer': 'digitale', 'timestamp': 2000},
+                {'answer': 'digitale', 'timestamp': 3000},
+                {'answer': 'digitale', 'timestamp': 4000},
+            ],
+        })
+
+    def test_recovered_word_excluded_from_weak_pool(self, mocked_aws):
+        ddb, practice_app, _ = mocked_aws
+        self._seed_recovered(ddb)
+        items = [{'itemId': 'digital', 'source': 'digital', 'target': 'numérique'}]
+        weak = practice_app._select_weak_pool(list(items), 'user-1', 'vs-1')
+        weak_ids = {w['itemId'] for w in weak}
+        assert 'digital' not in weak_ids, (
+            "recovered word (6 correct in a row) must not be a weak spot despite "
+            "historical recentErrors"
+        )
+
+    def test_not_recovered_word_still_weak(self, mocked_aws):
+        # Same historical errors, but NOT recovered (streak 1) → still weak.
+        ddb, practice_app, _ = mocked_aws
+        table = ddb.Table(os.environ['PROGRESS_TABLE'])
+        pk = 'user-1#vs-1'
+        table.put_item(Item={
+            'progressKey': pk, 'itemId': 'digital',
+            'masteryLevel': 3, 'correctCount': 6, 'incorrectCount': 4,
+            'consecutiveCorrect': 1,
+            'recentErrors': [
+                {'answer': 'digitale', 'timestamp': 1000},
+                {'answer': 'digitale', 'timestamp': 2000},
+            ],
+        })
+        items = [{'itemId': 'digital', 'source': 'digital', 'target': 'numérique'}]
+        weak = practice_app._select_weak_pool(list(items), 'user-1', 'vs-1')
+        assert 'digital' in {w['itemId'] for w in weak}, (
+            "a word with recent errors and no recovery streak should stay weak"
+        )
+
+    def test_recovered_word_not_over_weighted(self, mocked_aws):
+        """The recovered word must not dominate the draw. Against 5 equally
+        mastered peers it should be drawn at roughly its fair share, not far
+        more (which is what the stale-error boost used to cause)."""
+        ddb, practice_app, _ = mocked_aws
+        self._seed_recovered(ddb)
+        table = ddb.Table(os.environ['PROGRESS_TABLE'])
+        pk = 'user-1#vs-1'
+        items = [{'itemId': 'digital', 'source': 'digital', 'target': 'numérique'}]
+        for n in range(5):
+            iid = f'peer-{n}'
+            # Peers with the SAME mastery/streak profile but no error history.
+            table.put_item(Item={
+                'progressKey': pk, 'itemId': iid,
+                'masteryLevel': 3, 'correctCount': 6, 'incorrectCount': 0,
+                'consecutiveCorrect': 6, 'recentErrors': [],
+            })
+            items.append({'itemId': iid, 'source': f's{n}', 'target': f't{n}'})
+
+        digital = peers = 0
+        for _ in range(60):
+            picked = practice_app._select_items_weighted(list(items), 'user-1', 'vs-1', 6)
+            digital += sum(1 for p in picked if p['itemId'] == 'digital')
+            peers += sum(1 for p in picked if p['itemId'] != 'digital')
+        avg_peer = peers / 5
+        # 'digital' may be drawn somewhat more than a flawless peer purely from
+        # its real error RATE (4/10 wrong), but must NOT be dominated by the
+        # stale recentErrors boost. Pre-fix its weight was ~16.7 (ratio ~11x vs
+        # a peer); post-fix it is ~4.7 (ratio ~3x). Guard well below the old
+        # behaviour so a regression of the stale-error boost is caught.
+        assert digital <= avg_peer * 5, (
+            f"recovered word over-weighted: digital={digital} avg_peer={avg_peer:.1f}"
+        )
+
+
 # ======================================================================
 # 6. Language validation
 # ======================================================================

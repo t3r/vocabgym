@@ -797,12 +797,19 @@ def _select_weak_pool(active_items, user_id, vocab_set_id):
       - never trained: no progress record, or 0 correct AND 0 incorrect answers
       - never mastered: never answered correctly (correctCount == 0)
       - low mastery: masteryLevel <= 2
-      - error-prone: incorrectCount > correctCount, or it has recent errors
+      - error-prone: more wrong than right overall, OR it had recent errors AND
+        has NOT since recovered (a short current correct-streak). A word the
+        learner has since answered correctly several times in a row is no longer
+        a weak spot, even though its historical recentErrors linger.
       - repeatedly skipped: skipCount >= 2 (learner keeps dodging it)
 
     Returns a list of item dicts (a subset of active_items). May be empty if the
     whole set is already solid — the caller then falls back to the full set.
     """
+    # A word counts as "recovered" once it has this many correct answers in a
+    # row, at which point stale historical errors no longer mark it as weak.
+    RECOVERY_STREAK = 3
+
     progress_table = dynamodb.Table(PROGRESS_TABLE)
     progress_key = f"{user_id}#{vocab_set_id}"
 
@@ -828,13 +835,20 @@ def _select_weak_pool(active_items, user_id, vocab_set_id):
         correct = int(progress.get('correctCount', 0))
         incorrect = int(progress.get('incorrectCount', 0))
         mastery = int(progress.get('masteryLevel', 0))
+        consecutive_correct = int(progress.get('consecutiveCorrect', 0))
         recent_errors = progress.get('recentErrors', []) or []
         skip_count = int(progress.get('skipCount', 0))
 
         never_trained = correct == 0 and incorrect == 0
         never_correct = correct == 0
         low_mastery = mastery <= 2
-        error_prone = incorrect > correct or len(recent_errors) > 0
+        # recentErrors is append-only history (trimmed to the last 5) and is
+        # never cleared on a correct answer, so "has any recent error" alone
+        # would keep a word weak FOREVER. Only treat it as weak while it has NOT
+        # recovered — i.e. the learner is not currently on a solid correct
+        # streak for it. Words wrong more often than right stay weak regardless.
+        not_recovered = consecutive_correct < RECOVERY_STREAK
+        error_prone = incorrect > correct or (len(recent_errors) > 0 and not_recovered)
         often_skipped = skip_count >= 2
 
         if never_trained or never_correct or low_mastery or error_prone or often_skipped:
@@ -892,8 +906,14 @@ def _select_items_weighted(active_items, user_id, vocab_set_id, count):
             # Base: square of inverse mastery → big gap between weak and strong
             weight = (6 - mastery) ** 2  # mastery 0→36, 3→9, 5→1
 
-            # Boost for recent errors (up to +12)
-            weight += min(len(recent_errors), 3) * 4.0
+            # Boost for recent errors (up to +12) — but ONLY while the word has
+            # not recovered. recentErrors is append-only history that is never
+            # cleared on a correct answer, so boosting on it unconditionally
+            # keeps a word over-weighted forever. A solid current correct-streak
+            # means the learner has re-learnt it: drop the stale-error boost.
+            RECOVERY_STREAK = 3
+            if consecutive_correct < RECOVERY_STREAK:
+                weight += min(len(recent_errors), 3) * 4.0
 
             # Boost for overall error rate (up to +8)
             total = correct_count + incorrect_count
