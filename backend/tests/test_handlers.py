@@ -498,16 +498,17 @@ class TestSmartRepetition:
 
 
 class TestRecoveredWordNotWeak:
-    """Regression (Alexa / 'digital'): a word that was wrong in the past but has
-    since been answered correctly several times in a row must NOT keep showing
-    up as a 'weak spot', and must not be over-weighted in the draw. recentErrors
-    is append-only history that is never cleared on a correct answer, so it must
-    only count while the word has not recovered (short current correct-streak).
+    """Regression (recovered word, e.g. 'digital'): a word that was wrong in the
+    past but has since been answered correctly several times in a row must NOT
+    keep showing up as a 'weak spot', and must not be over-weighted in the draw.
+    recentErrors is append-only history that is never cleared on a correct
+    answer, so it must only count while the word has not recovered (short
+    current correct-streak).
     """
 
     def _seed_recovered(self, ddb):
-        """Exactly Alexa's 'digital' progress: 6 correct in a row, mastery 3,
-        4 historical recentErrors, more correct than incorrect overall."""
+        """A recovered word's progress ('digital'): 6 correct in a row, mastery
+        3, 4 historical recentErrors, more correct than incorrect overall."""
         table = ddb.Table(os.environ['PROGRESS_TABLE'])
         pk = 'user-1#vs-1'
         table.put_item(Item={

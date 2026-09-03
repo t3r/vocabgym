@@ -519,13 +519,13 @@ class TestCompleteSession:
         app = _load_practice_app_full()
         app.dynamodb = ddb
 
-        uid, set_id, sid, lid = 'u-alexa', 'set-1', 'sess-1', 'lg-1'
+        uid, set_id, sid, lid = 'u-student', 'set-1', 'sess-1', 'lg-1'
         # League member (starts at zero) — the leaderboard row that must update.
         ddb.Table('test-users-table').put_item(Item={'userId': uid, 'leagueId': lid})
         ddb.Table('test-leagues-table').put_item(Item={
             'leagueId': lid, 'teacherUserId': 'teacher', 'vocabSetIds': [set_id]})
         ddb.Table('test-league-members-table').put_item(Item={
-            'leagueId': lid, 'userId': uid, 'displayName': 'Alexa',
+            'leagueId': lid, 'userId': uid, 'displayName': 'Testschüler',
             'totalCorrect': 0, 'totalAttempts': 0, 'weeklyCorrect': 0,
             'currentStreak': 0, 'weekStartDate': '', 'lastPracticeDate': ''})
         ddb.Table('test-vocabitems-table').put_item(Item={
