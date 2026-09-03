@@ -576,7 +576,7 @@ bedrock_client.converse(
 - Bedrock: InvokeModel on foundation-model/* and inference-profile/*, ApplyGuardrail
 - Handler additionally: `sqs:SendMessage` to ExtractionQueue; Worker: SQS consume via event mapping
 
-**Note:** Extraction prompts are stored in SSM Parameter Store and can be updated without redeployment.
+**Note:** Extraction prompts are stored in SSM Parameter Store and can be updated without redeployment. The learning-tips prompt (progress_handler/learning_tips.py) is deliberately kept IN CODE, not in SSM: it is tightly coupled to the cluster data structure it interpolates and, critically, carries the anti-hallucination guardrails (feed only the vetted rule from canonical_tip; forbid inventing a word's gender or literal translations). Those constraints are pinned by unit tests against the code string, so the prompt must not be made freely editable in SSM where the safety wording could be removed without a failing test.
 
 #### Function 3: vocab_crud_handler
 
