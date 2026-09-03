@@ -3,6 +3,7 @@
 import json
 import logging
 import os
+import re
 
 import boto3
 
@@ -463,8 +464,33 @@ Antworte NUR mit JSON-Array: [{{"source": "deutsch", "target": "übersetzung"}}]
         return vocab_pairs
 
 
+def _normalize_dedup_key(text):
+    """Normalize a target word for duplicate detection.
+
+    Real-world duplicates differ only by surrounding punctuation / parentheses /
+    casing (e.g. 'une tablette' extracted twice, or 'ein Tablet-Computer' vs
+    'ein Tablet(-Computer)' both mapping to 'une tablette'). Normalizing the
+    TARGET catches these: lowercase, strip bracketed content, drop punctuation,
+    collapse whitespace.
+    """
+    if not text:
+        return ''
+    t = text.strip().lower()
+    t = re.sub(r'\([^)]*\)', '', t)      # drop parenthetical content
+    t = re.sub(r'\[[^\]]*\]', '', t)     # drop bracketed content
+    t = re.sub(r"[.,;:!?/'\"()\[\]{}-]", ' ', t)  # punctuation -> space
+    t = re.sub(r'\s+', ' ', t).strip()
+    return t
+
+
 def store_vocab_items(vocab_set_id, vocab_pairs, image_key=None):
     """Store extracted vocabulary items in DynamoDB.
+
+    Duplicate guard: a vocabulary word is only stored once per set. We skip any
+    pair whose normalized target already exists in the set (e.g. from an earlier
+    page of a multi-page upload) or that repeats earlier in this same batch.
+    This prevents the "same word asked again although already mastered" problem
+    caused by duplicate items sharing one meaning.
 
     Args:
         vocab_set_id: The vocabulary set ID
@@ -472,16 +498,43 @@ def store_vocab_items(vocab_set_id, vocab_pairs, image_key=None):
         image_key: S3 key of the source image for these items
 
     Returns:
-        int: Number of items stored
+        int: Number of items actually stored (after de-duplication)
     """
     table = dynamodb.Table(VOCABITEMS_TABLE)
     timestamp = get_timestamp()
 
+    # Seed the seen-set with targets ALREADY stored in this set (covers
+    # multi-page uploads where page 2 repeats a word from page 1).
+    seen_targets = set()
+    try:
+        existing = table.query(
+            KeyConditionExpression=boto3.dynamodb.conditions.Key('vocabSetId').eq(vocab_set_id),
+            ProjectionExpression='target, french',
+        )
+        for it in existing.get('Items', []):
+            existing_target = it.get('target', it.get('french', ''))
+            key = _normalize_dedup_key(existing_target)
+            if key:
+                seen_targets.add(key)
+    except Exception as e:
+        logger.warning(f"Dedup pre-check failed for set {vocab_set_id}: {e}")
+
+    stored = 0
+    skipped = 0
     with table.batch_writer() as batch:
         for i, pair in enumerate(vocab_pairs):
-            item_id = generate_uuid()
             source_text = pair.get('source', pair.get('german', '')).strip()
             target_text = pair.get('target', pair.get('french', '')).strip()
+
+            # Skip empty and duplicate targets (already in set or earlier in batch).
+            dedup_key = _normalize_dedup_key(target_text)
+            if not target_text or (dedup_key and dedup_key in seen_targets):
+                skipped += 1
+                continue
+            if dedup_key:
+                seen_targets.add(dedup_key)
+
+            item_id = generate_uuid()
             item_data = {
                 'vocabSetId': vocab_set_id,
                 'itemId': item_id,
@@ -497,8 +550,17 @@ def store_vocab_items(vocab_set_id, vocab_pairs, image_key=None):
             if image_key:
                 item_data['imageKey'] = image_key
             batch.put_item(Item=item_data)
+            stored += 1
 
-    return len(vocab_pairs)
+    if skipped:
+        logger.info(json.dumps({
+            'event': 'vocab_items_deduplicated',
+            'vocabSetId': vocab_set_id,
+            'stored': stored,
+            'skippedDuplicates': skipped,
+        }))
+
+    return stored
 
 
 
