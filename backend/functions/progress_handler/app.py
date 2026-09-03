@@ -4,6 +4,7 @@ import json
 import logging
 import os
 import datetime
+import math
 from collections import defaultdict
 
 import boto3
@@ -217,6 +218,15 @@ def handle_overview(event, user_id):
         (total_correct / total_attempts * 100) if total_attempts > 0 else 0, 1
     )
 
+    # Forecast: when will the learner reach "sicher" (level>=4) and "beherrscht"
+    # (all words level>=4), if they keep up the current pace.
+    forecast = _mastery_forecast(
+        mastery_distribution=mastery_distribution,
+        total_words=total_words,
+        practiced_words=practiced_words,
+        active_days=len(by_day),
+    )
+
     # Calculate total time spent
     total_time_seconds = sum(s.get('duration', 0) for s in completed_sessions)
 
@@ -293,6 +303,7 @@ def handle_overview(event, user_id):
         },
         'recentSessions': recent_sessions,
         'activityByDay': activity_by_day,
+        'forecast': forecast,
         'weakestWords': weakest_words,
     })
 
@@ -415,6 +426,80 @@ def handle_vocab_set_progress(event, user_id):
         'overallAccuracy': overall_accuracy,
         'progress': item_progress,
     })
+
+
+def _mastery_forecast(mastery_distribution, total_words, practiced_words, active_days):
+    """Estimate when the learner reaches "sicher" (all words >= level 4) and,
+    as an interim milestone, how far they already are.
+
+    Heuristic, deliberately conservative and honest about its limits:
+    - "secured" words = those at level >= 4 (matches the goal/mastery threshold).
+    - remaining words = every active word not yet at level >= 4, INCLUDING words
+      never practised yet (total_words - practiced_words).
+    - pace = secured words per active practice day so far.
+    - The still-weak words are the *hard* ones (the easy words are already
+      secured), so they rise slower than the past average. We apply a slowdown
+      factor to the projection instead of pretending the past rate continues
+      linearly.
+
+    Returns a dict (or a 'not enough data' variant) — never raises.
+    """
+    SECURE_LEVEL = 4
+    # Words already secured vs. still to go.
+    secured = sum(mastery_distribution.get(lvl, 0) for lvl in (4, 5))
+    # Everything active that is not yet secured — practised-but-weak PLUS
+    # not-yet-practised words in the sets.
+    weak_practiced = practiced_words - secured
+    untrained = max(0, total_words - practiced_words)
+    remaining = max(0, weak_practiced + untrained)
+
+    result = {
+        'secureLevel': SECURE_LEVEL,
+        'totalWords': int(total_words),
+        'securedWords': int(secured),
+        'remainingWords': int(remaining),
+        'alreadySecured': remaining == 0 and total_words > 0,
+    }
+
+    # Already there.
+    if total_words > 0 and remaining == 0:
+        result['note'] = 'Stark! Alle Wörter sind bereits auf „sicher" oder höher. 🎉'
+        result['estimatedDays'] = 0
+        return result
+
+    # Not enough signal to project a rate yet.
+    if secured <= 0 or active_days <= 0:
+        result['estimatedDays'] = None
+        result['note'] = (
+            'Übe noch ein paar Tage weiter — dann kann ich eine Prognose wagen, '
+            'wann du „sicher" erreichst.'
+        )
+        return result
+
+    # Past pace: secured words per active practice day.
+    per_day = secured / active_days
+    # The remaining words are the stubborn ones; assume they take ~40% longer
+    # than the past average pace (slowdown factor 1.4).
+    SLOWDOWN = 1.4
+    est_days = int(math.ceil((remaining / per_day) * SLOWDOWN)) if per_day > 0 else None
+
+    result['estimatedDays'] = est_days
+    if est_days is not None:
+        target = datetime.date.today() + datetime.timedelta(days=est_days)
+        result['estimatedDate'] = target.isoformat()
+        weeks = est_days / 7.0
+        when = (
+            f'in etwa {est_days} Übungstagen'
+            if est_days < 14 else
+            f'in etwa {round(weeks)} Wochen (Übungstage)'
+        )
+        result['note'] = (
+            f'Bei gleichem Tempo erreichst du „sicher" für alle Wörter '
+            f'voraussichtlich {when}. Die verbleibenden {remaining} Wörter sind '
+            f'die hartnäckigen — sie steigen langsamer als der bisherige '
+            f'Durchschnitt, deshalb ist die Schätzung bewusst vorsichtig.'
+        )
+    return result
 
 
 def _calculate_streak(completed_sessions):

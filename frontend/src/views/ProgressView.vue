@@ -17,7 +17,7 @@
           <p class="text-sm text-gray-600 dark:text-gray-400 mt-1">Vokabeln gesamt</p>
         </div>
         <div class="card text-center">
-          <p class="text-3xl font-bold text-success">{{ formatPercentage(stats.averageMastery) }}</p>
+          <p class="text-3xl font-bold text-success">{{ formatMasteryLevel(stats.averageMastery) }}</p>
           <p class="text-sm text-gray-600 dark:text-gray-400 mt-1">Ø Beherrschung</p>
         </div>
         <div class="card text-center">
@@ -45,6 +45,30 @@
           <h3 class="text-lg font-semibold mb-4">Übungsaktivität & Genauigkeit</h3>
           <ProgressChart v-if="activityData" :data="activityData" type="line" />
           <p v-else class="text-gray-500 text-center py-8">Noch keine Daten vorhanden</p>
+        </div>
+      </div>
+
+      <!-- Forecast: when will "sicher" be reached at the current pace -->
+      <div
+        v-if="forecast && forecast.note"
+        class="card mb-8 border-l-4"
+        :class="forecast.alreadySecured ? 'border-success' : 'border-primary-500'"
+      >
+        <div class="flex items-start gap-3">
+          <span class="text-2xl" aria-hidden="true">{{ forecast.alreadySecured ? '🏆' : '🔮' }}</span>
+          <div class="min-w-0">
+            <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-1">Prognose</h3>
+            <p class="text-sm text-gray-600 dark:text-gray-300">{{ forecast.note }}</p>
+            <div
+              v-if="!forecast.alreadySecured && forecast.securedWords != null"
+              class="mt-2 text-xs text-gray-500 dark:text-gray-400"
+            >
+              {{ forecast.securedWords }} von {{ forecast.totalWords }} Wörtern schon „sicher“ (Stufe ≥ 4)
+              <template v-if="forecast.estimatedDate">
+                · Ziel etwa {{ formatForecastDate(forecast.estimatedDate) }}
+              </template>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -113,6 +137,22 @@ const masteryData = ref(null)
 const activityData = ref(null)
 const recentSessions = ref([])
 const weakestWords = ref([])
+const forecast = ref(null)
+
+// averageMastery is a 0–5 level, NOT a percentage. Show it as "x.x / 5"
+// (previously it was fed through formatPercentage, which wrongly rendered
+// e.g. level 4.2 as "4%").
+function formatMasteryLevel(value) {
+  if (value === null || value === undefined) return '—'
+  return `${Number(value).toFixed(1)} / 5`
+}
+
+// ISO date (YYYY-MM-DD) → "TT.MM.JJJJ" for the forecast target date.
+function formatForecastDate(iso) {
+  if (!iso) return ''
+  const [y, m, d] = iso.split('-')
+  return `${d}.${m}.${y}`
+}
 
 onMounted(async () => {
   try {
@@ -130,6 +170,7 @@ onMounted(async () => {
 
     recentSessions.value = data.recentSessions || []
     weakestWords.value = data.weakestWords || []
+    forecast.value = data.forecast || null
 
     // Build mastery distribution chart from backend data
     const dist = data.masteryDistribution

@@ -296,3 +296,61 @@ def test_activity_by_day_aggregates_recent_sessions():
     assert today_point['correct'] == 16  # 8 + 8
     assert today_point['total'] == 20
     assert today_point['accuracy'] == 80
+
+
+# ---------------------------------------------------------------------------
+# Mastery forecast: estimate when the learner reaches "sicher" (all >= level 4).
+# ---------------------------------------------------------------------------
+
+@mock_aws
+def test_forecast_projects_days_for_partially_secured_learner():
+    app = _load()
+    # 52 secured (L4/L5), 23 weak practised, 1 untrained -> 24 remaining.
+    dist = {0: 1, 1: 5, 2: 5, 3: 12, 4: 0, 5: 52}
+    fc = app._mastery_forecast(mastery_distribution=dist, total_words=76,
+                               practiced_words=75, active_days=5)
+    assert fc['securedWords'] == 52
+    assert fc['remainingWords'] == 24
+    assert fc['alreadySecured'] is False
+    assert fc['estimatedDays'] and fc['estimatedDays'] > 0
+    assert 'estimatedDate' in fc
+    # The note must mention the remaining count and the "hartnäckigen" caveat.
+    assert '24' in fc['note']
+    assert 'hartnäckig' in fc['note'].lower()
+
+
+@mock_aws
+def test_forecast_all_secured():
+    app = _load()
+    dist = {4: 3, 5: 7}  # all 10 words secured
+    fc = app._mastery_forecast(mastery_distribution=dist, total_words=10,
+                               practiced_words=10, active_days=4)
+    assert fc['alreadySecured'] is True
+    assert fc['remainingWords'] == 0
+    assert fc['estimatedDays'] == 0
+
+
+@mock_aws
+def test_forecast_insufficient_data():
+    app = _load()
+    # Nothing secured yet -> no rate to project.
+    dist = {0: 5, 1: 3}
+    fc = app._mastery_forecast(mastery_distribution=dist, total_words=8,
+                               practiced_words=8, active_days=1)
+    assert fc['estimatedDays'] is None
+    assert fc['securedWords'] == 0
+
+
+@mock_aws
+def test_overview_includes_forecast_field():
+    dynamodb = boto3.resource('dynamodb', region_name='eu-central-1')
+    _tables(dynamodb)
+    _put_set(dynamodb, 'set-1', 'u1', 'Mein Set', item_count=2, created=100)
+    _put_progress(dynamodb, 'u1', 'set-1', 'i1', mastery=5, correct=5, incorrect=0)
+    _put_progress(dynamodb, 'u1', 'set-1', 'i2', mastery=2, correct=2, incorrect=3)
+
+    app = _load()
+    resp = app.lambda_handler(_overview_event('u1'), None)
+    body = json.loads(resp['body'])
+    assert 'forecast' in body
+    assert body['forecast']['totalWords'] == 2

@@ -37,7 +37,7 @@ onMounted(async () => {
     stats.value = {
       totalSets: data.totalVocabSets || 0,
       totalWords: data.totalWords || 0,
-      averageAccuracy: Math.round(data.averageMastery || 0),
+      averageAccuracy: Math.round(data.overallAccuracy || 0),
       practiceStreak: data.practiceStreak || 0
     }
   } catch {
