@@ -19,6 +19,10 @@ from lib.utils import (
 )
 from lib.validation import validate_uuid
 
+from error_clusters import build_error_clusters
+from learning_tips import generate_tips
+from learning_tips_cache import get_or_generate
+
 logger = logging.getLogger()
 logger.setLevel(os.environ.get('LOG_LEVEL', 'INFO'))
 
@@ -87,11 +91,12 @@ def handle_overview(event, user_id):
     )
     owned_sets = owned_resp.get('Items', [])
 
-    set_meta = {}  # vocabSetId -> {'title':..., 'itemCount':...}
+    set_meta = {}  # vocabSetId -> {'title':..., 'itemCount':..., 'targetLanguage':...}
     for vs in owned_sets:
         set_meta[vs['vocabSetId']] = {
             'title': vs.get('title', ''),
             'itemCount': int(vs.get('itemCount', 0) or 0),
+            'targetLanguage': vs.get('targetLanguage', 'fr') or 'fr',
         }
 
     # Add league-assigned sets (fetched by their teacher owner — deterministic,
@@ -114,6 +119,7 @@ def handle_overview(event, user_id):
                     set_meta[assigned_id] = {
                         'title': ts.get('title', ''),
                         'itemCount': int(ts.get('itemCount', 0) or 0),
+                        'targetLanguage': ts.get('targetLanguage', 'fr') or 'fr',
                     }
     except Exception as e:
         logger.warning(f"Failed to resolve league sets for overview: {e}")
@@ -260,6 +266,23 @@ def handle_overview(event, user_id):
         except Exception:
             pass
 
+    # Learning tips: cluster the weak words' mistakes by type and let the LLM
+    # phrase short German tips (cached per user; only regenerated when the error
+    # fingerprint changes). Uses the top weak words we already resolved (with
+    # source/target text + recent wrong answers) so no extra item reads.
+    learning_tips = []
+    try:
+        if weakest_words:
+            # Pick the dominant target language among the practised sets.
+            langs = [m.get('targetLanguage', 'fr') for m in set_meta.values()]
+            target_language = max(set(langs), key=langs.count) if langs else 'fr'
+            clusters = build_error_clusters(weakest_words, target_language)
+            if clusters:
+                learning_tips = get_or_generate(user_id, clusters, generate_tips)
+    except Exception as e:
+        logger.warning(json.dumps({'event': 'learning_tips_failed', 'error': str(e)}))
+        learning_tips = []
+
     # Format recent sessions for response
     recent_sessions = [
         {
@@ -304,6 +327,7 @@ def handle_overview(event, user_id):
         'recentSessions': recent_sessions,
         'activityByDay': activity_by_day,
         'forecast': forecast,
+        'learningTips': learning_tips,
         'weakestWords': weakest_words,
     })
 

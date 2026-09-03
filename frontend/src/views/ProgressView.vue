@@ -72,6 +72,22 @@
         </div>
       </div>
 
+      <!-- AI learning tips: situational advice targeting the learner's current
+           error patterns. Shown only when the backend produced tips. -->
+      <div v-if="learningTips.length" class="card mb-8">
+        <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">💡 Lerntipps für dich</h3>
+        <div class="space-y-3">
+          <div
+            v-for="(tip, i) in learningTips"
+            :key="i"
+            class="rounded-lg border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/30 p-3"
+          >
+            <p class="text-sm font-semibold text-blue-900 dark:text-blue-100">{{ tip.title }}</p>
+            <p class="text-sm text-blue-800 dark:text-blue-200 mt-1">{{ tip.body }}</p>
+          </div>
+        </div>
+      </div>
+
       <!-- Weakest Words -->
       <div v-if="weakestWords.length" class="card mb-8">
         <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">🎯 Schwierige Wörter</h3>
@@ -138,6 +154,7 @@ const activityData = ref(null)
 const recentSessions = ref([])
 const weakestWords = ref([])
 const forecast = ref(null)
+const learningTips = ref([])
 
 // averageMastery is a 0–5 level, NOT a percentage. Show it as "x.x / 5"
 // (previously it was fed through formatPercentage, which wrongly rendered
@@ -171,6 +188,7 @@ onMounted(async () => {
     recentSessions.value = data.recentSessions || []
     weakestWords.value = data.weakestWords || []
     forecast.value = data.forecast || null
+    learningTips.value = data.learningTips || []
 
     // Build mastery distribution chart from backend data
     const dist = data.masteryDistribution

@@ -17,6 +17,7 @@ import pytest
 from moto import mock_aws
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'layers', 'shared', 'python'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'functions', 'progress_handler'))
 
 for _k in (
     'AWS_SESSION_TOKEN', 'AWS_SECURITY_TOKEN', 'AWS_CREDENTIAL_EXPIRATION',
@@ -38,6 +39,7 @@ _ENV = {
     'VOCABITEMS_TABLE': 'po-vocabitems',
     'USERS_TABLE': 'po-users',
     'LEAGUES_TABLE': 'po-leagues',
+    'LEARNING_TIPS_TABLE': 'po-learning-tips',
     'REGION': 'eu-central-1',
 }
 
@@ -132,6 +134,12 @@ def _tables(dynamodb):
             {'AttributeName': 'vocabSetId', 'AttributeType': 'S'},
             {'AttributeName': 'itemId', 'AttributeType': 'S'},
         ],
+        BillingMode='PAY_PER_REQUEST',
+    )
+    dynamodb.create_table(
+        TableName='po-learning-tips',
+        KeySchema=[{'AttributeName': 'userId', 'KeyType': 'HASH'}],
+        AttributeDefinitions=[{'AttributeName': 'userId', 'AttributeType': 'S'}],
         BillingMode='PAY_PER_REQUEST',
     )
 
@@ -354,3 +362,66 @@ def test_overview_includes_forecast_field():
     body = json.loads(resp['body'])
     assert 'forecast' in body
     assert body['forecast']['totalWords'] == 2
+
+
+# ---------------------------------------------------------------------------
+# Learning tips: the overview returns AI-phrased tips for the learner's error
+# clusters (LLM mocked); empty when there are no weak words.
+# ---------------------------------------------------------------------------
+
+def _put_item(dynamodb, set_id, item_id, source, target):
+    dynamodb.Table('po-vocabitems').put_item(Item={
+        'vocabSetId': set_id, 'itemId': item_id,
+        'source': source, 'target': target, 'isActive': True,
+    })
+
+
+@mock_aws
+def test_overview_returns_learning_tips(monkeypatch):
+    dynamodb = boto3.resource('dynamodb', region_name='eu-central-1')
+    _tables(dynamodb)
+    _put_set(dynamodb, 'set-1', 'u1', 'Mein Set', item_count=2, created=100)
+    # A weak word with a clusterable mistake (phonetic: réseau -> "resau").
+    _put_item(dynamodb, 'set-1', 'i1', 'ein Netz', 'un réseau')
+    dynamodb.Table('po-progress').put_item(Item={
+        'progressKey': 'u1#set-1', 'itemId': 'i1',
+        'masteryLevel': 1, 'correctCount': 1, 'incorrectCount': 3,
+        'recentErrors': [{'answer': 'un resau', 'timestamp': 1000}],
+    })
+
+    app = _load()
+    # Mock the LLM path so the test never touches Bedrock; assert clusters flow in.
+    monkeypatch.setattr(app, 'generate_tips',
+                        lambda clusters: [{'title': 'eau klingt wie o',
+                                           'body': 'un réseau', 'cluster': clusters[0]['type']}])
+
+    resp = app.lambda_handler(_overview_event('u1'), None)
+    body = json.loads(resp['body'])
+    assert 'learningTips' in body
+    assert len(body['learningTips']) >= 1
+    assert body['learningTips'][0]['title']
+
+
+@mock_aws
+def test_overview_no_weak_words_no_tips(monkeypatch):
+    dynamodb = boto3.resource('dynamodb', region_name='eu-central-1')
+    _tables(dynamodb)
+    _put_set(dynamodb, 'set-1', 'u1', 'Mein Set', item_count=1, created=100)
+    _put_item(dynamodb, 'set-1', 'i1', 'ein Haus', 'une maison')
+    # All mastered -> no weak words -> no tips, and the LLM must NOT be called.
+    dynamodb.Table('po-progress').put_item(Item={
+        'progressKey': 'u1#set-1', 'itemId': 'i1',
+        'masteryLevel': 5, 'correctCount': 5, 'incorrectCount': 0,
+    })
+
+    app = _load()
+    called = {'n': 0}
+    def spy(clusters):
+        called['n'] += 1
+        return []
+    monkeypatch.setattr(app, 'generate_tips', spy)
+
+    resp = app.lambda_handler(_overview_event('u1'), None)
+    body = json.loads(resp['body'])
+    assert body['learningTips'] == []
+    assert called['n'] == 0  # no clusters -> LLM never invoked

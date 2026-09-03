@@ -808,6 +808,12 @@ Resources:
       FunctionName: !Sub vocabtrainer-progress-handler-${Environment}
       CodeUri: functions/progress_handler/
       Handler: app.lambda_handler
+      Environment:
+        Variables:
+          LEARNING_TIPS_TABLE: !Ref LearningTipsTable
+          LEARNING_TIPS_MODEL_ID: eu.amazon.nova-lite-v1:0
+          GUARDRAIL_ID: !GetAtt ExtractionGuardrail.GuardrailId
+          GUARDRAIL_VERSION: !GetAtt ExtractionGuardrailVersion.Version
       Policies:
         - DynamoDBReadPolicy:
             TableName: !Ref ProgressTable
@@ -822,6 +828,24 @@ Resources:
             TableName: !Ref UsersTable
         - DynamoDBReadPolicy:
             TableName: !Ref LeaguesTable
+        # Cache for AI-generated learning tips (read/write).
+        - DynamoDBCrudPolicy:
+            TableName: !Ref LearningTipsTable
+        # Learning tips are phrased by Nova Lite via Bedrock, behind the shared
+        # extraction guardrail.
+        - Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action:
+                - bedrock:InvokeModel
+              Resource:
+                - 'arn:aws:bedrock:*::foundation-model/*'
+                - !Sub 'arn:aws:bedrock:*:${AWS::AccountId}:inference-profile/*'
+            - Effect: Allow
+              Action:
+                - bedrock:ApplyGuardrail
+              Resource:
+                - !GetAtt ExtractionGuardrail.GuardrailArn
       Events:
         GetOverview:
           Type: Api
@@ -933,6 +957,32 @@ Resources:
               KeyType: HASH
           Projection:
             ProjectionType: ALL
+
+  # Cache for AI-generated learning tips. One row per user; the row is
+  # regenerated only when the user's error fingerprint changes or the row
+  # expires (TTL), so the LLM is called at most rarely — not on every overview.
+  LearningTipsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub vocabtrainer-learning-tips-${Environment}
+      BillingMode: PAY_PER_REQUEST
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      DeletionProtectionEnabled: !If [IsProd, true, false]
+      Tags:
+        - Key: Project
+          Value: VocabTrainer
+        - Key: Environment
+          Value: !Ref Environment
+      AttributeDefinitions:
+        - AttributeName: userId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: userId
+          KeyType: HASH
+      TimeToLiveSpecification:
+        AttributeName: expiresAt
+        Enabled: true
 
   # ============================================================
   # Prompt Templates (SSM Parameter Store)
