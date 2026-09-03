@@ -138,7 +138,17 @@ function checkSingleAnswer(userAnswer, correctAnswer, { strict = false } = {}) {
   const normalizedCorrect = normalizeAnswer(correctAnswer)
 
   if (normalizedUser === normalizedCorrect) {
-    return 'exact'
+    // Same word ignoring accents. If the accents ALSO match it's a true exact
+    // hit; otherwise the only difference is accents (é↔e, ç↔c). In French the
+    // accents matter, so a missing/wrong accent must NOT pass as correct — it
+    // becomes "fast richtig" (close) so the learner sees the correct spelling
+    // and decides, rather than it silently counting as right.
+    const accentUser = normalizeAnswer(userAnswer, { keepAccents: true })
+    const accentCorrect = normalizeAnswer(correctAnswer, { keepAccents: true })
+    if (accentUser === accentCorrect) {
+      return 'exact'
+    }
+    return 'close'
   }
 
   // Empty after normalization

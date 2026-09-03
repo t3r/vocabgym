@@ -78,8 +78,17 @@ describe('checkAnswer', () => {
     expect(checkAnswer('La Maison', 'la maison')).toBe('exact')
   })
 
-  it('returns exact for accent-insensitive match', () => {
-    expect(checkAnswer('cafe', 'café')).toBe('exact')
+  it('returns close for accent-insensitive match (accents matter in French)', () => {
+    // Practice mode: a missing/wrong accent must NOT pass as correct — it
+    // becomes "fast richtig" so the learner sees the correct spelling.
+    expect(checkAnswer('cafe', 'café')).toBe('close')
+    expect(checkAnswer('une serie', 'une série')).toBe('close')
+    expect(checkAnswer('eleve', 'élève')).toBe('close')
+  })
+
+  it('returns exact when accents match exactly', () => {
+    expect(checkAnswer('café', 'café')).toBe('exact')
+    expect(checkAnswer('une série', 'une série')).toBe('exact')
   })
 
   it('returns close for single character typo', () => {
