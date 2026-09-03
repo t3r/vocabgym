@@ -58,6 +58,17 @@ _FALLBACK_TIPS = {
     },
 }
 
+# Very short, one-line rules per cluster type — shown inline in practice next to
+# a hard word ("💡 Denk an: …"). Kept deterministic (no LLM) so the hint is
+# instant, free and always correct.
+_SHORT_RULES = {
+    'genus': 'Lern das Wort mit Artikel — das Genus gehört dazu.',
+    'preposition': 'Achte auf die Präposition (à / avec / de) beim Verb.',
+    'false_friend': 'Kein Deutsch schreiben — merk dir die französische Form.',
+    'phonetic': 'Nicht schreiben wie es klingt — achte auf Endungen & Accents.',
+    'spelling': 'Genau buchstabieren — lies das Wort Silbe für Silbe.',
+}
+
 # Order in which clusters are presented (most impactful / most teachable first).
 _CLUSTER_ORDER = ['genus', 'preposition', 'false_friend', 'phonetic', 'spelling']
 
@@ -292,3 +303,45 @@ def fallback_tips(clusters, limit=3):
             'cluster': c['type'],
         })
     return tips
+
+
+
+def rule_for_word(target, source, recent_errors, target_language='fr'):
+    """Return a short, deterministic rule hint for a single word, or None.
+
+    Used to surface an inline "💡 Denk an: …" hint in practice for a word the
+    learner keeps getting wrong. The word is classified by the SAME rules as the
+    learning-tips clusters (so the hint and the tips stay consistent), then
+    mapped to a one-line rule from _SHORT_RULES.
+
+    Args:
+        target: the correct target-language word.
+        source: the German source word.
+        recent_errors: list of the learner's recorded wrong answers (strings).
+        target_language: language code for article/gender lookup.
+
+    Returns:
+        {'cluster': <type>, 'rule': <short text>} for the dominant error type,
+        or None when the word has no classifiable mistakes (e.g. only noise).
+    """
+    from lib.languages import get_all_articles, get_article_genders
+
+    if not target or not recent_errors:
+        return None
+
+    articles = set(_norm(a) for a in (get_all_articles(target_language) or []))
+    article_genders = set(_norm(a) for a in (get_article_genders(target_language) or {}).keys())
+
+    counts = {}
+    for ans in recent_errors:
+        ctype = classify_answer(ans, target, source, articles, article_genders)
+        if ctype:
+            counts[ctype] = counts.get(ctype, 0) + 1
+    if not counts:
+        return None
+
+    dominant = max(counts.items(), key=lambda kv: kv[1])[0]
+    rule = _SHORT_RULES.get(dominant)
+    if not rule:
+        return None
+    return {'cluster': dominant, 'rule': rule}

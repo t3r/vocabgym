@@ -1,16 +1,11 @@
-"""Tests for rule-based error clustering (progress_handler/error_clusters.py).
-
-Fixtures are taken from the REAL wrong answers of the affected learner, so the
-classifier is pinned against actual mistake patterns, not invented ones.
-"""
+"""Tests for rule-based error clustering (lib/error_clusters.py)."""
 
 import os
 import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'layers', 'shared', 'python'))
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'functions', 'progress_handler'))
 
-import error_clusters as ec
+from lib import error_clusters as ec
 
 
 # ---- noise filter ---------------------------------------------------------
@@ -127,3 +122,33 @@ def test_empty_input():
     assert ec.build_error_clusters([], 'fr') == []
     assert ec.build_error_clusters(None, 'fr') == []
     assert ec.fallback_tips([]) == []
+
+
+
+# ---- rule_for_word: single-word inline practice hint ----------------------
+
+def test_rule_for_word_phonetic():
+    hint = ec.rule_for_word('un réseau', 'ein Netz', ['un resau', 'un resaue'], 'fr')
+    assert hint is not None
+    assert hint['cluster'] == 'phonetic'
+    assert hint['rule']  # short non-empty rule text
+
+
+def test_rule_for_word_false_friend():
+    hint = ec.rule_for_word('un journaliste', 'ein Journalist', ['un journalist'], 'fr')
+    assert hint['cluster'] == 'false_friend'
+
+
+def test_rule_for_word_genus():
+    hint = ec.rule_for_word('une nouvelle', 'eine Nachricht', ['un nouvelle'], 'fr')
+    assert hint['cluster'] == 'genus'
+
+
+def test_rule_for_word_none_without_errors():
+    assert ec.rule_for_word('un réseau', 'ein Netz', [], 'fr') is None
+    assert ec.rule_for_word('un réseau', 'ein Netz', None, 'fr') is None
+
+
+def test_rule_for_word_none_for_pure_noise():
+    # Only abandoned/noise inputs -> nothing classifiable -> no hint.
+    assert ec.rule_for_word('un réseau', 'ein Netz', ['?', 'd', '.'], 'fr') is None

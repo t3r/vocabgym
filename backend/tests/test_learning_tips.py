@@ -16,7 +16,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'layers', 'shar
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'functions', 'progress_handler'))
 
 import learning_tips as lt
-import error_clusters as ec
+from lib import error_clusters as ec
 
 
 def _clusters():

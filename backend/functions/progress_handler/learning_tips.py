@@ -19,7 +19,7 @@ import os
 
 import boto3
 
-from error_clusters import fallback_tips
+from lib.error_clusters import fallback_tips
 
 logger = logging.getLogger()
 

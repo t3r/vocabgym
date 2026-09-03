@@ -19,7 +19,7 @@ from lib.utils import (
 )
 from lib.validation import validate_uuid
 
-from error_clusters import build_error_clusters
+from lib.error_clusters import build_error_clusters
 from learning_tips import generate_tips
 from learning_tips_cache import get_or_generate
 

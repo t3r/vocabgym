@@ -19,6 +19,7 @@ from lib.utils import (
     parse_body,
 )
 from lib.validation import validate_practice_options, validate_uuid
+from lib.error_clusters import rule_for_word
 
 from answer_checker import check_answer, normalize_answer
 
@@ -208,6 +209,14 @@ def handle_start(event, user_id):
     # so the client can offer the solution/pronunciation immediately.
     correct_by_item = _get_correct_counts(user_id, vocab_set_id)
 
+    # In PRACTICE mode only, load each item's recent wrong answers so we can
+    # attach a short, deterministic rule hint ("💡 Denk an: …") to hard words.
+    # Exam mode gets NO hints (keep it a real test).
+    recent_errors_by_item = {}
+    if mode == 'practice':
+        recent_errors_by_item = _get_recent_errors(user_id, vocab_set_id)
+    hint_language = vocab_set.get('targetLanguage', 'fr') or 'fr'
+
     # Create session
     session_id = generate_uuid()
     timestamp = get_timestamp()
@@ -237,6 +246,13 @@ def handle_start(event, user_id):
             'questionNumber': i + 1,
             'isNew': int(correct_by_item.get(item['itemId'], 0)) == 0,
             'notes': item.get('notes', ''),
+            # Practice-only inline rule hint for hard words (None in exam mode or
+            # when the word has no classifiable mistake pattern).
+            'hint': rule_for_word(
+                target_text, source_text,
+                recent_errors_by_item.get(item['itemId'], []),
+                hint_language,
+            ) if mode == 'practice' else None,
         })
 
     # Store session in DynamoDB
@@ -285,6 +301,7 @@ def handle_start(event, user_id):
                 'questionNumber': q['questionNumber'],
                 'totalQuestions': len(questions),
                 'isNew': q['isNew'],
+                'hint': q['hint'],
             }
             for q in questions
         ],
@@ -787,6 +804,30 @@ def _get_correct_counts(user_id, vocab_set_id):
         }
     except Exception as e:
         logger.warning(f"Failed to fetch correct counts: {e}")
+        return {}
+
+
+def _get_recent_errors(user_id, vocab_set_id):
+    """Return a map {itemId: [wrong answer strings]} for the user's progress.
+
+    Used to derive the inline practice rule hint for hard words. Best-effort:
+    any failure returns an empty map so a session never fails over hints.
+    """
+    progress_table = dynamodb.Table(PROGRESS_TABLE)
+    progress_key = f"{user_id}#{vocab_set_id}"
+    try:
+        resp = progress_table.query(
+            KeyConditionExpression=Key('progressKey').eq(progress_key)
+        )
+        out = {}
+        for p in resp.get('Items', []):
+            errs = [e.get('answer', '') for e in p.get('recentErrors', []) or []]
+            errs = [e for e in errs if e]
+            if errs:
+                out[p['itemId']] = errs
+        return out
+    except Exception as e:
+        logger.warning(f"Failed to fetch recent errors: {e}")
         return {}
 
 

@@ -44,6 +44,18 @@
       </div>
     </div>
 
+    <!-- Inline rule hint for hard words (practice only). Shown immediately so
+         the learner is reminded of the relevant rule before answering. -->
+    <div
+      v-if="!examMode && !feedback && question.hint && question.hint.rule"
+      class="mb-6 flex items-start gap-2 rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/30 px-3 py-2"
+    >
+      <span class="text-base leading-5" aria-hidden="true">💡</span>
+      <p class="text-sm text-amber-800 dark:text-amber-200">
+        <span class="font-semibold">Denk an:</span> {{ question.hint.rule }}
+      </p>
+    </div>
+
     <!-- Answer Input -->
     <AnswerInput
       v-if="!feedback"

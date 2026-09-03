@@ -583,3 +583,92 @@ class TestCompleteSession:
         assert resp['statusCode'] == 200, resp
         # No league → no leagueUpdate, but the call still succeeds.
         assert json.loads(resp['body']).get('leagueUpdate') is None
+
+
+
+class TestPracticeRuleHint:
+    """In practice mode, a hard word (with a classifiable error pattern) carries
+    an inline rule hint; in exam mode it never does."""
+
+    def _seed_word_with_errors(self, ddb, set_id, user_id):
+        ddb.Table('test-vocabsets-table').put_item(Item={
+            'vocabSetId': set_id, 'userId': user_id, 'title': 'FR',
+            'extractionStatus': 'approved', 'itemCount': 1,
+            'targetLanguage': 'fr',
+        })
+        ddb.Table('test-vocabitems-table').put_item(Item={
+            'vocabSetId': set_id, 'itemId': 'i0',
+            'source': 'ein Netz', 'target': 'un réseau', 'order': 0, 'isActive': True,
+        })
+        # Progress with phonetic mistakes ("resau" for "réseau").
+        ddb.Table('test-progress-table').put_item(Item={
+            'progressKey': f'{user_id}#{set_id}', 'itemId': 'i0',
+            'masteryLevel': 1, 'correctCount': 1, 'incorrectCount': 3,
+            'recentErrors': [
+                {'answer': 'un resau', 'timestamp': 1000},
+                {'answer': 'un resaue', 'timestamp': 2000},
+            ],
+        })
+
+    def _event(self, set_id, user_id, mode):
+        return {
+            'httpMethod': 'POST',
+            'path': '/practice/start',
+            'requestContext': {'authorizer': {'claims': {'sub': user_id}}},
+            'body': json.dumps({'vocabSetId': set_id, 'direction': 'de-fr', 'mode': mode}),
+        }
+
+    @mock_aws
+    def test_practice_mode_attaches_hint(self):
+        _reset_moto_creds()
+        ddb = boto3.resource('dynamodb', region_name='eu-central-1')
+        _make_tables(ddb)
+        app = _load_practice_app()
+        app.dynamodb = ddb
+        self._seed_word_with_errors(ddb, 'set-fr', 'u1')
+
+        resp = app.handle_start(self._event('set-fr', 'u1', 'practice'), 'u1')
+        assert resp['statusCode'] == 200
+        q = json.loads(resp['body'])['questions'][0]
+        assert q['hint'] is not None
+        assert q['hint']['cluster'] == 'phonetic'
+        assert q['hint']['rule']
+
+    @mock_aws
+    def test_exam_mode_never_attaches_hint(self):
+        _reset_moto_creds()
+        ddb = boto3.resource('dynamodb', region_name='eu-central-1')
+        _make_tables(ddb)
+        app = _load_practice_app()
+        app.dynamodb = ddb
+        self._seed_word_with_errors(ddb, 'set-fr', 'u1')
+
+        resp = app.handle_start(self._event('set-fr', 'u1', 'exam'), 'u1')
+        assert resp['statusCode'] == 200
+        q = json.loads(resp['body'])['questions'][0]
+        assert q['hint'] is None
+
+    @mock_aws
+    def test_word_without_errors_has_no_hint(self):
+        _reset_moto_creds()
+        ddb = boto3.resource('dynamodb', region_name='eu-central-1')
+        _make_tables(ddb)
+        app = _load_practice_app()
+        app.dynamodb = ddb
+        # A clean word: mastered, no recent errors -> no hint even in practice.
+        ddb.Table('test-vocabsets-table').put_item(Item={
+            'vocabSetId': 'set-fr', 'userId': 'u1', 'title': 'FR',
+            'extractionStatus': 'approved', 'itemCount': 1, 'targetLanguage': 'fr',
+        })
+        ddb.Table('test-vocabitems-table').put_item(Item={
+            'vocabSetId': 'set-fr', 'itemId': 'i0',
+            'source': 'ein Haus', 'target': 'une maison', 'order': 0, 'isActive': True,
+        })
+        ddb.Table('test-progress-table').put_item(Item={
+            'progressKey': 'u1#set-fr', 'itemId': 'i0',
+            'masteryLevel': 5, 'correctCount': 5, 'incorrectCount': 0,
+        })
+
+        resp = app.handle_start(self._event('set-fr', 'u1', 'practice'), 'u1')
+        q = json.loads(resp['body'])['questions'][0]
+        assert q['hint'] is None
