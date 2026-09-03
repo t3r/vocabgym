@@ -68,3 +68,8 @@ legal/*.html
 
 business/
 
+
+
+# draw.io / diagrams.net desktop backup files (e.g. docs/.$architecture.drawio.bkp)
+*.drawio.bkp
+.$*.drawio.bkp

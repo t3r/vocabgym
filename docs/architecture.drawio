@@ -1,386 +1,391 @@
-<mxfile host="app.diagrams.net" agent="kiro" version="24.0.0">
+<mxfile host="Electron" agent="kiro">
   <diagram id="vocabgym-arch" name="VocabGym Architecture">
-    <mxGraphModel dx="1600" dy="1000" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="2200" pageHeight="1400" math="0" shadow="0">
+    <mxGraphModel dx="1111" dy="803" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="2200" pageHeight="1400" math="0" shadow="0">
       <root>
         <mxCell id="0" />
         <mxCell id="1" parent="0" />
-
-        <!-- ===================== TITLE ===================== -->
-        <mxCell id="title" value="VocabGym — Serverless Architecture (AWS eu-central-1, SAM stack vocabtrainer-&lt;env&gt;)" style="text;html=1;fontSize=20;fontStyle=1;align=left;verticalAlign=middle;" vertex="1" parent="1">
-          <mxGeometry x="40" y="20" width="1200" height="30" as="geometry" />
+        <mxCell id="title" parent="1" style="text;html=1;fontSize=20;fontStyle=1;align=left;verticalAlign=middle;" value="VocabGym — Serverless Architecture (AWS eu-central-1, SAM stack vocabtrainer-&lt;env&gt;)" vertex="1">
+          <mxGeometry height="30" width="1200" x="40" y="20" as="geometry" />
         </mxCell>
-        <mxCell id="legend" value="Flow legend:&#10;— blue: user request path (HTTPS/REST)&#10;— green: async pipeline (SQS → worker)&#10;— orange: external AI / voice (Bedrock, Textract, Polly)&#10;— grey: data access (Lambda ↔ DynamoDB / S3)" style="text;html=1;whiteSpace=wrap;fontSize=11;align=left;verticalAlign=top;spacing=6;strokeColor=#999999;fillColor=#f5f5f5;rounded=1;" vertex="1" parent="1">
-          <mxGeometry x="1720" y="18" width="440" height="90" as="geometry" />
+        <mxCell id="legend" parent="1" style="text;html=1;whiteSpace=wrap;fontSize=11;align=left;verticalAlign=top;spacing=6;strokeColor=#999999;fillColor=#f5f5f5;rounded=1;" value="Flow legend:&#xa;— blue: user request path (HTTPS/REST)&#xa;— green: async pipeline (SQS → worker)&#xa;— orange: external AI / voice (Bedrock, Textract, Polly)&#xa;— grey: data access (Lambda ↔ DynamoDB / S3)" vertex="1">
+          <mxGeometry height="90" width="440" x="1720" y="18" as="geometry" />
         </mxCell>
-
-        <!-- ===================== CLIENT ===================== -->
-        <mxCell id="grp-client" value="Client (Browser / iPad / Android Tablet)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;verticalAlign=top;fontStyle=1;fontSize=13;" vertex="1" parent="1">
-          <mxGeometry x="40" y="120" width="240" height="220" as="geometry" />
+        <mxCell id="grp-client" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;verticalAlign=top;fontStyle=1;fontSize=13;" value="Client (Browser / iPad / Android Tablet)" vertex="1">
+          <mxGeometry height="220" width="240" x="40" y="120" as="geometry" />
         </mxCell>
-        <mxCell id="spa" value="Vue 3 SPA&#10;(Vite, Pinia, Tailwind)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;" vertex="1" parent="grp-client">
-          <mxGeometry x="20" y="40" width="200" height="60" as="geometry" />
+        <mxCell id="spa" parent="grp-client" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;" value="Vue 3 SPA&#xa;(Vite, Pinia, Tailwind)" vertex="1">
+          <mxGeometry height="60" width="200" x="20" y="40" as="geometry" />
         </mxCell>
-        <mxCell id="localstore" value="localStorage&#10;(live session buffer,&#10;voice pref, tokens)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;dashed=1;" vertex="1" parent="grp-client">
-          <mxGeometry x="20" y="120" width="200" height="70" as="geometry" />
+        <mxCell id="localstore" parent="grp-client" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;dashed=1;" value="localStorage&#xa;(live session buffer,&#xa;voice pref, tokens)" vertex="1">
+          <mxGeometry height="70" width="200" x="20" y="120" as="geometry" />
         </mxCell>
-
-        <!-- ===================== EDGE / HOSTING ===================== -->
-        <mxCell id="grp-edge" value="AWS Edge &amp; Frontend Hosting" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;verticalAlign=top;fontStyle=1;fontSize=13;" vertex="1" parent="1">
-          <mxGeometry x="340" y="120" width="260" height="330" as="geometry" />
+        <mxCell id="grp-edge" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;verticalAlign=top;fontStyle=1;fontSize=13;" value="AWS Edge &amp; Frontend Hosting" vertex="1">
+          <mxGeometry height="330" width="260" x="350" y="220" as="geometry" />
         </mxCell>
-        <mxCell id="route53" value="Route 53&#10;vocab.gym.t3r.de" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#82b366;" vertex="1" parent="grp-edge">
-          <mxGeometry x="30" y="40" width="200" height="50" as="geometry" />
+        <mxCell id="route53" parent="grp-edge" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#82b366;" value="Route 53&#xa;vocab.gym.t3r.de" vertex="1">
+          <mxGeometry height="50" width="200" x="30" y="40" as="geometry" />
         </mxCell>
-        <mxCell id="cloudfront" value="CloudFront&#10;(TLS via ACM, SPA rewrites)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#82b366;" vertex="1" parent="grp-edge">
-          <mxGeometry x="30" y="110" width="200" height="60" as="geometry" />
+        <mxCell id="cloudfront" parent="grp-edge" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#82b366;" value="CloudFront&#xa;(TLS via ACM, SPA rewrites)" vertex="1">
+          <mxGeometry height="60" width="200" x="30" y="110" as="geometry" />
         </mxCell>
-        <mxCell id="s3front" value="S3: Frontend Bucket&#10;(static Vue build, OAC)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#82b366;" vertex="1" parent="grp-edge">
-          <mxGeometry x="30" y="190" width="200" height="55" as="geometry" />
+        <mxCell id="s3front" parent="grp-edge" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#82b366;" value="S3: Frontend Bucket&#xa;(static Vue build, OAC)" vertex="1">
+          <mxGeometry height="55" width="200" x="30" y="190" as="geometry" />
         </mxCell>
-        <mxCell id="cognito" value="Cognito User Pool&#10;(OAuth2 PKCE, ID token,&#10;teachers group; invite-only)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#82b366;" vertex="1" parent="grp-edge">
-          <mxGeometry x="30" y="260" width="200" height="60" as="geometry" />
+        <mxCell id="cognito" parent="grp-edge" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#82b366;" value="Cognito User Pool&#xa;(OAuth2 PKCE, ID token,&#xa;teachers group; invite-only)" vertex="1">
+          <mxGeometry height="60" width="200" x="30" y="260" as="geometry" />
         </mxCell>
-
-        <!-- ===================== API TIER ===================== -->
-        <mxCell id="grp-api" value="API Tier" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;verticalAlign=top;fontStyle=1;fontSize=13;" vertex="1" parent="1">
-          <mxGeometry x="660" y="120" width="240" height="200" as="geometry" />
+        <mxCell id="grp-api" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;verticalAlign=top;fontStyle=1;fontSize=13;" value="API Tier" vertex="1">
+          <mxGeometry height="200" width="240" x="660" y="120" as="geometry" />
         </mxCell>
-        <mxCell id="apigw" value="API Gateway (REST)&#10;Cognito authorizer&#10;Usage plan / throttling&#10;CORS" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d79b00;" vertex="1" parent="grp-api">
-          <mxGeometry x="20" y="45" width="200" height="80" as="geometry" />
+        <mxCell id="apigw" parent="grp-api" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d79b00;" value="API Gateway (REST)&#xa;Cognito authorizer&#xa;Usage plan / throttling&#xa;CORS" vertex="1">
+          <mxGeometry height="80" width="200" x="20" y="45" as="geometry" />
         </mxCell>
-        <mxCell id="layer" value="Shared Lambda Layer&#10;(lib: utils, validation,&#10;languages, plans)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d79b00;dashed=1;" vertex="1" parent="grp-api">
-          <mxGeometry x="20" y="135" width="200" height="55" as="geometry" />
+        <mxCell id="layer" parent="grp-api" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d79b00;dashed=1;" value="Shared Lambda Layer&#xa;(lib: utils, validation,&#xa;languages, plans)" vertex="1">
+          <mxGeometry height="55" width="200" x="20" y="135" as="geometry" />
         </mxCell>
-
-        <!-- ===================== SYNC COMPUTE (grouped by domain) ===================== -->
-        <mxCell id="grp-compute" value="Compute — Lambda Handlers (Python 3.11)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;verticalAlign=top;fontStyle=1;fontSize=13;" vertex="1" parent="1">
-          <mxGeometry x="960" y="120" width="470" height="640" as="geometry" />
+        <mxCell id="grp-compute" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;verticalAlign=top;fontStyle=1;fontSize=13;" value="Compute — Lambda Handlers (Python 3.11)" vertex="1">
+          <mxGeometry height="640" width="470" x="960" y="120" as="geometry" />
         </mxCell>
-
-        <!-- domain: vocab content -->
-        <mxCell id="grp-c-vocab" value="Vokabel-Inhalt" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;verticalAlign=top;fontSize=11;dashed=1;" vertex="1" parent="grp-compute">
-          <mxGeometry x="20" y="35" width="210" height="200" as="geometry" />
+        <mxCell id="grp-c-vocab" parent="grp-compute" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;verticalAlign=top;fontSize=11;dashed=1;" value="Vokabel-Inhalt" vertex="1">
+          <mxGeometry height="200" width="210" x="20" y="35" as="geometry" />
         </mxCell>
-        <mxCell id="fn-upload" value="Upload Handler&#10;POST /vocab/upload" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="grp-c-vocab">
-          <mxGeometry x="15" y="30" width="180" height="45" as="geometry" />
+        <mxCell id="fn-upload" parent="grp-c-vocab" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" value="Upload Handler&#xa;POST /vocab/upload" vertex="1">
+          <mxGeometry height="45" width="180" x="15" y="30" as="geometry" />
         </mxCell>
-        <mxCell id="fn-extract" value="Extraction Handler&#10;POST /vocab/process&#10;GET /vocab/extraction/{id}" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="grp-c-vocab">
-          <mxGeometry x="15" y="85" width="180" height="50" as="geometry" />
+        <mxCell id="fn-extract" parent="grp-c-vocab" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" value="Extraction Handler&#xa;POST /vocab/process&#xa;GET /vocab/extraction/{id}" vertex="1">
+          <mxGeometry height="50" width="180" x="15" y="85" as="geometry" />
         </mxCell>
-        <mxCell id="fn-vocab" value="Vocab CRUD Handler&#10;GET/PUT/DELETE /vocab[/{id}]" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="grp-c-vocab">
-          <mxGeometry x="15" y="145" width="180" height="45" as="geometry" />
+        <mxCell id="fn-vocab" parent="grp-c-vocab" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" value="Vocab CRUD Handler&#xa;GET/PUT/DELETE /vocab[/{id}]" vertex="1">
+          <mxGeometry height="45" width="180" x="15" y="145" as="geometry" />
         </mxCell>
-
-        <!-- domain: practice/progress -->
-        <mxCell id="grp-c-practice" value="Üben &amp; Fortschritt" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;verticalAlign=top;fontSize=11;dashed=1;" vertex="1" parent="grp-compute">
-          <mxGeometry x="250" y="35" width="200" height="200" as="geometry" />
+        <mxCell id="grp-c-practice" parent="grp-compute" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;verticalAlign=top;fontSize=11;dashed=1;" value="Üben &amp; Fortschritt" vertex="1">
+          <mxGeometry height="200" width="200" x="250" y="35" as="geometry" />
         </mxCell>
-        <mxCell id="fn-practice" value="Practice Handler&#10;POST /practice/start|submit|complete" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="grp-c-practice">
-          <mxGeometry x="10" y="35" width="180" height="55" as="geometry" />
+        <mxCell id="fn-practice" parent="grp-c-practice" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" value="Practice Handler&#xa;POST /practice/start|submit|complete" vertex="1">
+          <mxGeometry height="55" width="180" x="10" y="35" as="geometry" />
         </mxCell>
-        <mxCell id="fn-progress" value="Progress Handler&#10;GET /progress/overview|{id}" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="grp-c-practice">
-          <mxGeometry x="10" y="105" width="180" height="45" as="geometry" />
+        <mxCell id="fn-progress" parent="grp-c-practice" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" value="Progress Handler&#xa;GET /progress/overview|{id}" vertex="1">
+          <mxGeometry height="45" width="180" x="10" y="105" as="geometry" />
         </mxCell>
-        <mxCell id="fn-goal" value="Goal Handler&#10;/goals[...]" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="grp-c-practice">
-          <mxGeometry x="10" y="155" width="180" height="40" as="geometry" />
+        <mxCell id="fn-goal" parent="grp-c-practice" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" value="Goal Handler&#xa;/goals[...]" vertex="1">
+          <mxGeometry height="40" width="180" x="10" y="155" as="geometry" />
         </mxCell>
-
-        <!-- domain: social/league -->
-        <mxCell id="grp-c-league" value="Liga &amp; Nutzer" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;verticalAlign=top;fontSize=11;dashed=1;" vertex="1" parent="grp-compute">
-          <mxGeometry x="20" y="250" width="210" height="120" as="geometry" />
+        <mxCell id="grp-c-league" parent="grp-compute" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;verticalAlign=top;fontSize=11;dashed=1;" value="Liga &amp; Nutzer" vertex="1">
+          <mxGeometry height="120" width="210" x="20" y="250" as="geometry" />
         </mxCell>
-        <mxCell id="fn-league" value="League Handler&#10;/league[...] , /users/profile,&#10;/users/invite (Cognito admin)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="grp-c-league">
-          <mxGeometry x="15" y="35" width="180" height="70" as="geometry" />
+        <mxCell id="fn-league" parent="grp-c-league" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" value="League Handler&#xa;/league[...] , /users/profile,&#xa;/users/invite (Cognito admin)" vertex="1">
+          <mxGeometry height="70" width="180" x="15" y="35" as="geometry" />
         </mxCell>
-
-        <!-- domain: media (tts/thumbnail/icon) -->
-        <mxCell id="grp-c-media" value="Medien (Audio / Bilder)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;verticalAlign=top;fontSize=11;dashed=1;" vertex="1" parent="grp-compute">
-          <mxGeometry x="250" y="250" width="200" height="200" as="geometry" />
+        <mxCell id="grp-c-media" parent="grp-compute" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;verticalAlign=top;fontSize=11;dashed=1;" value="Medien (Audio / Bilder)" vertex="1">
+          <mxGeometry height="200" width="200" x="250" y="250" as="geometry" />
         </mxCell>
-        <mxCell id="fn-polly" value="Polly Handler&#10;GET /tts/voices&#10;POST /tts/synthesize" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="grp-c-media">
-          <mxGeometry x="10" y="35" width="180" height="50" as="geometry" />
+        <mxCell id="fn-polly" parent="grp-c-media" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" value="Polly Handler&#xa;GET /tts/voices&#xa;POST /tts/synthesize" vertex="1">
+          <mxGeometry height="50" width="180" x="10" y="35" as="geometry" />
         </mxCell>
-        <mxCell id="fn-image" value="Image Handler&#10;POST /images/thumbnail&#10;GET /images/thumbnail/{s}/{i}" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="grp-c-media">
-          <mxGeometry x="10" y="95" width="180" height="50" as="geometry" />
+        <mxCell id="fn-image" parent="grp-c-media" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" value="Image Handler&#xa;POST /images/thumbnail&#xa;GET /images/thumbnail/{s}/{i}" vertex="1">
+          <mxGeometry height="50" width="180" x="10" y="95" as="geometry" />
         </mxCell>
-        <mxCell id="fn-icon" value="Icon Handler&#10;(EventBridge: S3 ObjectCreated&#10;→ identicons)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="grp-c-media">
-          <mxGeometry x="10" y="150" width="180" height="45" as="geometry" />
+        <mxCell id="fn-icon" parent="grp-c-media" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" value="Icon Handler&#xa;(EventBridge: S3 ObjectCreated&#xa;→ identicons)" vertex="1">
+          <mxGeometry height="45" width="180" x="10" y="150" as="geometry" />
         </mxCell>
-
-        <!-- async workers -->
-        <mxCell id="grp-workers" value="Async Workers" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;verticalAlign=top;fontSize=11;dashed=1;" vertex="1" parent="grp-compute">
-          <mxGeometry x="20" y="470" width="430" height="150" as="geometry" />
+        <mxCell id="grp-workers" parent="grp-compute" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;verticalAlign=top;fontSize=11;dashed=1;" value="Async Workers" vertex="1">
+          <mxGeometry height="150" width="430" x="20" y="470" as="geometry" />
         </mxCell>
-        <mxCell id="fn-extractworker" value="Extraction Worker&#10;(Textract OCR → Bedrock Nova Pro,&#10;dedup by target)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="grp-workers">
-          <mxGeometry x="15" y="35" width="190" height="90" as="geometry" />
+        <mxCell id="fn-extractworker" parent="grp-workers" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" value="Extraction Worker&#xa;(Textract OCR → Bedrock Nova Pro,&#xa;dedup by target)" vertex="1">
+          <mxGeometry height="90" width="190" x="15" y="35" as="geometry" />
         </mxCell>
-        <mxCell id="fn-thumbworker" value="Thumbnail Worker&#10;(Nova Pro prompt →&#10;Stable Image Core, us-west-2)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="grp-workers">
-          <mxGeometry x="225" y="35" width="190" height="90" as="geometry" />
+        <mxCell id="fn-thumbworker" parent="grp-workers" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" value="Thumbnail Worker&#xa;(Nova Pro prompt →&#xa;Stable Image Core, us-west-2)" vertex="1">
+          <mxGeometry height="90" width="190" x="225" y="35" as="geometry" />
         </mxCell>
-
-        <!-- ===================== MESSAGING (between compute and data) ===================== -->
-        <mxCell id="grp-msg" value="Async Messaging (SQS)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;verticalAlign=top;fontStyle=1;fontSize=13;" vertex="1" parent="1">
-          <mxGeometry x="960" y="800" width="470" height="140" as="geometry" />
+        <mxCell id="grp-msg" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;verticalAlign=top;fontStyle=1;fontSize=13;" value="Async Messaging (SQS)" vertex="1">
+          <mxGeometry height="140" width="470" x="960" y="800" as="geometry" />
         </mxCell>
-        <mxCell id="sqs-extract" value="Extraction Queue&#10;(+ DLQ)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#9673a6;" vertex="1" parent="grp-msg">
-          <mxGeometry x="40" y="45" width="170" height="60" as="geometry" />
+        <mxCell id="sqs-extract" parent="grp-msg" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#9673a6;" value="Extraction Queue&#xa;(+ DLQ)" vertex="1">
+          <mxGeometry height="60" width="170" x="40" y="45" as="geometry" />
         </mxCell>
-        <mxCell id="sqs-thumb" value="Thumbnail Queue&#10;(+ DLQ)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#9673a6;" vertex="1" parent="grp-msg">
-          <mxGeometry x="260" y="45" width="170" height="60" as="geometry" />
+        <mxCell id="sqs-thumb" parent="grp-msg" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#9673a6;" value="Thumbnail Queue&#xa;(+ DLQ)" vertex="1">
+          <mxGeometry height="60" width="170" x="260" y="45" as="geometry" />
         </mxCell>
-
-        <!-- ===================== DATA TIER ===================== -->
-        <mxCell id="grp-data" value="Data — DynamoDB (PAY_PER_REQUEST, PITR + AWS Backup)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;verticalAlign=top;fontStyle=1;fontSize=13;" vertex="1" parent="1">
-          <mxGeometry x="1500" y="120" width="440" height="640" as="geometry" />
+        <mxCell id="grp-data" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;verticalAlign=top;fontStyle=1;fontSize=13;" value="Data — DynamoDB (PAY_PER_REQUEST, PITR + AWS Backup)" vertex="1">
+          <mxGeometry height="640" width="440" x="1500" y="120" as="geometry" />
         </mxCell>
-
-        <mxCell id="grp-d-content" value="Inhalt" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#b85450;verticalAlign=top;fontSize=11;dashed=1;" vertex="1" parent="grp-data">
-          <mxGeometry x="20" y="35" width="195" height="185" as="geometry" />
+        <mxCell id="grp-d-content" parent="grp-data" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#b85450;verticalAlign=top;fontSize=11;dashed=1;" value="Inhalt" vertex="1">
+          <mxGeometry height="185" width="195" x="20" y="35" as="geometry" />
         </mxCell>
-        <mxCell id="t-users" value="Users" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" vertex="1" parent="grp-d-content">
-          <mxGeometry x="20" y="30" width="155" height="35" as="geometry" />
+        <mxCell id="t-users" parent="grp-d-content" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" value="Users" vertex="1">
+          <mxGeometry height="35" width="155" x="20" y="30" as="geometry" />
         </mxCell>
-        <mxCell id="t-sets" value="VocabSets" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" vertex="1" parent="grp-d-content">
-          <mxGeometry x="20" y="75" width="155" height="35" as="geometry" />
+        <mxCell id="t-sets" parent="grp-d-content" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" value="VocabSets" vertex="1">
+          <mxGeometry height="35" width="155" x="20" y="75" as="geometry" />
         </mxCell>
-        <mxCell id="t-items" value="VocabItems" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" vertex="1" parent="grp-d-content">
-          <mxGeometry x="20" y="120" width="155" height="35" as="geometry" />
+        <mxCell id="t-items" parent="grp-d-content" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" value="VocabItems" vertex="1">
+          <mxGeometry height="35" width="155" x="20" y="120" as="geometry" />
         </mxCell>
-
-        <mxCell id="grp-d-learning" value="Lernen &amp; Fortschritt" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#b85450;verticalAlign=top;fontSize=11;dashed=1;" vertex="1" parent="grp-data">
-          <mxGeometry x="230" y="35" width="195" height="185" as="geometry" />
+        <mxCell id="grp-d-learning" parent="grp-data" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#b85450;verticalAlign=top;fontSize=11;dashed=1;" value="Lernen &amp; Fortschritt" vertex="1">
+          <mxGeometry height="185" width="195" x="230" y="35" as="geometry" />
         </mxCell>
-        <mxCell id="t-progress" value="Progress" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" vertex="1" parent="grp-d-learning">
-          <mxGeometry x="20" y="30" width="155" height="35" as="geometry" />
+        <mxCell id="t-progress" parent="grp-d-learning" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" value="Progress" vertex="1">
+          <mxGeometry height="35" width="155" x="20" y="30" as="geometry" />
         </mxCell>
-        <mxCell id="t-sessions" value="PracticeSessions" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" vertex="1" parent="grp-d-learning">
-          <mxGeometry x="20" y="75" width="155" height="35" as="geometry" />
+        <mxCell id="t-sessions" parent="grp-d-learning" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" value="PracticeSessions" vertex="1">
+          <mxGeometry height="35" width="155" x="20" y="75" as="geometry" />
         </mxCell>
-        <mxCell id="t-goals" value="LearningGoals" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" vertex="1" parent="grp-d-learning">
-          <mxGeometry x="20" y="120" width="155" height="35" as="geometry" />
+        <mxCell id="t-goals" parent="grp-d-learning" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" value="LearningGoals" vertex="1">
+          <mxGeometry height="35" width="155" x="20" y="120" as="geometry" />
         </mxCell>
-
-        <mxCell id="grp-d-social" value="Liga" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#b85450;verticalAlign=top;fontSize=11;dashed=1;" vertex="1" parent="grp-data">
-          <mxGeometry x="20" y="235" width="195" height="140" as="geometry" />
+        <mxCell id="grp-d-social" parent="grp-data" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#b85450;verticalAlign=top;fontSize=11;dashed=1;" value="Liga" vertex="1">
+          <mxGeometry height="140" width="195" x="20" y="235" as="geometry" />
         </mxCell>
-        <mxCell id="t-leagues" value="Leagues" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" vertex="1" parent="grp-d-social">
-          <mxGeometry x="20" y="35" width="155" height="35" as="geometry" />
+        <mxCell id="t-leagues" parent="grp-d-social" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" value="Leagues" vertex="1">
+          <mxGeometry height="35" width="155" x="20" y="35" as="geometry" />
         </mxCell>
-        <mxCell id="t-members" value="LeagueMembers" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" vertex="1" parent="grp-d-social">
-          <mxGeometry x="20" y="85" width="155" height="35" as="geometry" />
+        <mxCell id="t-members" parent="grp-d-social" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" value="LeagueMembers" vertex="1">
+          <mxGeometry height="35" width="155" x="20" y="85" as="geometry" />
         </mxCell>
-
-        <mxCell id="grp-d-usage" value="Rate-Limit / Usage (TTL)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#b85450;verticalAlign=top;fontSize=11;dashed=1;" vertex="1" parent="grp-data">
-          <mxGeometry x="230" y="235" width="195" height="140" as="geometry" />
+        <mxCell id="grp-d-usage" parent="grp-data" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#b85450;verticalAlign=top;fontSize=11;dashed=1;" value="Rate-Limit / Usage (TTL)" vertex="1">
+          <mxGeometry height="140" width="195" x="230" y="235" as="geometry" />
         </mxCell>
-        <mxCell id="t-ttsusage" value="TtsUsage" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" vertex="1" parent="grp-d-usage">
-          <mxGeometry x="20" y="30" width="155" height="30" as="geometry" />
+        <mxCell id="t-ttsusage" parent="grp-d-usage" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" value="TtsUsage" vertex="1">
+          <mxGeometry height="30" width="155" x="20" y="30" as="geometry" />
         </mxCell>
-        <mxCell id="t-thumbusage" value="ThumbnailUsage" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" vertex="1" parent="grp-d-usage">
-          <mxGeometry x="20" y="65" width="155" height="30" as="geometry" />
+        <mxCell id="t-thumbusage" parent="grp-d-usage" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" value="ThumbnailUsage" vertex="1">
+          <mxGeometry height="30" width="155" x="20" y="65" as="geometry" />
         </mxCell>
-        <mxCell id="t-extractusage" value="ExtractionUsage" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" vertex="1" parent="grp-d-usage">
-          <mxGeometry x="20" y="100" width="155" height="30" as="geometry" />
+        <mxCell id="t-extractusage" parent="grp-d-usage" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" value="ExtractionUsage" vertex="1">
+          <mxGeometry height="30" width="155" x="20" y="100" as="geometry" />
         </mxCell>
-
-        <!-- storage + external, placed under the data tier, right side -->
-        <mxCell id="grp-storage" value="Object Storage" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;verticalAlign=top;fontStyle=1;fontSize=13;" vertex="1" parent="1">
-          <mxGeometry x="1500" y="800" width="200" height="140" as="geometry" />
+        <mxCell id="grp-storage" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;verticalAlign=top;fontStyle=1;fontSize=13;" value="Object Storage" vertex="1">
+          <mxGeometry height="140" width="200" x="1710" y="790" as="geometry" />
         </mxCell>
-        <mxCell id="s3images" value="S3: Images Bucket&#10;images/ (scans, 30d TTL)&#10;identicons/ (persistent)&#10;tts/ , thumbnails/ (30d)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;" vertex="1" parent="grp-storage">
-          <mxGeometry x="15" y="35" width="170" height="90" as="geometry" />
+        <mxCell id="s3images" parent="grp-storage" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;" value="S3: Images Bucket&#xa;images/ (scans, 30d TTL)&#xa;identicons/ (persistent)&#xa;tts/ , thumbnails/ (30d)" vertex="1">
+          <mxGeometry height="90" width="170" x="15" y="35" as="geometry" />
         </mxCell>
-
-        <mxCell id="grp-ext" value="External AI / Voice (Amazon Bedrock, Textract, Polly)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;verticalAlign=top;fontStyle=1;fontSize=13;" vertex="1" parent="1">
-          <mxGeometry x="1740" y="800" width="200" height="200" as="geometry" />
+        <mxCell id="grp-ext" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;verticalAlign=top;fontStyle=1;fontSize=13;" value="External AI / Voice (Amazon Bedrock, Textract, Polly)" vertex="1">
+          <mxGeometry height="200" width="200" x="1740" y="970" as="geometry" />
         </mxCell>
-        <mxCell id="textract" value="Textract&#10;(OCR)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d79b00;" vertex="1" parent="grp-ext">
-          <mxGeometry x="20" y="35" width="160" height="35" as="geometry" />
+        <mxCell id="textract" parent="grp-ext" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d79b00;" value="Textract&#xa;(OCR)" vertex="1">
+          <mxGeometry height="35" width="160" x="20" y="35" as="geometry" />
         </mxCell>
-        <mxCell id="bedrock" value="Bedrock&#10;Nova Pro (eu) +&#10;Stable Image Core (us-west-2)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d79b00;" vertex="1" parent="grp-ext">
-          <mxGeometry x="20" y="80" width="160" height="55" as="geometry" />
+        <mxCell id="bedrock" parent="grp-ext" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d79b00;" value="Bedrock&#xa;Nova Pro (eu) +&#xa;Stable Image Core (us-west-2)" vertex="1">
+          <mxGeometry height="55" width="160" x="20" y="80" as="geometry" />
         </mxCell>
-        <mxCell id="polly" value="Polly&#10;(Text-to-Speech)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d79b00;" vertex="1" parent="grp-ext">
-          <mxGeometry x="20" y="145" width="160" height="40" as="geometry" />
+        <mxCell id="polly" parent="grp-ext" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d79b00;" value="Polly&#xa;(Text-to-Speech)" vertex="1">
+          <mxGeometry height="40" width="160" x="20" y="145" as="geometry" />
         </mxCell>
-
-        <!-- ============================================================= -->
-        <!-- ===================== EDGES ================================= -->
-        <!-- ============================================================= -->
-
-        <!-- Client -> Edge (request path, blue) -->
-        <mxCell id="e-spa-cf" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#3366cc;strokeWidth=2;exitX=1;exitY=0.25;entryX=0;entryY=0.4;" edge="1" parent="1" source="spa" target="cloudfront">
+        <mxCell id="e-spa-cf" edge="1" parent="1" source="spa" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#3366cc;strokeWidth=2;exitX=1;exitY=0.25;entryX=0;entryY=0.4;" target="cloudfront">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="e-spa-cf-l" value="statische App laden" style="text;html=1;fontSize=9;labelBackgroundColor=#ffffff;" vertex="1" connectable="0" parent="e-spa-cf">
-          <mxGeometry x="-0.1" relative="1" as="geometry"><mxPoint as="offset" /></mxGeometry>
-        </mxCell>
-        <mxCell id="e-cf-s3" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#3366cc;strokeWidth=1;" edge="1" parent="1" source="cloudfront" target="s3front">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="e-r53-cf" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#3366cc;strokeWidth=1;dashed=1;" edge="1" parent="1" source="route53" target="cloudfront">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="e-spa-cognito" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#3366cc;strokeWidth=1;exitX=1;exitY=0.85;entryX=0;entryY=0.5;" edge="1" parent="1" source="spa" target="cognito">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="e-spa-cognito-l" value="OAuth2 login" style="text;html=1;fontSize=9;labelBackgroundColor=#ffffff;" vertex="1" connectable="0" parent="e-spa-cognito">
-          <mxGeometry x="-0.2" relative="1" as="geometry"><mxPoint as="offset" /></mxGeometry>
-        </mxCell>
-
-        <!-- SPA -> API Gateway (REST, blue, main request path) -->
-        <mxCell id="e-spa-api" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#3366cc;strokeWidth=2;exitX=1;exitY=0.5;entryX=0;entryY=0.4;" edge="1" parent="1" source="spa" target="apigw">
-          <mxGeometry relative="1" as="geometry">
-            <Array as="points"><mxPoint x="620" y="180" /><mxPoint x="620" y="185" /></Array>
+        <mxCell id="e-spa-cf-l" connectable="0" parent="e-spa-cf" style="text;html=1;fontSize=9;labelBackgroundColor=#ffffff;" value="statische App laden" vertex="1">
+          <mxGeometry relative="1" x="-0.1" as="geometry">
+            <mxPoint as="offset" />
           </mxGeometry>
         </mxCell>
-        <mxCell id="e-spa-api-l" value="REST /… (Bearer ID token)" style="text;html=1;fontSize=9;labelBackgroundColor=#ffffff;" vertex="1" connectable="0" parent="e-spa-api">
-          <mxGeometry x="-0.1" relative="1" as="geometry"><mxPoint as="offset" /></mxGeometry>
-        </mxCell>
-        <!-- API GW validates with Cognito -->
-        <mxCell id="e-api-cognito" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#3366cc;strokeWidth=1;dashed=1;exitX=0;exitY=0.8;entryX=1;entryY=0.5;" edge="1" parent="1" source="apigw" target="cognito">
+        <mxCell id="e-cf-s3" edge="1" parent="1" source="cloudfront" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#3366cc;strokeWidth=1;" target="s3front">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="e-api-cognito-l" value="JWT authorizer" style="text;html=1;fontSize=9;labelBackgroundColor=#ffffff;" vertex="1" connectable="0" parent="e-api-cognito">
-          <mxGeometry x="0.1" relative="1" as="geometry"><mxPoint as="offset" /></mxGeometry>
-        </mxCell>
-
-        <!-- API Gateway -> compute group (single blue trunk into the domain group) -->
-        <mxCell id="e-api-compute" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#3366cc;strokeWidth=3;exitX=1;exitY=0.5;entryX=0;entryY=0.15;" edge="1" parent="1" source="apigw" target="grp-compute">
+        <mxCell id="e-r53-cf" edge="1" parent="1" source="route53" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#3366cc;strokeWidth=1;dashed=1;" target="cloudfront">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="e-api-compute-l" value="invoke handler (proxy)" style="text;html=1;fontSize=9;labelBackgroundColor=#ffffff;" vertex="1" connectable="0" parent="e-api-compute">
-          <mxGeometry x="-0.2" relative="1" as="geometry"><mxPoint as="offset" /></mxGeometry>
-        </mxCell>
-
-        <!-- Compute -> Data (single grey trunk to reduce crossings) -->
-        <mxCell id="e-compute-data" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#666666;strokeWidth=3;exitX=1;exitY=0.3;entryX=0;entryY=0.5;" edge="1" parent="1" source="grp-compute" target="grp-data">
+        <mxCell id="e-spa-cognito" edge="1" parent="1" source="spa" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#3366cc;strokeWidth=1;exitX=1;exitY=0.85;entryX=0;entryY=0.5;" target="cognito">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="e-compute-data-l" value="read / write items&#10;(key + GSI queries, no scans)" style="text;html=1;fontSize=9;labelBackgroundColor=#ffffff;" vertex="1" connectable="0" parent="e-compute-data">
-          <mxGeometry x="-0.1" relative="1" as="geometry"><mxPoint as="offset" /></mxGeometry>
-        </mxCell>
-
-        <!-- ===== Extraction pipeline (green) ===== -->
-        <!-- Upload writes scan to S3 -->
-        <mxCell id="e-upload-s3" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#666666;strokeWidth=1;dashed=1;exitX=1;exitY=0.5;entryX=0.5;entryY=0;" edge="1" parent="1" source="fn-upload" target="s3images">
-          <mxGeometry relative="1" as="geometry">
-            <Array as="points"><mxPoint x="1460" y="150" /><mxPoint x="1585" y="150" /></Array>
+        <mxCell id="e-spa-cognito-l" connectable="0" parent="e-spa-cognito" style="text;html=1;fontSize=9;labelBackgroundColor=#ffffff;" value="OAuth2 login" vertex="1">
+          <mxGeometry relative="1" x="-0.2" as="geometry">
+            <mxPoint as="offset" />
           </mxGeometry>
         </mxCell>
-        <mxCell id="e-upload-s3-l" value="presigned PUT (scan)" style="text;html=1;fontSize=9;labelBackgroundColor=#ffffff;" vertex="1" connectable="0" parent="e-upload-s3">
-          <mxGeometry x="-0.3" relative="1" as="geometry"><mxPoint as="offset" /></mxGeometry>
+        <mxCell id="e-spa-api" edge="1" parent="1" source="spa" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#3366cc;strokeWidth=2;exitX=1;exitY=0.5;entryX=0;entryY=0.4;" target="apigw">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="620" y="180" />
+              <mxPoint x="620" y="185" />
+            </Array>
+          </mxGeometry>
         </mxCell>
-
-        <!-- Extraction handler enqueues -->
-        <mxCell id="e-extract-sqs" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#2d862d;strokeWidth=2;exitX=0.5;exitY=1;entryX=0.25;entryY=0;" edge="1" parent="1" source="fn-extract" target="sqs-extract">
+        <mxCell id="e-spa-api-l" connectable="0" parent="e-spa-api" style="text;html=1;fontSize=9;labelBackgroundColor=#ffffff;" value="REST /… (Bearer ID token)" vertex="1">
+          <mxGeometry relative="1" x="-0.1" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e-api-cognito" edge="1" parent="1" source="apigw" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#3366cc;strokeWidth=1;dashed=1;exitX=0;exitY=0.8;entryX=1;entryY=0.5;" target="cognito">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="e-extract-sqs-l" value="enqueue page job (202)" style="text;html=1;fontSize=9;labelBackgroundColor=#ffffff;" vertex="1" connectable="0" parent="e-extract-sqs">
-          <mxGeometry x="-0.2" relative="1" as="geometry"><mxPoint as="offset" /></mxGeometry>
+        <mxCell id="e-api-cognito-l" connectable="0" parent="e-api-cognito" style="text;html=1;fontSize=9;labelBackgroundColor=#ffffff;" value="JWT authorizer" vertex="1">
+          <mxGeometry relative="1" x="0.1" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
         </mxCell>
-        <!-- SQS triggers worker -->
-        <mxCell id="e-sqs-extractworker" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#2d862d;strokeWidth=2;exitX=0.25;entryX=0.5;exitY=0;entryY=1;" edge="1" parent="1" source="sqs-extract" target="fn-extractworker">
+        <mxCell id="e-api-compute" edge="1" parent="1" source="apigw" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#3366cc;strokeWidth=3;exitX=1;exitY=0.5;entryX=0;entryY=0.15;" target="grp-compute">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="e-sqs-extractworker-l" value="trigger worker" style="text;html=1;fontSize=9;labelBackgroundColor=#ffffff;" vertex="1" connectable="0" parent="e-sqs-extractworker">
-          <mxGeometry x="0.2" relative="1" as="geometry"><mxPoint as="offset" /></mxGeometry>
-        </mxCell>
-        <!-- Extraction worker -> Textract + Bedrock (orange) -->
-        <mxCell id="e-extractworker-textract" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#e07b00;strokeWidth=2;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="fn-extractworker" target="textract">
-          <mxGeometry relative="1" as="geometry">
-            <Array as="points"><mxPoint x="1690" y="900" /></Array>
+        <mxCell id="e-api-compute-l" connectable="0" parent="e-api-compute" style="text;html=1;fontSize=9;labelBackgroundColor=#ffffff;" value="invoke handler (proxy)" vertex="1">
+          <mxGeometry relative="1" x="-0.2" as="geometry">
+            <mxPoint as="offset" />
           </mxGeometry>
         </mxCell>
-        <mxCell id="e-extractworker-textract-l" value="OCR + Nova Pro extract" style="text;html=1;fontSize=9;labelBackgroundColor=#ffffff;" vertex="1" connectable="0" parent="e-extractworker-textract">
-          <mxGeometry x="0.4" relative="1" as="geometry"><mxPoint as="offset" /></mxGeometry>
-        </mxCell>
-        <mxCell id="e-extractworker-bedrock" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#e07b00;strokeWidth=1;exitX=1;exitY=0.7;entryX=0;entryY=0.5;" edge="1" parent="1" source="fn-extractworker" target="bedrock">
-          <mxGeometry relative="1" as="geometry">
-            <Array as="points"><mxPoint x="1700" y="940" /></Array>
-          </mxGeometry>
-        </mxCell>
-        <!-- Extraction worker reads scan from S3 -->
-        <mxCell id="e-extractworker-s3" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#666666;strokeWidth=1;dashed=1;exitX=1;exitY=0.3;entryX=0;entryY=0.5;" edge="1" parent="1" source="fn-extractworker" target="s3images">
+        <mxCell id="e-compute-data" edge="1" parent="1" source="grp-compute" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#666666;strokeWidth=3;exitX=1;exitY=0.3;entryX=0;entryY=0.5;" target="grp-data">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-
-        <!-- ===== Thumbnail pipeline (green + orange) ===== -->
-        <mxCell id="e-image-sqs" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#2d862d;strokeWidth=2;exitX=0.5;exitY=1;entryX=0.25;entryY=0;" edge="1" parent="1" source="fn-image" target="sqs-thumb">
+        <mxCell id="e-compute-data-l" connectable="0" parent="e-compute-data" style="text;html=1;fontSize=9;labelBackgroundColor=#ffffff;" value="read / write items&#xa;(key + GSI queries, no scans)" vertex="1">
+          <mxGeometry relative="1" x="-0.1" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e-upload-s3" edge="1" parent="1" source="fn-upload" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#666666;strokeWidth=1;dashed=1;exitX=1;exitY=0.5;entryX=0.5;entryY=0;" target="s3images">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1175" y="150" />
+              <mxPoint x="1940" y="150" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e-upload-s3-l" connectable="0" parent="e-upload-s3" style="text;html=1;fontSize=9;labelBackgroundColor=#ffffff;" value="presigned PUT (scan)" vertex="1">
+          <mxGeometry relative="1" x="-0.3" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e-extract-sqs" edge="1" parent="1" source="fn-extract" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#2d862d;strokeWidth=2;exitX=0.5;exitY=1;entryX=0.25;entryY=0;" target="sqs-extract">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="e-image-sqs-l" value="enqueue on cache miss (202)" style="text;html=1;fontSize=9;labelBackgroundColor=#ffffff;" vertex="1" connectable="0" parent="e-image-sqs">
-          <mxGeometry x="-0.2" relative="1" as="geometry"><mxPoint as="offset" /></mxGeometry>
+        <mxCell id="e-extract-sqs-l" connectable="0" parent="e-extract-sqs" style="text;html=1;fontSize=9;labelBackgroundColor=#ffffff;" value="enqueue page job (202)" vertex="1">
+          <mxGeometry relative="1" x="-0.2" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
         </mxCell>
-        <mxCell id="e-sqs-thumbworker" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#2d862d;strokeWidth=2;exitX=0.25;exitY=0;entryX=0.5;entryY=1;" edge="1" parent="1" source="sqs-thumb" target="fn-thumbworker">
+        <mxCell id="e-sqs-extractworker" edge="1" parent="1" source="sqs-extract" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#2d862d;strokeWidth=2;exitX=0.25;entryX=0.5;exitY=0;entryY=1;" target="fn-extractworker">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="e-thumbworker-bedrock" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#e07b00;strokeWidth=2;exitX=1;exitY=0.5;entryX=0;entryY=0.7;" edge="1" parent="1" source="fn-thumbworker" target="bedrock">
-          <mxGeometry relative="1" as="geometry">
-            <Array as="points"><mxPoint x="1710" y="905" /></Array>
+        <mxCell id="e-sqs-extractworker-l" connectable="0" parent="e-sqs-extractworker" style="text;html=1;fontSize=9;labelBackgroundColor=#ffffff;" value="trigger worker" vertex="1">
+          <mxGeometry relative="1" x="0.2" as="geometry">
+            <mxPoint as="offset" />
           </mxGeometry>
         </mxCell>
-        <mxCell id="e-thumbworker-s3" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#666666;strokeWidth=1;dashed=1;exitX=1;exitY=0.8;entryX=0.5;entryY=1;" edge="1" parent="1" source="fn-thumbworker" target="s3images">
+        <mxCell id="e-extractworker-textract" edge="1" parent="1" source="fn-extractworker" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#e07b00;strokeWidth=2;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" target="textract">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1185" y="1010" />
+              <mxPoint x="1690" y="1010" />
+              <mxPoint x="1690" y="1022.55" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e-extractworker-textract-l" connectable="0" parent="e-extractworker-textract" style="text;html=1;fontSize=9;labelBackgroundColor=#ffffff;" value="OCR + Nova Pro extract" vertex="1">
+          <mxGeometry relative="1" x="0.4" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e-extractworker-bedrock" edge="1" parent="1" source="fn-extractworker" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#e07b00;strokeWidth=1;exitX=1;exitY=0.7;entryX=0;entryY=0.5;" target="bedrock">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1185" y="1080" />
+              <mxPoint x="1700" y="1080" />
+              <mxPoint x="1700" y="1077.55" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e-extractworker-s3" edge="1" parent="1" source="fn-extractworker" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#666666;strokeWidth=1;dashed=1;exitX=1;exitY=0.3;entryX=0;entryY=0.5;" target="s3images">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="e-thumbworker-s3-l" value="write thumbnail PNG" style="text;html=1;fontSize=9;labelBackgroundColor=#ffffff;" vertex="1" connectable="0" parent="e-thumbworker-s3">
-          <mxGeometry x="0.2" relative="1" as="geometry"><mxPoint as="offset" /></mxGeometry>
-        </mxCell>
-
-        <!-- ===== Icon pipeline (EventBridge, green) ===== -->
-        <mxCell id="e-s3-icon" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#2d862d;strokeWidth=1;dashed=1;exitX=0;exitY=0.5;entryX=1;entryY=0.5;" edge="1" parent="1" source="s3images" target="fn-icon">
-          <mxGeometry relative="1" as="geometry">
-            <Array as="points"><mxPoint x="1470" y="835" /><mxPoint x="1470" y="640" /></Array>
-          </mxGeometry>
-        </mxCell>
-        <mxCell id="e-s3-icon-l" value="EventBridge: ObjectCreated (images/)" style="text;html=1;fontSize=9;labelBackgroundColor=#ffffff;" vertex="1" connectable="0" parent="e-s3-icon">
-          <mxGeometry x="0" relative="1" as="geometry"><mxPoint as="offset" /></mxGeometry>
-        </mxCell>
-        <mxCell id="e-icon-s3" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#666666;strokeWidth=1;dashed=1;exitX=1;exitY=0.7;entryX=0;entryY=0.9;" edge="1" parent="1" source="fn-icon" target="s3images">
-          <mxGeometry relative="1" as="geometry">
-            <Array as="points"><mxPoint x="1480" y="700" /></Array>
-          </mxGeometry>
-        </mxCell>
-        <mxCell id="e-icon-s3-l" value="write identicon" style="text;html=1;fontSize=9;labelBackgroundColor=#ffffff;" vertex="1" connectable="0" parent="e-icon-s3">
-          <mxGeometry x="0.3" relative="1" as="geometry"><mxPoint as="offset" /></mxGeometry>
-        </mxCell>
-
-        <!-- ===== TTS pipeline (orange + s3 cache) ===== -->
-        <mxCell id="e-polly-polly" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#e07b00;strokeWidth=2;exitX=1;exitY=0.5;entryX=0;entryY=0.2;" edge="1" parent="1" source="fn-polly" target="polly">
-          <mxGeometry relative="1" as="geometry">
-            <Array as="points"><mxPoint x="1690" y="965" /></Array>
-          </mxGeometry>
-        </mxCell>
-        <mxCell id="e-polly-polly-l" value="synthesize MP3" style="text;html=1;fontSize=9;labelBackgroundColor=#ffffff;" vertex="1" connectable="0" parent="e-polly-polly">
-          <mxGeometry x="0.3" relative="1" as="geometry"><mxPoint as="offset" /></mxGeometry>
-        </mxCell>
-        <mxCell id="e-polly-s3" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#666666;strokeWidth=1;dashed=1;exitX=1;exitY=0.9;entryX=0.5;entryY=1;" edge="1" parent="1" source="fn-polly" target="s3images">
+        <mxCell id="e-image-sqs" edge="1" parent="1" source="fn-image" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#2d862d;strokeWidth=2;exitX=0.5;exitY=1;entryX=0.25;entryY=0;" target="sqs-thumb">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="e-polly-s3-l" value="cache MP3 (tts/)" style="text;html=1;fontSize=9;labelBackgroundColor=#ffffff;" vertex="1" connectable="0" parent="e-polly-s3">
-          <mxGeometry x="0.3" relative="1" as="geometry"><mxPoint as="offset" /></mxGeometry>
-        </mxCell>
-
-        <!-- League handler -> Cognito admin (invite) -->
-        <mxCell id="e-league-cognito" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#3366cc;strokeWidth=1;dashed=1;exitX=0;exitY=0.5;entryX=0.5;entryY=1;" edge="1" parent="1" source="fn-league" target="cognito">
-          <mxGeometry relative="1" as="geometry">
-            <Array as="points"><mxPoint x="500" y="470" /></Array>
+        <mxCell id="e-image-sqs-l" connectable="0" parent="e-image-sqs" style="text;html=1;fontSize=9;labelBackgroundColor=#ffffff;" value="enqueue on cache miss (202)" vertex="1">
+          <mxGeometry relative="1" x="-0.2" as="geometry">
+            <mxPoint as="offset" />
           </mxGeometry>
         </mxCell>
-        <mxCell id="e-league-cognito-l" value="AdminCreateUser (invite)" style="text;html=1;fontSize=9;labelBackgroundColor=#ffffff;" vertex="1" connectable="0" parent="e-league-cognito">
-          <mxGeometry x="0" relative="1" as="geometry"><mxPoint as="offset" /></mxGeometry>
+        <mxCell id="e-sqs-thumbworker" edge="1" parent="1" source="sqs-thumb" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#2d862d;strokeWidth=2;exitX=0.25;exitY=0;entryX=0.5;entryY=1;" target="fn-thumbworker">
+          <mxGeometry relative="1" as="geometry" />
         </mxCell>
-
-        <!-- SPA <- S3 (presigned GET for images/audio, dashed grey) -->
-        <mxCell id="e-spa-s3images" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#666666;strokeWidth=1;dashed=1;exitX=0.5;exitY=1;entryX=0;entryY=0.5;" edge="1" parent="1" source="spa" target="s3images">
+        <mxCell id="e-thumbworker-bedrock" edge="1" parent="1" source="fn-thumbworker" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#e07b00;strokeWidth=2;exitX=1;exitY=0.5;entryX=0;entryY=0.7;" target="bedrock">
           <mxGeometry relative="1" as="geometry">
-            <Array as="points"><mxPoint x="160" y="1120" /><mxPoint x="1585" y="1120" /></Array>
+            <Array as="points">
+              <mxPoint x="1395" y="1050" />
+              <mxPoint x="1710" y="1050" />
+              <mxPoint x="1710" y="1088.55" />
+            </Array>
           </mxGeometry>
         </mxCell>
-        <mxCell id="e-spa-s3images-l" value="presigned GET: identicons, thumbnails, MP3, scans" style="text;html=1;fontSize=9;labelBackgroundColor=#ffffff;" vertex="1" connectable="0" parent="e-spa-s3images">
-          <mxGeometry x="-0.4" relative="1" as="geometry"><mxPoint as="offset" /></mxGeometry>
+        <mxCell id="e-thumbworker-s3" edge="1" parent="1" source="fn-thumbworker" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#666666;strokeWidth=1;dashed=1;exitX=1;exitY=0.8;entryX=0.5;entryY=1;" target="s3images">
+          <mxGeometry relative="1" as="geometry" />
         </mxCell>
-
+        <mxCell id="e-thumbworker-s3-l" connectable="0" parent="e-thumbworker-s3" style="text;html=1;fontSize=9;labelBackgroundColor=#ffffff;" value="write thumbnail PNG" vertex="1">
+          <mxGeometry relative="1" x="0.2" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e-s3-icon" edge="1" parent="1" source="s3images" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#2d862d;strokeWidth=1;dashed=1;exitX=0;exitY=0.5;entryX=1;entryY=0.5;" target="fn-icon">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1470" y="835" />
+              <mxPoint x="1470" y="640" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e-s3-icon-l" connectable="0" parent="e-s3-icon" style="text;html=1;fontSize=9;labelBackgroundColor=#ffffff;" value="EventBridge: ObjectCreated (images/)" vertex="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e-icon-s3" edge="1" parent="1" source="fn-icon" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#666666;strokeWidth=1;dashed=1;exitX=1;exitY=0.7;entryX=0;entryY=0.9;" target="s3images">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1480" y="700" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e-icon-s3-l" connectable="0" parent="e-icon-s3" style="text;html=1;fontSize=9;labelBackgroundColor=#ffffff;" value="write identicon" vertex="1">
+          <mxGeometry relative="1" x="0.3" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e-polly-polly" edge="1" parent="1" source="fn-polly" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#e07b00;strokeWidth=2;exitX=1;exitY=0.5;entryX=0;entryY=0.2;" target="polly">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1400" y="1120" />
+              <mxPoint x="1690" y="1120" />
+              <mxPoint x="1690" y="1123" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e-polly-polly-l" connectable="0" parent="e-polly-polly" style="text;html=1;fontSize=9;labelBackgroundColor=#ffffff;" value="synthesize MP3" vertex="1">
+          <mxGeometry relative="1" x="0.3" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e-polly-s3" edge="1" parent="1" source="fn-polly" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#666666;strokeWidth=1;dashed=1;exitX=1;exitY=0.9;entryX=0.5;entryY=1;" target="s3images">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-polly-s3-l" connectable="0" parent="e-polly-s3" style="text;html=1;fontSize=9;labelBackgroundColor=#ffffff;" value="cache MP3 (tts/)" vertex="1">
+          <mxGeometry relative="1" x="0.3" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e-league-cognito" edge="1" parent="1" source="fn-league" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#3366cc;strokeWidth=1;dashed=1;exitX=0;exitY=0.5;entryX=0.5;entryY=1;" target="cognito">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="500" y="470" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e-league-cognito-l" connectable="0" parent="e-league-cognito" style="text;html=1;fontSize=9;labelBackgroundColor=#ffffff;" value="AdminCreateUser (invite)" vertex="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e-spa-s3images" edge="1" parent="1" source="spa" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#666666;strokeWidth=1;dashed=1;exitX=0.5;exitY=1;entryX=0;entryY=0.5;" target="s3images">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="160" y="1120" />
+              <mxPoint x="1585" y="1120" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e-spa-s3images-l" connectable="0" parent="e-spa-s3images" style="text;html=1;fontSize=9;labelBackgroundColor=#ffffff;" value="presigned GET: identicons, thumbnails, MP3, scans" vertex="1">
+          <mxGeometry relative="1" x="-0.4" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
       </root>
     </mxGraphModel>
   </diagram>
