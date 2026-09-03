@@ -3,6 +3,7 @@
 import json
 import logging
 import os
+import datetime
 from collections import defaultdict
 
 import boto3
@@ -13,6 +14,7 @@ from lib.utils import (
     build_error_response,
     get_user_id_from_event,
     get_path_parameter,
+    get_timestamp,
 )
 from lib.validation import validate_uuid
 
@@ -72,13 +74,48 @@ def handle_overview(event, user_id):
 
     Returns aggregate statistics across all vocabulary sets.
     """
-    # Get all vocab sets for user
+    # Collect ALL sets the user practices: their own sets PLUS any sets assigned
+    # to their league. A league-only student owns no sets, so aggregating over
+    # owned sets alone would show an empty mastery distribution / weakest-words
+    # list even though they have plenty of progress. We therefore build the
+    # union {vocabSetId -> {title, itemCount}} from both sources.
     vocabsets_table = dynamodb.Table(VOCABSETS_TABLE)
-    vs_response = vocabsets_table.query(
+    owned_resp = vocabsets_table.query(
         IndexName='userId-createdAt-index',
         KeyConditionExpression=Key('userId').eq(user_id),
     )
-    vocab_sets = vs_response.get('Items', [])
+    owned_sets = owned_resp.get('Items', [])
+
+    set_meta = {}  # vocabSetId -> {'title':..., 'itemCount':...}
+    for vs in owned_sets:
+        set_meta[vs['vocabSetId']] = {
+            'title': vs.get('title', ''),
+            'itemCount': int(vs.get('itemCount', 0) or 0),
+        }
+
+    # Add league-assigned sets (fetched by their teacher owner — deterministic,
+    # same resolution as handle_vocab_set_progress).
+    try:
+        users_table = dynamodb.Table(USERS_TABLE)
+        user = users_table.get_item(Key={'userId': user_id}).get('Item', {})
+        league_id = user.get('leagueId')
+        if league_id and LEAGUES_TABLE:
+            leagues_table = dynamodb.Table(LEAGUES_TABLE)
+            league = leagues_table.get_item(Key={'leagueId': league_id}).get('Item', {})
+            teacher_user_id = league.get('teacherUserId')
+            for assigned_id in league.get('vocabSetIds', []) or []:
+                if assigned_id in set_meta or not teacher_user_id:
+                    continue
+                ts = vocabsets_table.get_item(
+                    Key={'vocabSetId': assigned_id, 'userId': teacher_user_id}
+                ).get('Item')
+                if ts:
+                    set_meta[assigned_id] = {
+                        'title': ts.get('title', ''),
+                        'itemCount': int(ts.get('itemCount', 0) or 0),
+                    }
+    except Exception as e:
+        logger.warning(f"Failed to resolve league sets for overview: {e}")
 
     # Get the user's practice sessions. Note: this table's sort key is sessionId
     # (a random UUID), so neither the query order nor a Limit here reflects
@@ -101,7 +138,7 @@ def handle_overview(event, user_id):
     completed_sessions = [s for s in sessions if s.get('status') == 'completed']
     completed_sessions.sort(key=lambda s: int(s.get('completedAt', 0)), reverse=True)
 
-    # Aggregate progress data across all vocab sets
+    # Aggregate progress across ALL practised sets (owned + league).
     progress_table = dynamodb.Table(PROGRESS_TABLE)
     total_words = 0
     practiced_words = 0
@@ -113,10 +150,9 @@ def handle_overview(event, user_id):
     # Collect weakest words (practiced but low mastery or high error count)
     weak_items = []
 
-    for vs in vocab_sets:
-        vocab_set_id = vs['vocabSetId']
-        vocab_set_title = vs.get('title', '')
-        total_words += vs.get('itemCount', 0)
+    for vocab_set_id, meta in set_meta.items():
+        vocab_set_title = meta['title']
+        total_words += meta['itemCount']
 
         # Get progress for this vocab set
         progress_key = f"{user_id}#{vocab_set_id}"
@@ -146,6 +182,33 @@ def handle_overview(event, user_id):
                     'incorrectCount': incorrect,
                     'recentErrors': item.get('recentErrors', []),
                 })
+
+    # Build a daily-aggregated activity series over the last 30 days from ALL
+    # completed sessions (not just the last 10), so the activity chart shows a
+    # real history. A heavy day of many sessions is one point; days with no
+    # practice are simply absent. Ordered oldest→newest for charting.
+    DAYS_WINDOW = 30
+    cutoff = get_timestamp() - DAYS_WINDOW * 24 * 60 * 60
+    by_day = {}
+    for s in completed_sessions:
+        ts = int(s.get('completedAt', 0) or 0)
+        if ts < cutoff:
+            continue
+        day = datetime.datetime.utcfromtimestamp(ts).strftime('%Y-%m-%d')
+        d = by_day.setdefault(day, {'correct': 0, 'total': 0, 'sessions': 0})
+        d['correct'] += int(s.get('correctAnswers', 0) or 0)
+        d['total'] += int(s.get('totalQuestions', 0) or 0)
+        d['sessions'] += 1
+    activity_by_day = [
+        {
+            'date': day,
+            'correct': v['correct'],
+            'total': v['total'],
+            'sessions': v['sessions'],
+            'accuracy': round(v['correct'] / v['total'] * 100) if v['total'] > 0 else 0,
+        }
+        for day, v in sorted(by_day.items())
+    ]
 
     # Calculate averages
     avg_mastery = round(mastery_sum / practiced_words, 1) if practiced_words > 0 else 0
@@ -206,13 +269,13 @@ def handle_overview(event, user_id):
     logger.info(json.dumps({
         'event': 'progress_overview',
         'userId': user_id,
-        'totalVocabSets': len(vocab_sets),
+        'totalVocabSets': len(set_meta),
         'totalWords': int(total_words),
         'practicedWords': int(practiced_words),
     }, default=str))
 
     return build_response(200, {
-        'totalVocabSets': len(vocab_sets),
+        'totalVocabSets': len(set_meta),
         'totalWords': total_words,
         'practicedWords': practiced_words,
         'averageMastery': avg_mastery,
@@ -229,6 +292,7 @@ def handle_overview(event, user_id):
             '5': mastery_distribution.get(5, 0),
         },
         'recentSessions': recent_sessions,
+        'activityByDay': activity_by_day,
         'weakestWords': weakest_words,
     })
 

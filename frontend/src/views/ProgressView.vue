@@ -151,8 +151,41 @@ onMounted(async () => {
       }
     }
 
-    // Build activity chart from recent sessions (group by date)
-    if (recentSessions.value.length > 0) {
+    // Build activity chart. Prefer the backend's daily-aggregated series
+    // (last 30 days over ALL sessions) so the history isn't limited to the last
+    // 10 sessions (which for a heavy same-day user collapsed to a single point).
+    // Fall back to grouping recentSessions if the backend didn't provide it.
+    const activityByDay = data.activityByDay || []
+    if (activityByDay.length > 0) {
+      const labelOf = (isoDate) => {
+        const [y, m, d] = isoDate.split('-')
+        return `${d}.${m}`
+      }
+      activityData.value = {
+        labels: activityByDay.map((p) => labelOf(p.date)),
+        datasets: [
+          {
+            label: 'Richtige Antworten',
+            data: activityByDay.map((p) => p.correct || 0),
+            borderColor: '#3b82f6',
+            backgroundColor: 'rgba(59, 130, 246, 0.1)',
+            fill: true,
+            tension: 0.3,
+            yAxisID: 'y',
+          },
+          {
+            label: 'Genauigkeit %',
+            data: activityByDay.map((p) => p.accuracy || 0),
+            borderColor: '#10b981',
+            backgroundColor: 'rgba(16, 185, 129, 0.1)',
+            borderDash: [5, 5],
+            fill: false,
+            tension: 0.3,
+            yAxisID: 'y1',
+          },
+        ],
+      }
+    } else if (recentSessions.value.length > 0) {
       const dateStats = {}
       for (const session of recentSessions.value) {
         if (!session.completedAt) continue
