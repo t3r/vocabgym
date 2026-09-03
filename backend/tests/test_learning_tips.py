@@ -115,3 +115,31 @@ def test_prompt_contains_no_user_identifiers(monkeypatch):
     lt.generate_tips(clusters)
     sent = json.dumps(captured['kw'], ensure_ascii=False)
     assert 'progressKey' not in sent and 'userId' not in sent
+
+
+def test_prompt_feeds_vetted_rule_and_forbids_inventing(monkeypatch):
+    # Option A: the LLM must receive the pre-vetted rule text and be explicitly
+    # forbidden from inventing grammar (gender of a word, literal translations).
+    clusters = _clusters()
+    captured = {}
+    def capture(**kw):
+        captured['kw'] = kw
+        return _mock_response('[{"title":"T","body":"B"}]')
+    monkeypatch.setattr(lt.bedrock_client, 'converse', capture)
+    lt.generate_tips(clusters)
+
+    content = captured['kw']['messages'][0]['content']
+    instruction = content[0]['text']
+    data = content[1]['guardContent']['text']['text']
+
+    # The vetted rule for at least one present cluster is passed in as data.
+    from lib.error_clusters import canonical_tip
+    vetted = canonical_tip(clusters[0]['type'])['body']
+    assert vetted in data
+    assert 'gepruefte_regel' in data
+
+    # The instruction forbids inventing gender / literal translations.
+    low = instruction.lower()
+    assert 'erfinde keine' in low
+    assert 'genus' in low
+    assert 'wörtliche' in low or 'woertliche' in low

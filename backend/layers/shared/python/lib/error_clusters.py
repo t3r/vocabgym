@@ -288,6 +288,20 @@ def build_error_clusters(weak_words, target_language='fr'):
     return result
 
 
+def canonical_tip(cluster_type):
+    """Return the vetted, fact-checked tip for a cluster type: {'title','body'}.
+
+    This is the SOURCE OF TRUTH for the grammatical content. The LLM is only
+    allowed to rephrase this text — never to invent new grammar rules (e.g. a
+    word's gender or a literal translation), which small models get wrong.
+    Returns None for an unknown type.
+    """
+    tip = _FALLBACK_TIPS.get(cluster_type)
+    if not tip:
+        return None
+    return {'title': tip['title'], 'body': tip['body']}
+
+
 def fallback_tips(clusters, limit=3):
     """Produce ready-to-show tips from clusters WITHOUT an LLM (used as the
     graceful fallback). Returns [{'title','body','cluster'}]."""

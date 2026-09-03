@@ -19,7 +19,7 @@ import os
 
 import boto3
 
-from lib.error_clusters import fallback_tips
+from lib.error_clusters import fallback_tips, canonical_tip
 
 logger = logging.getLogger()
 
@@ -45,31 +45,39 @@ def _guardrail_config():
 
 def _build_prompt(clusters):
     """Build the instruction + a compact JSON description of the clusters."""
-    # Only send what the model needs: type, and up to 3 example target words per
-    # cluster (never user identifiers).
-    compact = []
+    # For each cluster we pass the VETTED rule text (source of truth) plus the
+    # example words. The model may ONLY rephrase that rule warmly — it must not
+    # invent grammar (a word's gender, a literal translation), which is what a
+    # small model gets wrong.
+    groups = []
     for c in clusters[:MAX_TIPS]:
-        compact.append({
-            'fehlertyp': c['type'],
+        vetted = canonical_tip(c['type']) or {'title': '', 'body': ''}
+        groups.append({
+            'gepruefte_regel': vetted['body'],
+            'vorschlag_titel': vetted['title'],
             'beispiele': [w['target'] for w in c['words'][:3]],
-            'anzahl_woerter': c['wordCount'],
         })
 
     instruction = (
         "Du bist ein freundlicher Französisch-Lerncoach für deutsche "
-        "Gymnasiast:innen. Du bekommst Gruppen von Fehlern, die ein:e Schüler:in "
-        "aktuell macht (je Gruppe ein Fehlertyp und ein paar französische "
-        "Beispielwörter). Formuliere für JEDE Gruppe genau EINEN kurzen, "
-        "motivierenden Lerntipp auf Deutsch, in der Du-Form.\n\n"
-        "Regeln:\n"
-        "- Jeder Tipp: ein knackiger Titel (max. 6 Wörter) und 1–2 Sätze Text.\n"
-        "- Konkret und korrekt: nenne die Regel und nutze die Beispielwörter.\n"
-        "- Freundlich, nie herabsetzend. Keine Emojis im Titel.\n"
-        "- Kein Fließtext drumherum, KEIN Markdown.\n"
+        "Gymnasiast:innen. Zu jeder Gruppe bekommst du eine bereits GEPRÜFTE, "
+        "fachlich korrekte Regel ('gepruefte_regel') und ein paar französische "
+        "Beispielwörter. Formuliere pro Gruppe genau EINEN kurzen, "
+        "motivierenden Lerntipp auf Deutsch (Du-Form), der GENAU DIESE Regel "
+        "freundlich wiedergibt.\n\n"
+        "STRIKTE Regeln:\n"
+        "- Gib inhaltlich NUR die geprüfte Regel wieder. Formuliere sie netter, "
+        "aber ändere ihre Aussage NICHT.\n"
+        "- Erfinde KEINE neuen Sprachregeln. Behaupte NIEMALS das Genus eines "
+        "einzelnen Wortes ('X ist weiblich/männlich') und geef KEINE wörtlichen "
+        "Übersetzungen (z. B. 'jouer à' = 'spielen an').\n"
+        "- Die Beispielwörter darfst du NENNEN, aber NICHT benutzen, um eine "
+        "Regel herzuleiten oder zu begründen.\n"
+        "- Titel max. 6 Wörter, Text 1–2 Sätze. Keine Emojis, KEIN Markdown.\n"
         "Antworte NUR mit einem JSON-Array dieser Form:\n"
         '[{"title": "…", "body": "…"}]\n'
     )
-    data = json.dumps({'fehlergruppen': compact}, ensure_ascii=False)
+    data = json.dumps({'gruppen': groups}, ensure_ascii=False)
     return instruction, data
 
 
@@ -81,7 +89,7 @@ def _converse(instruction_text, guarded_text, max_tokens=600):
     kwargs = {
         'modelId': MODEL_ID,
         'messages': [{'role': 'user', 'content': content}],
-        'inferenceConfig': {'maxTokens': max_tokens, 'temperature': 0.4},
+        'inferenceConfig': {'maxTokens': max_tokens, 'temperature': 0.2},
     }
     gc = _guardrail_config()
     if gc:
