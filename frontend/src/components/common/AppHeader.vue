@@ -49,10 +49,10 @@
 
         <!-- User Menu -->
         <div class="flex items-center gap-3">
-          <!-- Help Link -->
+          <!-- Help Link (desktop only; mobile has it in the hamburger menu) -->
           <router-link
             to="/help"
-            class="p-2 rounded-md text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-700 text-sm font-medium"
+            class="hidden md:inline-flex p-2 rounded-md text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-700 text-sm font-medium"
             title="Hilfe"
             aria-label="Hilfe"
           >
@@ -61,7 +61,7 @@
             </svg>
           </router-link>
 
-          <!-- Dark Mode Toggle -->
+          <!-- Dark Mode Toggle (stays in the header on all sizes) -->
           <button
             @click="toggleDarkMode"
             class="relative flex items-center w-16 h-8 rounded-full transition-colors duration-300 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 dark:focus:ring-offset-gray-800"
@@ -78,52 +78,15 @@
             ></span>
           </button>
 
-          <div v-if="isAuthenticated" class="flex items-center gap-3">
+          <!-- Name + Logout: desktop only; on mobile these live in the menu. -->
+          <div v-if="isAuthenticated" class="hidden md:flex items-center gap-3">
             <button
               @click="editingName = true"
-              class="hidden sm:block text-sm text-gray-600 dark:text-gray-300 hover:text-primary-600 dark:hover:text-primary-400 cursor-pointer"
+              class="text-sm text-gray-600 dark:text-gray-300 hover:text-primary-600 dark:hover:text-primary-400 cursor-pointer"
               title="Namen ändern"
             >
               {{ userName || 'Name setzen' }}
             </button>
-            <!-- Inline Name Editor -->
-            <div v-if="editingName" class="fixed inset-0 z-50 flex items-start justify-center pt-20" @click.self="editingName = false">
-              <div class="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-4 w-72 border border-gray-200 dark:border-gray-700">
-                <div v-if="authStore.role === 'teacher'" class="flex items-center gap-1.5 mb-3 px-2 py-1 bg-primary-50 dark:bg-primary-900/30 rounded text-xs font-medium text-primary-700 dark:text-primary-300">
-                  <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4.26 10.147a60.438 60.438 0 0 0-.491 6.347A48.62 48.62 0 0 1 12 20.904a48.62 48.62 0 0 1 8.232-4.41 60.46 60.46 0 0 0-.491-6.347m-15.482 0a50.636 50.636 0 0 0-2.658-.813A59.906 59.906 0 0 1 12 3.493a59.903 59.903 0 0 1 10.399 5.84c-.896.248-1.783.52-2.658.814m-15.482 0A50.717 50.717 0 0 1 12 13.489a50.702 50.702 0 0 1 7.74-3.342" /></svg>
-                  Lehrkraft
-                </div>
-                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Anzeigename</label>
-                <input
-                  v-model="newDisplayName"
-                  type="text"
-                  maxlength="50"
-                  placeholder="Dein Name"
-                  class="input-field w-full text-sm mb-3"
-                  @keyup.enter="saveDisplayName"
-                  ref="nameInput"
-                />
-                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Symbol-Stil</label>
-                <div class="flex gap-2 mb-3">
-                  <button
-                    type="button"
-                    @click="iconSet = 'set1'"
-                    :class="iconSet === 'set1' ? 'btn-primary' : 'btn-secondary'"
-                    class="text-xs flex-1"
-                  >🤖 Roboter</button>
-                  <button
-                    type="button"
-                    @click="iconSet = 'set4'"
-                    :class="iconSet === 'set4' ? 'btn-primary' : 'btn-secondary'"
-                    class="text-xs flex-1"
-                  >🐱 Katzen</button>
-                </div>
-                <div class="flex gap-2">
-                  <button @click="saveProfile" class="btn-primary text-xs flex-1" :disabled="!newDisplayName.trim()">Speichern</button>
-                  <button @click="editingName = false" class="btn-secondary text-xs">Abbrechen</button>
-                </div>
-              </div>
-            </div>
             <LogoutButton />
           </div>
 
@@ -153,8 +116,65 @@
           <router-link to="/sammlung" class="px-3 py-2 rounded-md text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700" @click="mobileMenuOpen = false">Sammlung</router-link>
           <router-link to="/league" class="px-3 py-2 rounded-md text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700" @click="mobileMenuOpen = false">Liga</router-link>
           <router-link to="/help" class="px-3 py-2 rounded-md text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700" @click="mobileMenuOpen = false">Hilfe</router-link>
+
+          <!-- Account actions (mobile): profile settings + logout live here so
+               the header row stays uncluttered and never overflows. -->
+          <div class="mt-2 pt-2 border-t border-gray-200 dark:border-gray-700 flex flex-col gap-2">
+            <button
+              @click="editingName = true; mobileMenuOpen = false"
+              class="text-left px-3 py-2 rounded-md text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700"
+            >
+              👤 {{ userName || 'Name setzen' }}
+            </button>
+            <button
+              @click="handleMobileLogout"
+              class="text-left px-3 py-2 rounded-md text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700"
+            >
+              ↪ Abmelden
+            </button>
+          </div>
         </div>
       </nav>
+    </div>
+
+    <!-- Inline Name / Profile Editor (shared by desktop + mobile; a fixed
+         overlay, so its position in markup does not affect layout). -->
+    <div v-if="editingName" class="fixed inset-0 z-50 flex items-start justify-center pt-20" @click.self="editingName = false">
+      <div class="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-4 w-72 border border-gray-200 dark:border-gray-700">
+        <div v-if="authStore.role === 'teacher'" class="flex items-center gap-1.5 mb-3 px-2 py-1 bg-primary-50 dark:bg-primary-900/30 rounded text-xs font-medium text-primary-700 dark:text-primary-300">
+          <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4.26 10.147a60.438 60.438 0 0 0-.491 6.347A48.62 48.62 0 0 1 12 20.904a48.62 48.62 0 0 1 8.232-4.41 60.46 60.46 0 0 0-.491-6.347m-15.482 0a50.636 50.636 0 0 0-2.658-.813A59.906 59.906 0 0 1 12 3.493a59.903 59.903 0 0 1 10.399 5.84c-.896.248-1.783.52-2.658.814m-15.482 0A50.717 50.717 0 0 1 12 13.489a50.702 50.702 0 0 1 7.74-3.342" /></svg>
+          Lehrkraft
+        </div>
+        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Anzeigename</label>
+        <input
+          v-model="newDisplayName"
+          type="text"
+          maxlength="50"
+          placeholder="Dein Name"
+          class="input-field w-full text-sm mb-3"
+          @keyup.enter="saveProfile"
+          ref="nameInput"
+        />
+        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Symbol-Stil</label>
+        <div class="flex gap-2 mb-3">
+          <button
+            type="button"
+            @click="iconSet = 'set1'"
+            :class="iconSet === 'set1' ? 'btn-primary' : 'btn-secondary'"
+            class="text-xs flex-1"
+          >🤖 Roboter</button>
+          <button
+            type="button"
+            @click="iconSet = 'set4'"
+            :class="iconSet === 'set4' ? 'btn-primary' : 'btn-secondary'"
+            class="text-xs flex-1"
+          >🐱 Katzen</button>
+        </div>
+        <div class="flex gap-2">
+          <button @click="saveProfile" class="btn-primary text-xs flex-1" :disabled="!newDisplayName.trim()">Speichern</button>
+          <button @click="editingName = false" class="btn-secondary text-xs">Abbrechen</button>
+        </div>
+      </div>
     </div>
   </header>
 </template>
@@ -168,7 +188,7 @@ import api from '@/services/api'
 import LoginButton from '@/components/auth/LoginButton.vue'
 import LogoutButton from '@/components/auth/LogoutButton.vue'
 
-const { isAuthenticated, userName } = useAuth()
+const { isAuthenticated, userName, logout } = useAuth()
 const authStore = useAuthStore()
 const vocabStore = useVocabStore()
 const mobileMenuOpen = ref(false)
@@ -251,5 +271,10 @@ function applyDarkMode() {
 
 function toggleMobile() {
   mobileMenuOpen.value = !mobileMenuOpen.value
+}
+
+function handleMobileLogout() {
+  mobileMenuOpen.value = false
+  logout()
 }
 </script>
