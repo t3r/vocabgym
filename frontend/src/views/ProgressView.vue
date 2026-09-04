@@ -142,6 +142,7 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import api from '@/services/api'
+import { useRefreshOnFocus } from '@/composables/useRefreshOnFocus'
 import { formatPercentage } from '@/utils/formatters'
 import LoadingSpinner from '@/components/common/LoadingSpinner.vue'
 import ProgressChart from '@/components/progress/ProgressChart.vue'
@@ -171,7 +172,10 @@ function formatForecastDate(iso) {
   return `${d}.${m}.${y}`
 }
 
-onMounted(async () => {
+onMounted(loadOverview)
+useRefreshOnFocus(loadOverview)
+
+async function loadOverview() {
   try {
     const response = await api.get('/progress/overview')
     const data = response.data
@@ -293,5 +297,5 @@ onMounted(async () => {
   } finally {
     isLoading.value = false
   }
-})
+}
 </script>

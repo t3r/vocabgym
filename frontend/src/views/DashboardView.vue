@@ -154,6 +154,7 @@ import { useRouter } from 'vue-router'
 import { useVocabStore } from '@/stores/vocab'
 import { useAuthStore } from '@/stores/auth'
 import { useToast } from '@/composables/useToast'
+import { useRefreshOnFocus } from '@/composables/useRefreshOnFocus'
 import api from '@/services/api'
 import VocabSetCard from '@/components/dashboard/VocabSetCard.vue'
 import StatsOverview from '@/components/dashboard/StatsOverview.vue'
@@ -198,12 +199,15 @@ async function inviteUser() {
 const leagueBanner = ref(null)
 const leagueVocabSets = ref([])
 
-onMounted(() => {
+onMounted(loadDashboard)
+useRefreshOnFocus(loadDashboard)
+
+function loadDashboard() {
   vocabStore.fetchVocabSets()
   if (authStore.leagueId) {
     loadLeagueData()
   }
-})
+}
 
 async function loadLeagueData() {
   try {

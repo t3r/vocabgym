@@ -459,6 +459,7 @@
 import { ref, onMounted, computed } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import { useToast } from '@/composables/useToast'
+import { useRefreshOnFocus } from '@/composables/useRefreshOnFocus'
 import api from '@/services/api'
 import LoadingSpinner from '@/components/common/LoadingSpinner.vue'
 
@@ -525,11 +526,14 @@ const ownEntry = computed(() => {
   return leaderboard.value.find(e => e.userId === currentUserId.value)
 })
 
-onMounted(async () => {
+onMounted(refreshLeague)
+useRefreshOnFocus(refreshLeague)
+
+function refreshLeague() {
   if (authStore.leagueId) {
-    await loadLeagueData()
+    return loadLeagueData()
   }
-})
+}
 
 async function loadLeagueData() {
   loading.value = true
